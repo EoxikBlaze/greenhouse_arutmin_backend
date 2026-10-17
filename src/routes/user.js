@@ -29,7 +29,8 @@ router.post('/', async (req, res, next) => {
     const hash = await bcrypt.hash(String(password), 12); // cost 12 — lebih keras dari default
     const row = await one(
       `INSERT INTO users (username, email, password, level, is_demo, created_at, updated_at)
-       VALUES (lower(trim($1)), $2, $3, $4, $5, now(), now()) RETURNING *`,
+       VALUES (lower(trim($1)), $2, $3, $4, $5, now(), now())
+       RETURNING id, username, email, level, is_demo, created_at, updated_at`,
       [username, email ?? null, hash, level, !!is_demo],
     );
     res.status(201).json({ status: true, message: 'User berhasil ditambahkan.', data: publicUser(row) });
@@ -67,7 +68,8 @@ router.put('/:id', async (req, res, next) => {
     if (sets.length === 0) return json(res, 422, { message: 'Tidak ada data yang dikirim.', errors: {} });
     values.push(req.params.id);
     const row = await one(
-      `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length} RETURNING *`, values);
+      `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length}
+       RETURNING id, username, email, level, is_demo, created_at, updated_at`, values);
     if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
     res.json({ status: true, message: 'User berhasil diperbarui.', data: publicUser(row) });
   } catch (e) { next(e); }
@@ -84,7 +86,10 @@ router.delete('/:id', async (req, res, next) => {
     if (Number(req.params.id) === Number(req.user.sub)) {
       return json(res, 422, { message: 'Tidak bisa hapus akun sendiri.', errors: { msg: ['Tidak bisa hapus akun sendiri.'] } });
     }
-    const row = await one('DELETE FROM users WHERE id = $1 RETURNING *', [req.params.id]);
+    const row = await one(
+      'DELETE FROM users WHERE id = $1 RETURNING id, username, email, level, is_demo',
+      [req.params.id],
+    );
     if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
     res.json({ status: true, message: 'User dihapus.' });
   } catch (e) { next(e); }

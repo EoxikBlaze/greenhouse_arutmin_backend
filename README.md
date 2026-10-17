@@ -10,8 +10,21 @@ cd ~/Project/Vertoniksmartfarm/backend-nodejs
 cp .env.example .env   # isi DATABASE_URL, JWT_SECRET, APP_KEY, ESP32_API_KEY
 npm install
 npm start              # http://127.0.0.1:8000 (hanya localhost)
-npm run start:https    # + HTTPS (self-signed) di :8443
+npm run start:https    # + HTTPS (self-signed)
 ```
+
+## Restore database — SATU perintah (jangan manual)
+
+Restore manual (`psql -f dump.sql`) sering lupa lanjut ke perbaikan sequence →
+semua INSERT balas **500**. Pakai script, semua langkah jalan otomatis:
+
+```bash
+scripts/restore.sh database/vertonik.sql
+#  → [1] psql -f dump  [2] database/migrations/*.sql  [3] fix-sequences (terakhir)  [4] verifikasi
+DATABASE_URL=postgres://.../db_lain scripts/restore.sh dump.sql   # ke DB lain
+```
+
+Kalau terlanjur restore manual, jalankan: `psql "$DATABASE_URL" -f scripts/fix-sequences.sql`
 
 ## Enkripsi
 

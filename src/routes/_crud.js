@@ -13,10 +13,27 @@ const { demoExpiry } = require('../auth');
 
 function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
   const router = express.Router();
-  const cols = columns.join(', ');
+  // P1 — daftar SELALU menyertakan primary key (PK tidak seragam antar tabel:
+  // users.id, mejas.id_meja, tanamen.id_tanaman, ... ) supaya frontend punya id
+  // untuk memanggil PUT/DELETE /:id. PK tidak ikut whitelist kolom tulis.
+  const listColumns = columns.includes(pk) ? columns : [pk, ...columns];
+  const cols = listColumns.join(', ');
   const select = withJoins
-    ? `SELECT ${columns.map((c) => `${table}.${c}`).join(', ')}${withJoins ? ', ' + withJoins : ''} FROM ${table}`
+    ? `SELECT ${listColumns.map((c) => `${table}.${c}`).join(', ')}${withJoins ? ', ' + withJoins : ''} FROM ${table}`
     : `SELECT ${cols} FROM ${table}`;
+
+  // P3 — kolom di luar whitelist memang TIDAK disimpan (perilaku tidak diubah),
+  // tetapi dicatat ke log supaya salah nama kolom dari frontend tidak hilang diam-diam.
+  function warnUnknown(req) {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const unknown = Object.keys(body).filter((k) => !columns.includes(k));
+    if (unknown.length) {
+      console.warn(
+        `[crud] ${req.method} ${req.originalUrl} — kolom di luar whitelist DIBUANG: ${unknown.join(', ')}`
+        + ` (whitelist ${table}: ${columns.join(', ')})`,
+      );
+    }
+  }
 
   router.get('/', async (req, res, next) => {
     try {
@@ -34,6 +51,7 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
 
   router.post('/', async (req, res, next) => {
     try {
+      warnUnknown(req);
       const fields = columns.filter((c) => c in req.body);
       if (fields.length === 0) return res.status(422).json({ message: 'Tidak ada data yang dikirim.', errors: {} });
       const exp = demoExpiry(req.user);
@@ -51,6 +69,7 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
 
   const update = async (req, res, next) => {
     try {
+      warnUnknown(req);
       const fields = columns.filter((c) => c in req.body);
       if (fields.length === 0) return res.status(422).json({ message: 'Tidak ada data yang dikirim.', errors: {} });
       const sets = fields.map((c, i) => `${c} = $${i + 1}`);
@@ -72,7 +91,19 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
       const row = await one(`DELETE FROM ${table} WHERE ${pk} = $1 RETURNING *`, [req.params.id]);
       if (!row) return res.status(404).json({ message: 'Data tidak ditemukan.' });
       res.json({ status: true, message: 'Data dihapus.' });
-    } catch (e) { next(e); }
+    } catch (e) {
+      // P4 — FK ON DELETE RESTRICT: data terkait masih ada → jawab 409 yang ramah,
+      // bukan 500 mentah.
+      if (e && e.code === '23503') {
+        // label rute: name bila ada (master.js), selain itu dari baseUrl (tahap.js)
+        const label = name || (req.baseUrl && req.baseUrl.replace(/^\//, '')) || table;
+        return res.status(409).json({
+          message: `Tidak bisa menghapus ${label}: masih ada data terkait yang merujuknya.`,
+          errors: {},
+        });
+      }
+      next(e);
+    }
   });
 
   return router;

@@ -16,9 +16,15 @@ function masked(key) {
   return key.slice(0, 6) + '***';
 }
 
+// api_key TIDAK ikut dalam RETURNING (P2) — ambil hanya bila kolomnya ada di baris.
+function keyOf(row) {
+  return row && row.api_key ? decrypt(row.api_key) : null;
+}
+
 async function setting() {
   const row = await one('SELECT * FROM wa_settings ORDER BY id LIMIT 1')
-    || await one("INSERT INTO wa_settings (id, aktif, api_key, target, updated_at) VALUES (1, false, NULL, NULL, now()) RETURNING *");
+    || await one("INSERT INTO wa_settings (id, aktif, api_key, target, updated_at) VALUES (1, false, NULL, NULL, now())"
+      + " RETURNING id, aktif, target, created_at, updated_at");
   return row;
 }
 
@@ -26,7 +32,7 @@ async function setting() {
 async function kirimWa(target, pesan) {
   try {
     const row = await setting();
-    const key = decrypt(row.api_key);
+    const key = keyOf(row);
     if (!row.aktif || !key || !target) return { terkirim: false, alasan: 'belum dikonfigurasi' };
     const res = await fetch('https://api.fonnte.com/send', {
       method: 'POST',
@@ -46,7 +52,7 @@ router.get('/', async (_req, res, next) => {
     res.json({
       page: 'notifikasi-wa',
       aktif: !!row.aktif,
-      api_key_masked: masked(decrypt(row.api_key)),
+      api_key_masked: masked(keyOf(row)),
       target: row.target,
       tipe_pesan: [
         { tipe: 'solenoid', pemicu: 'Katup ON/OFF', konten: 'Solenoid ON (manual)' },

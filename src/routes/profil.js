@@ -24,7 +24,7 @@ router.post('/update', async (req, res, next) => {
 
     const row = await one(
       `UPDATE users SET username = coalesce(lower(trim($1)), username), email = coalesce($2, email), updated_at = now()
-       WHERE id = $3 RETURNING *`,
+       WHERE id = $3 RETURNING id, username, email, level, is_demo, created_at, updated_at`,
       [username ?? null, email ?? null, req.user.sub],
     );
     res.json({ status: true, message: 'Perubahan tersimpan.', user: publicUser(row) });

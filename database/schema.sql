@@ -626,7 +626,7 @@ CREATE INDEX semais_id_tanaman_index ON public.semais USING btree (id_tanaman);
 --
 
 ALTER TABLE ONLY public.panens
-    ADD CONSTRAINT panens_id_pendewasaan_foreign FOREIGN KEY (id_pendewasaan) REFERENCES public.pendewasaans(id_pendewasaan) ON DELETE CASCADE;
+    ADD CONSTRAINT panens_id_pendewasaan_foreign FOREIGN KEY (id_pendewasaan) REFERENCES public.pendewasaans(id_pendewasaan) ON DELETE RESTRICT;
 
 
 --
