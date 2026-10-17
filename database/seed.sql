@@ -1,5 +1,5 @@
 -- ============================================================================
--- SEED DATA — Vertonik Smart Farm (PostgreSQL 17)
+-- SEED DATA — GARAP (PostgreSQL 17)
 -- Pakai   : psql "$DATABASE_URL" -f database/seed.sql
 -- Aman diulang: ON CONFLICT DO NOTHING — tidak menimpa data yang sudah ada.
 -- ============================================================================

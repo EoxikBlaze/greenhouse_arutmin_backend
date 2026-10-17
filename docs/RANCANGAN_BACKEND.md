@@ -1,4 +1,4 @@
-# Rancangan Backend — Vertonik Smart Farm (as-is)
+# Rancangan Backend — GARAP (as-is)
 
 Dokumen ini memetakan **backend yang ada saat ini** (`backend-nodejs/`, Node.js/Express +
 PostgreSQL) sebagai dasar pengembangan berikutnya. Rute 1:1 dengan kontrak Laravel lama
@@ -215,4 +215,4 @@ flowchart TB
 | WhatsApp | `wa_settings` tersimpan, pengirim terpusat di `notifWa` | uji integrasi Fonnte end-to-end |
 | Log | minimal (tanpa data sensitif) | file log terstruktur + rotasi |
 | Migrasi skema | dump SQL (`database/vertonik.sql`) | tool migrasi terversi (knex/dbmate) |
-| Naming | "Vertonik" di pesan & repo | ganti bila nama baru (PANDAI/SIGAP/…) diputuskan |
+| Naming | **sudah diganti ke "GARAP"** (2026-10-18) untuk nama tampilan/identitas | nama infrastruktur (DB `vertonik_smartfarm`, role `vertonik`, systemd `vertonik-api`, SSID) masih menunggu keputusan |

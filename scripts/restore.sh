@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Restore database Vertonik Smart Farm — SATU perintah, tanpa langkah manual.
+# Restore database GARAP — SATU perintah, tanpa langkah manual.
 #
 #   scripts/restore.sh /path/ke/dump.sql
 #   DATABASE_URL=postgres://user:pass@host/db_lain scripts/restore.sh dump.sql

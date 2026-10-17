@@ -1,5 +1,5 @@
 -- ============================================================================
--- SKEMA DATABASE — Vertonik Smart Farm (PostgreSQL 17)
+-- SKEMA DATABASE — GARAP (PostgreSQL 17)
 -- 13 tabel domain (tanpa tabel sistem Laravel: sessions/cache/jobs/migrations)
 -- Dihasilkan dari database live, 17 Okt 2026 — 35 index + 10 foreign key.
 --

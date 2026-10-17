@@ -1,4 +1,4 @@
-# Susunan Database — Vertonik Smart Farm
+# Susunan Database — GARAP
 
 Tanggal: 2026-10-14
 

@@ -1,4 +1,4 @@
-# Backend API — Vertonik Smart Farm (Node.js)
+# Backend API — GARAP (Node.js)
 
 Backend **JSON-only** yang menggantikan Laravel. Database & route 1:1 dengan
 kontrak lama (lihat `docs/BACKEND_ANALYSIS.md`).

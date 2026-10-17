@@ -78,7 +78,7 @@ router.post('/uji', demoGuard('notifikasi-wa.uji'), async (req, res, next) => {
   try {
     const row = await setting();
     const targets = String(row.target || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const hasil = await kirimWa(targets[0], '[UJI] Vertonik Smart Farm — pesan uji notifikasi WhatsApp.');
+    const hasil = await kirimWa(targets[0], '[UJI] GARAP — pesan uji notifikasi WhatsApp.');
     res.json({
       status: hasil.terkirim,
       message: hasil.terkirim ? 'Pesan uji terkirim — cek WhatsApp di nomor tujuan.' : 'Pesan uji gagal / belum dikonfigurasi.',

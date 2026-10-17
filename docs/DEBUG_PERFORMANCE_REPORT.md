@@ -1,4 +1,4 @@
-# Laporan Debugging & Analisis Backend Vertonik Smart Farm (Node.js)
+# Laporan Debugging & Analisis Backend GARAP (Node.js)
 
 Tanggal: 2026-10-15 · Target: `backend-nodejs` (Express 4 + PostgreSQL 17)
 

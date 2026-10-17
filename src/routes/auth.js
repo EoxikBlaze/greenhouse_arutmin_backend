@@ -6,7 +6,7 @@ const { verifyLogin, signToken, publicUser, json } = require('../auth');
 const router = express.Router();
 
 router.get('/', (_req, res) => {
-  json(res, 200, { message: 'Vertonik Smart Farm API — gunakan POST /login untuk autentikasi.' });
+  json(res, 200, { message: 'GARAP API — gunakan POST /login untuk autentikasi.' });
 });
 
 router.get('/login', (_req, res) => {

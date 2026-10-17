@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test backend Vertonik Smart Farm — semua command siap salin.
+# Smoke test backend GARAP — semua command siap salin.
 set -uo pipefail
 BE="http://127.0.0.1:8000"
 APIKEY=$(grep '^ESP32_API_KEY=' /Users/rizki/Project/Vertoniksmartfarm/backend-nodejs/.env | cut -d= -f2-)

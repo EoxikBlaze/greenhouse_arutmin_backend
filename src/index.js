@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Vertonik Smart Farm — Backend API (Node.js/Express).
+ * GARAP — Backend API (Node.js/Express).
  * Aturan:
  *  1. JSON-ONLY — tidak pernah mengirim HTML/teks mentah; error JSON generik TANPA stack trace.
  *  2. Tidak ada print/log data sensitif ke output web (rahasia hanya di .env & DB ter-enskripsi).
@@ -110,7 +110,7 @@ httpServer.requestTimeout = 30_000;
 httpServer.maxRequestsPerSocket = 0;
 httpServer.listen(config.port, config.host, () => {
   // hanya satu baris konfirmasi — tanpa data sensitif
-  console.log(`Vertonik API (HTTP)  : http://${config.host}:${config.port}`);
+  console.log(`GARAP API (HTTP)  : http://${config.host}:${config.port}`);
 });
 
 if (config.https) {
@@ -126,7 +126,7 @@ if (config.https) {
       key: fs.readFileSync(keyPath),
       cert: fs.readFileSync(certPath),
     }, app).listen(config.port + 443, config.host, () => {
-      console.log(`Vertonik API (HTTPS) : https://${config.host}:${config.port + 443}`);
+      console.log(`GARAP API (HTTPS) : https://${config.host}:${config.port + 443}`);
     });
   }
 }
