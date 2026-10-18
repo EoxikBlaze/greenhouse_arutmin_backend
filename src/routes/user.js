@@ -9,6 +9,13 @@ const router = express.Router();
 
 const LEVELS = ['admin', 'user', 'petani'];
 
+// V1 — validasi path param :id. users.id adalah bigint, jadi id non-angka membuat
+// PostgreSQL gagal parse ("invalid input syntax for bigint") → 500 generik.
+// Id tidak valid dijawab 404 PERSIS sama dengan id yang tidak ada (anti-enumeration).
+// Dipakai DI DALAM handler (setelah cek demo) supaya urutan jawaban 403 demo tidak berubah.
+const idValid = (req) => /^[0-9]+$/.test(req.params.id);
+const notFound = (res) => json(res, 404, { message: 'Data tidak ditemukan.', errors: {} });
+
 router.get('/', async (_req, res, next) => {
   try {
     const rows = await q('SELECT * FROM users ORDER BY id DESC');
@@ -44,8 +51,9 @@ router.post('/', async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
+    if (!idValid(req)) return notFound(res);
     const row = await one('SELECT * FROM users WHERE id = $1', [req.params.id]);
-    if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
+    if (!row) return notFound(res);
     res.json(publicUser(row));
   } catch (e) { next(e); }
 });
@@ -53,6 +61,7 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     if (req.user.demo) return json(res, 403, { message: 'Mode demo tidak boleh mengelola user.' });
+    if (!idValid(req)) return notFound(res);
     const { username, email, password, level, is_demo } = req.body || {};
     if (level && !LEVELS.includes(level)) {
       return json(res, 422, { message: 'Data tidak valid.', errors: { level: ['Level harus admin/user/petani.'] } });
@@ -70,7 +79,7 @@ router.put('/:id', async (req, res, next) => {
     const row = await one(
       `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length}
        RETURNING id, username, email, level, is_demo, created_at, updated_at`, values);
-    if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
+    if (!row) return notFound(res);
     res.json({ status: true, message: 'User berhasil diperbarui.', data: publicUser(row) });
   } catch (e) { next(e); }
 });
@@ -83,6 +92,7 @@ router.patch('/:id', (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     if (req.user.demo) return json(res, 403, { message: 'Mode demo tidak boleh mengelola user.' });
+    if (!idValid(req)) return notFound(res);
     if (Number(req.params.id) === Number(req.user.sub)) {
       return json(res, 422, { message: 'Tidak bisa hapus akun sendiri.', errors: { msg: ['Tidak bisa hapus akun sendiri.'] } });
     }
@@ -90,7 +100,7 @@ router.delete('/:id', async (req, res, next) => {
       'DELETE FROM users WHERE id = $1 RETURNING id, username, email, level, is_demo',
       [req.params.id],
     );
-    if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
+    if (!row) return notFound(res);
     res.json({ status: true, message: 'User dihapus.' });
   } catch (e) { next(e); }
 });

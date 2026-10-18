@@ -22,6 +22,14 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
     ? `SELECT ${listColumns.map((c) => `${table}.${c}`).join(', ')}${withJoins ? ', ' + withJoins : ''} FROM ${table}`
     : `SELECT ${cols} FROM ${table}`;
 
+  // V1 — validasi path param :id. Semua PK yang dipakai crudRouter adalah bigint
+  // (mejas.id_meja, pendewasaans.id_pendewasaan, users.id, ...). Id non-angka
+  // membuat PostgreSQL gagal parse ("invalid input syntax for bigint") → 500 generik.
+  // Id tidak valid dijawab 404 PERSIS sama dengan id yang tidak ada
+  // (anti-enumeration + konsisten dengan kontrak API).
+  const notFound = (res) => res.status(404).json({ message: 'Data tidak ditemukan.', errors: {} });
+  const validId = (req, res, next) => (/^[0-9]+$/.test(req.params.id) ? next() : notFound(res));
+
   // P3 — kolom di luar whitelist memang TIDAK disimpan (perilaku tidak diubah),
   // tetapi dicatat ke log supaya salah nama kolom dari frontend tidak hilang diam-diam.
   function warnUnknown(req) {
@@ -41,10 +49,10 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
     } catch (e) { next(e); }
   });
 
-  router.get('/:id', async (req, res, next) => {
+  router.get('/:id', validId, async (req, res, next) => {
     try {
       const row = await one(`${select} WHERE ${table}.${pk} = $1`, [req.params.id]);
-      if (!row) return res.status(404).json({ message: 'Data tidak ditemukan.' });
+      if (!row) return notFound(res);
       res.json(row);
     } catch (e) { next(e); }
   });
@@ -79,17 +87,17 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
         `UPDATE ${table} SET ${sets.join(', ')}, updated_at = now() WHERE ${pk} = $${values.length} RETURNING *`,
         values,
       );
-      if (!row) return res.status(404).json({ message: 'Data tidak ditemukan.' });
+      if (!row) return notFound(res);
       res.json({ status: true, message: 'Data berhasil diperbarui.', data: row });
     } catch (e) { next(e); }
   };
-  router.put('/:id', update);
-  router.patch('/:id', update);
+  router.put('/:id', validId, update);
+  router.patch('/:id', validId, update);
 
-  router.delete('/:id', async (req, res, next) => {
+  router.delete('/:id', validId, async (req, res, next) => {
     try {
       const row = await one(`DELETE FROM ${table} WHERE ${pk} = $1 RETURNING *`, [req.params.id]);
-      if (!row) return res.status(404).json({ message: 'Data tidak ditemukan.' });
+      if (!row) return notFound(res);
       res.json({ status: true, message: 'Data dihapus.' });
     } catch (e) {
       // P4 — FK ON DELETE RESTRICT: data terkait masih ada → jawab 409 yang ramah,
