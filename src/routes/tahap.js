@@ -8,6 +8,14 @@ const { crudRouter } = require('./_crud');
 const router = express.Router();
 const guard = [requireAuth, requireRole(['admin', 'demo'])];
 
+// V2 — validasi path param :id (lihat _crud.js validId): non-angka ATAU melebihi
+// rentang bigint Postgres → 404 PERSIS sama dengan id yang tidak ada (anti-enumeration),
+// dicek di depan query (dulu 'abc'/id raksasa → 500). Body 404 diseragamkan dengan
+// kontrak baru {message, errors:{}} (sebelumnya batch/:id membalas tanpa errors:{}).
+const BIGINT_MAX = 9223372036854775807n;
+const idValid = (req) => /^[0-9]+$/.test(req.params.id) && BigInt(req.params.id) <= BIGINT_MAX;
+const notFound = (res) => res.status(404).json({ message: 'Data tidak ditemukan.', errors: {} });
+
 /* ── SEMAI (ada endpoint khusus — letakkan SEBELUM crud) ───────────── */
 router.get('/semai/selesai', ...guard, async (_req, res, next) => {
   try {
@@ -19,10 +27,11 @@ router.get('/semai/selesai', ...guard, async (_req, res, next) => {
 
 router.get('/semai/batch/:id', ...guard, async (req, res, next) => {
   try {
+    if (!idValid(req)) return notFound(res);
     const semai = await one(`
       SELECT s.*, t.nama_tanaman FROM semais s LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
       WHERE s.id_semai = $1`, [req.params.id]);
-    if (!semai) return res.status(404).json({ message: 'Data tidak ditemukan.' });
+    if (!semai) return notFound(res);
     const peremajaan = await q('SELECT * FROM peremajaans WHERE id_semai = $1 ORDER BY id_peremajaan DESC', [req.params.id]);
     const pendewasaan = await q(`
       SELECT pd.* FROM pendewasaans pd JOIN peremajaans pr ON pr.id_peremajaan = pd.id_peremajaan

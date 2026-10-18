@@ -6,6 +6,13 @@ const { demoGuard, demoExpiry, json } = require('../auth');
 
 const router = express.Router();
 
+// V2 — validasi path param :id (lihat _crud.js validId): non-angka ATAU melebihi
+// rentang bigint Postgres → 404 PERSIS sama dengan id yang tidak ada (anti-enumeration),
+// dicek di depan query supaya tidak pernah menyentuh DB (dulu → 500 SQLSTATE 22003).
+const BIGINT_MAX = 9223372036854775807n;
+const idValid = (req) => /^[0-9]+$/.test(req.params.id) && BigInt(req.params.id) <= BIGINT_MAX;
+const notFound = (res) => json(res, 404, { message: 'Data tidak ditemukan.', errors: {} });
+
 router.get('/', async (_req, res, next) => {
   try {
     const [semai, peremajaan, pendewasaan] = await Promise.all([
@@ -58,11 +65,13 @@ router.post('/:tipe/:id/selesai', demoGuard('tanam.selesai'), async (req, res, n
     };
     const t = map[req.params.tipe];
     if (!t) return json(res, 422, { message: 'Tahap tidak dikenal.' });
+    // V2 — urutan TETAP: tipe dulu (kontrak lama 422), baru id (404 identik).
+    if (!idValid(req)) return notFound(res);
     const sets = ["status = 'selesai'", 'updated_at = now()'];
     if (t.tgl) sets.splice(1, 0, `${t.tgl} = coalesce(${t.tgl}, now()::date)`);
     const row = await one(
       `UPDATE ${t.table} SET ${sets.join(', ')} WHERE ${t.pk} = $1 RETURNING *`, [req.params.id]);
-    if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
+    if (!row) return notFound(res);
     res.json({ status: true, message: `Tahap ${req.params.tipe} diselesaikan.`, data: row });
   } catch (e) { next(e); }
 });
@@ -70,11 +79,14 @@ router.post('/:tipe/:id/selesai', demoGuard('tanam.selesai'), async (req, res, n
 // Hapus batch semai (konfirmasi di client)
 router.post('/:id/hapus', async (req, res, next) => {
   try {
+    // Urutan TETAP seperti sebelumnya: cek demo dulu (403), baru validasi id
+    // (404 identik — V2), baru query. Supaya status lama tidak berubah.
     if (req.user.demo) {
       return json(res, 403, { message: 'Mode demo tidak boleh menghapus data.' });
     }
+    if (!idValid(req)) return notFound(res);
     const row = await one('DELETE FROM semais WHERE id_semai = $1 RETURNING *', [req.params.id]);
-    if (!row) return json(res, 404, { message: 'Data tidak ditemukan.' });
+    if (!row) return notFound(res);
     res.json({ status: true, message: 'Data dihapus.' });
   } catch (e) { next(e); }
 });
