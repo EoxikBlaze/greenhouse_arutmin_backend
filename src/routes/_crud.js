@@ -25,10 +25,22 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
   // V1 — validasi path param :id. Semua PK yang dipakai crudRouter adalah bigint
   // (mejas.id_meja, pendewasaans.id_pendewasaan, users.id, ...). Id non-angka
   // membuat PostgreSQL gagal parse ("invalid input syntax for bigint") → 500 generik.
+  // V2 — id yang lolos regex tapi MELEBIHI rentang bigint (mis. 9223372036854775808
+  // atau 99999999999999999999999) tetap membuat PostgreSQL melempar SQLSTATE 22003
+  // ("bigint out of range") → 500. Rentang dicek DI SINI dengan BigInt, bukan lewat
+  // e.code === '22003' di handler: predikat di DEPAN query menjamin 404 identik tanpa
+  // menyentuh DB, berlaku untuk semua metode (GET/PUT/PATCH/DELETE) dan semua tabel
+  // dalam SATU titik — sedangkan penanganan 22003 tersebar di tiap handler/catch
+  // dan gampang terlewat di endpoint baru. Pola /^[0-9]+$/ dipertahankan (bukan
+  // {1,19}) supaya id valid ber-nol-depan tetap diterima seperti sebelumnya.
   // Id tidak valid dijawab 404 PERSIS sama dengan id yang tidak ada
   // (anti-enumeration + konsisten dengan kontrak API).
   const notFound = (res) => res.status(404).json({ message: 'Data tidak ditemukan.', errors: {} });
-  const validId = (req, res, next) => (/^[0-9]+$/.test(req.params.id) ? next() : notFound(res));
+  const BIGINT_MAX = 9223372036854775807n;
+  const validId = (req, res, next) => {
+    const id = req.params.id;
+    return /^[0-9]+$/.test(id) && BigInt(id) <= BIGINT_MAX ? next() : notFound(res);
+  };
 
   // P3 — kolom di luar whitelist memang TIDAK disimpan (perilaku tidak diubah),
   // tetapi dicatat ke log supaya salah nama kolom dari frontend tidak hilang diam-diam.

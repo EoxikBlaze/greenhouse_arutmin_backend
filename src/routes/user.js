@@ -11,9 +11,12 @@ const LEVELS = ['admin', 'user', 'petani'];
 
 // V1 — validasi path param :id. users.id adalah bigint, jadi id non-angka membuat
 // PostgreSQL gagal parse ("invalid input syntax for bigint") → 500 generik.
-// Id tidak valid dijawab 404 PERSIS sama dengan id yang tidak ada (anti-enumeration).
-// Dipakai DI DALAM handler (setelah cek demo) supaya urutan jawaban 403 demo tidak berubah.
-const idValid = (req) => /^[0-9]+$/.test(req.params.id);
+// V2 — id yang lolos regex tapi MELEBIHI rentang bigint tetap membuat PostgreSQL
+// melempar SQLSTATE 22003 → 500; rentang dicek di sini dengan BigInt (predikat di
+// depan query — alasan lengkap ada di _crud.js validId). Dipakai DI DALAM handler
+// (setelah cek demo) supaya urutan jawaban 403 demo tidak berubah.
+const BIGINT_MAX = 9223372036854775807n;
+const idValid = (req) => /^[0-9]+$/.test(req.params.id) && BigInt(req.params.id) <= BIGINT_MAX;
 const notFound = (res) => json(res, 404, { message: 'Data tidak ditemukan.', errors: {} });
 
 router.get('/', async (_req, res, next) => {
