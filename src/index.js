@@ -13,11 +13,31 @@ const path = require('path');
 const config = require('./config');
 const { demoPurge, requireAuth, requireRole } = require('./auth');
 const { rateLimit } = require('./rateLimit');
+const { invalidBody } = require('./routes/_validate');
 
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: true })); // kompatibel form POST (seperti Laravel)
+
+// Body JSON berupa SKALAR (null/angka/teks/boolean) adalah JSON VALID tetapi bukan
+// objek — body-parser 'strict' menolaknya dengan entity.parse.failed. Dulu balasannya
+// 400 'Format JSON tidak valid.' (dan di sebagian rute menyentuh jalur error lain);
+// kini diseragamkan menjadi 422 terstruktur kontrak SEBELUM rute mana pun dijalankan,
+// sehingga tidak ada rute yang pernah melihat body non-objek (mencegah 500 turunan).
+// JSON yang benar-benar rusak TETAP 400 — error diteruskan ke handler global.
+// Posisi: tepat setelah parser, supaya hanya error pembacaan body yang dijangkau.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.parse.failed' && typeof err.body === 'string'
+      && /json/i.test(String(req.headers['content-type'] || ''))) {
+    try {
+      const parsed = JSON.parse(err.body); // lolos JSON.parse → JSON valid (skalar)
+      if (parsed === null || typeof parsed !== 'object') return invalidBody(res);
+    } catch { /* JSON rusak — jatuh ke alur 400 biasa */ }
+  }
+  return next(err);
+});
 
 // Header keamanan minimal (tanpa dependensi)
 app.use((_req, res, next) => {
@@ -93,10 +113,13 @@ app.use((req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-  // Jangan pernah mencetak/merespons detail internal (stack, SQL, env).
+  // Jangan pernah mencetak/merespons detail internal (stack, SQL, env) KE CLIENT —
+  // stack hanya masuk log server (observabilitas): sebelumnya bug 500 tak pernah
+  // muncul di log sehingga sulit ditelusuri; respon ke client tetap generik.
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Format JSON tidak valid.' });
   }
+  console.error('[500]', err.stack || err);
   res.status(err.status || 500).json({ message: 'Terjadi kesalahan pada server.' });
 });
 

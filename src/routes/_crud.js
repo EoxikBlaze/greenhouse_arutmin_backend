@@ -11,6 +11,7 @@ const express = require('express');
 const { q, one } = require('../db');
 const { demoExpiry } = require('../auth');
 const { idValid, notFound } = require('./_id');
+const { validateBody } = require('./_validate');
 
 function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
   const router = express.Router();
@@ -52,6 +53,19 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
     }
   }
 
+  // V3 — validasi body (Zod, lihat ./_validate) SEBELUM query: input tak terduga
+  // (objek/array/null/NaN/kosong/terlalu panjang/angka di luar rentang kolom) kini
+  // 422 terstruktur {message, errors:{field:[...]}} — bukan 500 (SQL gagal parse)
+  // dan bukan tersimpan sembarangan ({"meja":{"a":1}} dulu menjadi string '{"a":1}').
+  // warnUnknown tetap dijalankan PERTAMA untuk setiap request — termasuk yang nanti
+  // ditolak 422 — supaya salah nama kolom dari frontend tidak hilang diam-diam.
+  const validateCreate = validateBody({ table, columns, mode: 'create' });
+  const validateUpdate = validateBody({ table, columns, mode: 'update' });
+  const warnThen = (validator) => (req, res, next) => {
+    warnUnknown(req);
+    validator(req, res, next);
+  };
+
   router.get('/', async (req, res, next) => {
     try {
       res.json(await q(`${select} ORDER BY ${orderBy || pk} DESC`));
@@ -66,9 +80,8 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
     } catch (e) { next(e); }
   });
 
-  router.post('/', async (req, res, next) => {
+  router.post('/', warnThen(validateCreate), async (req, res, next) => {
     try {
-      warnUnknown(req);
       const fields = columns.filter((c) => c in req.body);
       if (fields.length === 0) return res.status(422).json({ message: 'Tidak ada data yang dikirim.', errors: {} });
       const exp = demoExpiry(req.user);
@@ -86,7 +99,6 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
 
   const update = async (req, res, next) => {
     try {
-      warnUnknown(req);
       const fields = columns.filter((c) => c in req.body);
       if (fields.length === 0) return res.status(422).json({ message: 'Tidak ada data yang dikirim.', errors: {} });
       const sets = fields.map((c, i) => `${c} = $${i + 1}`);
@@ -100,8 +112,10 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
       res.json({ status: true, message: 'Data berhasil diperbarui.', data: row });
     } catch (e) { next(e); }
   };
-  router.put('/:id', validId, update);
-  router.patch('/:id', validId, update);
+  // Urutan TETAP: validId dulu (404 identik, lihat ./_id), baru validasi body (422),
+  // baru query — id tidak valid tak pernah menyentuh DB maupun body.
+  router.put('/:id', validId, warnThen(validateUpdate), update);
+  router.patch('/:id', validId, warnThen(validateUpdate), update);
 
   router.delete('/:id', validId, async (req, res, next) => {
     try {
