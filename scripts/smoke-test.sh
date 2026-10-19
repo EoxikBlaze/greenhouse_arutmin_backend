@@ -3,6 +3,8 @@
 set -uo pipefail
 BE="http://127.0.0.1:8000"
 APIKEY=$(grep '^ESP32_API_KEY=' /Users/rizki/Project/Vertoniksmartfarm/backend-nodejs/.env | cut -d= -f2-)
+ADMIN_PASSWORD=$(grep '^ADMIN_PASSWORD=' /Users/rizki/Project/Vertoniksmartfarm/backend-nodejs/.env | cut -d= -f2-)
+[ -n "$ADMIN_PASSWORD" ] || { echo 'ADMIN_PASSWORD belum diisi di backend-nodejs/.env'; exit 1; }
 J='Content-Type: application/json'
 hr(){ printf '\n=== %s ===\n' "$1"; }
 
@@ -16,7 +18,7 @@ hr "3. Login salah -> 422"
 curl -s -w '\nHTTP %{http_code}\n' -X POST "$BE/login" -H "$J" -d '{"username":"admin","password":"salah"}'
 
 hr "4. Login admin -> token JWT"
-curl -s -X POST "$BE/login" -H "$J" -d '{"username":"admin","password":"@adminbersabda123"}' > /tmp/vsf_login.json
+curl -s -X POST "$BE/login" -H "$J" -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASSWORD\"}" > /tmp/vsf_login.json
 python3 -c "import json;d=json.load(open('/tmp/vsf_login.json'));print('status=',d['status'],'user=',d['user']['username'],d['user']['level'],'token_len=',len(d['token']))"
 cp /tmp/vsf_login.json /tmp/vsf_login.json.bak
 python3 -c "import json;open('/tmp/vsf_tok','w').write(json.load(open('/tmp/vsf_login.json'))['token'])"
@@ -55,7 +57,7 @@ rows=d if isinstance(d,list) else d.get('data',d)
 print('jumlah user:', len(rows));print('baris pertama (tanpa password):', {k:v for k,v in (rows[0].items() if isinstance(rows,list) or True else [])} if False else rows[0] if isinstance(rows,list) else rows)"
 
 hr "11. Role petani diblokir dari /user -> 403"
-curl -s -X POST "$BE/login" -H "$J" -d '{"username":"petani","password":"petani123"}' > /tmp/p.json
+curl -s -X POST "$BE/login" -H "$J" -d '{"username":"petani","password":"<PETANI_PASSWORD>"}' > /tmp/p.json
 python3 -c "import json;open('/tmp/ptok','w').write(json.load(open('/tmp/p.json'))['token'])"
 curl -s -w '\nHTTP %{http_code}\n' "$BE/user" -H "Authorization: Bearer $(cat /tmp/ptok)"
 

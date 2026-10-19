@@ -183,9 +183,12 @@ Index: id_tanaman, id_siklus, id_meja
 
 | username | password | level | is_demo |
 |---|---|---|---|
-| admin | `@adminbersabda123` | admin | false |
+| admin | `<ADMIN_PASSWORD>` | admin | false |
 | demo | (lihat DemoUserSeeder) | user | **true** |
-| petani | `petani123` | petani | false |
+| petani | `<PETANI_PASSWORD>` | petani | false |
+
+
+> **Kredensial**: nilai password hanya ada di `backend-nodejs/.env` (kunci `ADMIN_PASSWORD`, `PETANI_PASSWORD`, `DEMO_PASSWORD`). Jangan pernah ditulis di dokumen atau repo.
 
 Seed lain: `MejaSeeder`, `TanamanSeeder`, `SiklusSeeder`, `SemaiSeeder`, `PeremajaanSeeder`, `PendewasaanSeeder`, `PanenSeeder`, `SensorThresholdSeeder`, `WaterControlSeeder`.
 

@@ -55,6 +55,9 @@ Kalau terlanjur restore manual, jalankan: `psql "$DATABASE_URL" -f scripts/fix-s
 
 | username | password | level |
 |---|---|---|
-| admin | `@adminbersabda123` | admin |
-| petani | `petani123` | petani |
-| demo | `demo123` | demo |
+| admin | `<ADMIN_PASSWORD>` | admin |
+| petani | `<PETANI_PASSWORD>` | petani |
+| demo | `<DEMO_PASSWORD>` | demo |
+
+
+> **Kredensial**: nilai password hanya ada di `backend-nodejs/.env` (kunci `ADMIN_PASSWORD`, `PETANI_PASSWORD`, `DEMO_PASSWORD`). Jangan pernah ditulis di dokumen atau repo.

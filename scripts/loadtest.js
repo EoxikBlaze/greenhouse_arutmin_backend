@@ -10,11 +10,22 @@ const BASE = process.env.LOAD_BASE || 'http://127.0.0.1:8000';
 const CONC = Number(process.argv[2] || 1000);
 const DUR = Number(process.argv[3] || 20);
 
+// muat ADMIN_PASSWORD dari backend-nodejs/.env bila belum ada di environment
+if (!process.env.ADMIN_PASSWORD) {
+  try {
+    const env = require('fs').readFileSync(require('path').join(__dirname, '..', '.env'), 'utf8');
+    const m = env.match(/^ADMIN_PASSWORD=(.*)$/m);
+    if (m) process.env.ADMIN_PASSWORD = m[1].trim();
+  } catch {}
+}
+const adminPassword = process.env.ADMIN_PASSWORD || '';
+if (!adminPassword) { console.error('ADMIN_PASSWORD kosong — isi backend-nodejs/.env atau export env-nya'); process.exit(1); }
+
 async function login() {
   const res = await fetch(`${BASE}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: '@adminbersabda123' }),
+    body: JSON.stringify({ username: 'admin', password: adminPassword }),
   });
   return (await res.json()).token;
 }
