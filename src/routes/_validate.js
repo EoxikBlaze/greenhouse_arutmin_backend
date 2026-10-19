@@ -19,8 +19,9 @@
  *  - Field di luar whitelist TIDAK divalidasi di sini (Zod membuangnya dari hasil
  *    parse) — handler tetap membuangnya lewat mekanisme console.warn yang sudah ada.
  *  - Tabel tanpa spec eksplisit memakai inferensi longgar (string 1..500 / integer
- *    int4 / id_ → bigint) supaya SEMUA tabel ikut terlindungi tanpa menebak-nebak
- *    nilai yang boleh (tidak ada asumsi enum yang tidak terdokumentasi).
+ *    int4 / id_ → bigint / tgl_* & tanggal → pola YYYY-MM-DD) supaya SEMUA tabel ikut
+ *    terlindungi tanpa menebak-nebak nilai yang boleh (tidak ada asumsi enum yang
+ *    tidak terdokumentasi).
  *  - Panjang teks EFEKTIF = MIN(batas spec/inferensi, panjang kolom aktual dari
  *    information_schema) — dibaca sekali saat startup lewat loadColumnLengths().
  *    Kolom live mis. mejas.meja varchar(50), tanamen.nama_tanaman varchar(50),
@@ -42,10 +43,32 @@ const INT4_MAX = 2147483647;
 const DEFAULT_STR_MAX = 500;
 /** Pesan seragam untuk body yang bukan objek JSON (null/array/angka/teks). */
 const MSG_BODY = 'Body harus berupa objek JSON.';
+/** Pola tanggal ISO untuk kolom tipe date PostgreSQL (YYYY-MM-DD). */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * Pola nama kolom bertipe tanggal di luar spec eksplisit: prefiks `tgl_`
+ * (tgl_awal_semai, tgl_akhir_peremajaan, tgl_panen, ...) dan `tanggal*`.
+ * Semua kolom ini bertipe `date` (docs/DB_SCHEMA.md) sehingga tanpa validasi pola
+ * nilai seperti 'bukan-tanggal' lolos Zod (dulu dianggap string bebas) lalu
+ * PostgreSQL melempar "invalid input syntax for type date" → 500.
+ */
+const DATE_NAME = /^(tgl_|tanggal)/;
+
+/**
+ * True bila `v` adalah string YYYY-MM-DD yang benar-benar ada di kalender
+ * ('2026-13-45' lolos pola tetap TIDAK lolos fungsi ini — dulu membuat
+ * PostgreSQL melempar 'date/time field value out of range' → 500).
+ */
+function isDateString(v) {
+  if (typeof v !== 'string' || !DATE_RE.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+}
 
 /**
  * Spec eksplisit per tabel. Key = nama kolom, value:
- *   tipe           : 'string' | 'integer' | 'number' | 'enum'
+ *   tipe           : 'string' | 'integer' | 'number' | 'enum' | 'date'
  *   requiredCreate : wajib saat CREATE (POST); UPDATE selalu opsional
  *   minLen/maxLen  : batas panjang teks (default string: 1..500)
  *   min/max        : batas angka (integer = bilangan bulat, number = desimal);
@@ -131,6 +154,13 @@ const INTEGER_NAME = /^(id_|jumlah_|waktu_)|_(berhasil|gagal)$/;
  */
 function inferSpec(col) {
   if (FLOAT_COLUMNS.has(col)) return { tipe: 'number' };
+  if (DATE_NAME.test(col)) {
+    // Kolom date (tgl_*/tanggal): string + pola YYYY-MM-DD — batas panjang lama
+    // dipertahankan supaya pesan 422 untuk null/angka/teks kosong/teks kepanjangan
+    // TETAP identik dengan sebelumnya; hanya nilai berformat salah yang kini 422
+    // (dulu lolos validasi lalu dibuang PostgreSQL → 500).
+    return { tipe: 'date', minLen: 1, maxLen: DEFAULT_STR_MAX };
+  }
   if (INTEGER_NAME.test(col)) {
     // Kolom integer non-FK di DB bertipe int4 → batas int4 mencegah 'integer out of
     // range' (22003) yang dulu bocor jadi 500. id_* adalah bigint → cukup batas
@@ -179,7 +209,7 @@ async function loadColumnLengths() {
  * Objek spec TIDAK dimutasi (TABLE_SPECS dipakai bersama) — selalu salinan baru.
  */
 function capWithDb(spec, table, col) {
-  if (spec.tipe !== 'string' || columnLengths === null) return spec;
+  if ((spec.tipe !== 'string' && spec.tipe !== 'date') || columnLengths === null) return spec;
   const dbLen = columnLengths[`${table}.${col}`];
   const specMax = spec.maxLen ?? DEFAULT_STR_MAX;
   if (dbLen === undefined || dbLen >= specMax) return spec;
@@ -219,6 +249,19 @@ function schemaFor(specs, columns, mode) {
       case 'enum':
         s = z.enum(spec.enum);
         break;
+      case 'date': {
+        // Urutan pesan 422 dipertahankan PERSIS seperti tipe 'string' lama:
+        // panjang dicek lebih dulu, dan cek format hanya dijalankan bila panjang
+        // lolos — tanpa ini, teks 600 karakter menghasilkan DUA pesan (maksimal
+        // 500 karakter + format) padahal sebelumnya hanya SATU (regresi byte 422).
+        const minLen = spec.minLen ?? 1;
+        const maxLen = spec.maxLen ?? DEFAULT_STR_MAX;
+        const formatOk = (v) => typeof v !== 'string'
+          || v.length < minLen || v.length > maxLen   // gagal panjang → biar Zod yang bicara
+          || (DATE_RE.test(v) && isDateString(v));
+        s = z.string().min(minLen).max(maxLen).refine(formatOk);
+        break;
+      }
       case 'string':
       default:
         s = z.string().min(spec.minLen ?? 1).max(spec.maxLen ?? DEFAULT_STR_MAX);
@@ -263,6 +306,18 @@ function messageFor(issue, spec, field, value) {
       return `Kolom ${field} harus berupa angka.`;
     case 'enum':
       return `Kolom ${field} harus salah satu dari: ${spec.enum.join(', ')}.`;
+    case 'date': {
+      // urutan sama dengan tipe 'string' supaya pesan lama identik:
+      // teks kepanjangan / terlalu pendek → pesan panjang; selain itu format.
+      if (issue.code === 'too_big') return `Kolom ${field} maksimal ${spec.maxLen ?? DEFAULT_STR_MAX} karakter.`;
+      if (issue.code === 'too_small') {
+        return (spec.minLen ?? 1) > 1
+          ? `Kolom ${field} minimal ${spec.minLen} karakter.`
+          : `Kolom ${field} wajib diisi.`;
+      }
+      if (typeof value !== 'string') return `Kolom ${field} harus berupa teks.`; // dulu pesan tipe 'string'
+      return `Kolom ${field} harus berformat YYYY-MM-DD.`;
+    }
     default:
       return `Kolom ${field} tidak valid.`;
   }
@@ -325,5 +380,5 @@ function validateBody({ table, columns, mode }) {
 
 module.exports = {
   validateBody, invalidBody, inferSpec, specsFor, loadColumnLengths,
-  TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX,
+  TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX, DATE_RE, isDateString,
 };

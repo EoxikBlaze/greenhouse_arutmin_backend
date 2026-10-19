@@ -4,8 +4,55 @@ const express = require('express');
 const { q, one } = require('../db');
 const { demoGuard, demoExpiry, json } = require('../auth');
 const { idValid, notFound } = require('./_id');
+const { fkErrors, FK_TARGETS } = require('./_crud');
+const { isDateString } = require('./_validate');
 
 const router = express.Router();
+
+/* ── V5 — validasi input SEBELUM INSERT /mulai ─────────────────────────
+ * Dulu body /tanam/mulai langsung dibungkus ke query parameterisasi tanpa
+ * validasi apa pun, sehingga dua kelas input rusak membuat PostgreSQL
+ * melempar error → 500 generik:
+ *   (a) FK berbentuk benar tetapi tidak ada ({"id_meja":999999}) → SQLSTATE 23503;
+ *   (b) tanggal salah format ({"tgl_awal_semai":"bukan-tanggal"}) → SQLSTATE 22007
+ *       "invalid input syntax for type date";
+ *   (c) jumlah_benih bukan integer ({"jumlah_benih":"abc"}) → SQLSTATE 22002.
+ * Kini ketiganya dijawab 422 kontrak {message, errors:{field:[pesan]}} SEBELUM
+ * query — data tidak pernah tersentuh. Nilai null/tidak dikirim TIDAK dicek:
+ * perilaku lama (FK null → kolom null, tanggal null → coalesce(now()::date),
+ * jumlah_benih tidak ada → 0) dipertahankan persis.
+ */
+const MULAI_FKS = ['id_tanaman', 'id_siklus', 'id_meja'].filter((c) => c in FK_TARGETS);
+const MULAI_TGL = ['tgl_awal_semai'];
+const MULAI_INT = ['jumlah_benih'];
+
+/**
+ * Kumpulkan error 422 /mulai: FK (422 'tidak terdaftar'), tanggal (pola
+ * YYYY-MM-DD), integer (pesan seragam tipe _validate.js).
+ * @returns {Promise<Record<string, string[]>>}
+ */
+async function mulaiErrors(b) {
+  const errors = {};
+  Object.assign(errors, await fkErrors(MULAI_FKS, b));
+  for (const col of MULAI_TGL) {
+    const v = b[col];
+    if (v === undefined || v === null) continue;
+    if (!isDateString(v)) {
+      errors[col] = [typeof v === 'string'
+        ? `Kolom ${col} harus berformat YYYY-MM-DD.`
+        : `Kolom ${col} harus berupa teks.`];
+    }
+  }
+  for (const col of MULAI_INT) {
+    const v = b[col];
+    if (v === undefined || v === null) continue;
+    const num = typeof v === 'number' ? v : (/^-?\d+$/.test(String(v).trim()) ? Number(String(v).trim()) : NaN);
+    if (Number.isNaN(num) || !Number.isSafeInteger(num)) {
+      errors[col] = [`Kolom ${col} harus berupa bilangan bulat.`];
+    }
+  }
+  return errors;
+}
 
 // V2 — validasi path param :id (lihat _crud.js validId): non-angka ATAU melebihi
 // rentang bigint Postgres → 404 PERSIS sama dengan id yang tidak ada (anti-enumeration),
@@ -42,6 +89,9 @@ router.get('/', async (_req, res, next) => {
 router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
   try {
     const b = req.body || {};
+    // V5 — validasi FK/tanggal/integer SEBELUM INSERT (lihat mulaiErrors di atas).
+    const errors = await mulaiErrors(b);
+    if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
     const exp = demoExpiry(req.user);
     const row = await one(
       `INSERT INTO semais (id_tanaman, id_siklus, id_meja, jumlah_benih, tgl_awal_semai, status, keterangan, benih_berhasil, benih_gagal, expires_at, created_at, updated_at)

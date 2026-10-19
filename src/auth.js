@@ -61,20 +61,32 @@ function requireRole(allow) {
   };
 }
 
-/** Demo = admin read-only: hanya boleh aksi TERTENTU (lihat analisis §4). */
+/**
+ * Demo = admin read-only tulis: hanya boleh aksi TERTENTU (lihat analisis §4).
+ * Daftar ini berlaku untuk metode TULIS POST — lihat demoGuard().
+ */
 const DEMO_BOLEH_TAMBAH = new Set([
   'meja.store', 'tanaman.store', 'siklus.store', 'semai.store',
   'peremajaan.store', 'pendewasaan.store', 'panen.store',
   'tanam.mulai', 'tanam.selesai',
 ]);
 
+/**
+ * Demo HANYA boleh menambah (POST). Rute CRUD memasang guard ini lewat
+ * router.use('/x', demoGuard('x.store'), crudRouter(...)) sehingga routeName
+ * '*.store' IKUT menaungi PUT/PATCH/DELETE — dulu metode ubah/hapus untuk token
+ * demo diterima 200 (bug: PUT/PATCH/DELETE /meja demo). Kini metode tulis selain
+ * POST selalu 403 kontrak, apa pun routeName-nya; metode baca (GET/HEAD/OPTIONS)
+ * tetap lolos. Rute yang routeName-nya tidak ada di DEMO_BOLEH_TAMBAH tetap 403
+ * untuk POST seperti sebelumnya (pesan identik, tidak berubah).
+ */
 function demoGuard(routeName) {
   return (req, res, next) => {
     if (!req.user.demo) return next();
     const method = req.method.toUpperCase();
     const write = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
     if (!write) return next();
-    const ok = DEMO_BOLEH_TAMBAH.has(routeName);
+    const ok = method === 'POST' && DEMO_BOLEH_TAMBAH.has(routeName);
     if (!ok) {
       return json(res, 403, {
         message: 'Mode demo hanya boleh menambah data sementara (otomatis terhapus ± 1 jam).',

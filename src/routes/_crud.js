@@ -6,6 +6,8 @@
  *   GET /x/:id       → detail
  *   PUT|PATCH /x/:id → ubah (roleName.update)
  *   DELETE /x/:id    → hapus (roleName.destroy)
+ * Sebelum query tulis: validasi body Zod (422) → cek keberadaan FK (422 per-field,
+ * lihat fkErrors) → query. Relasi yang tak ada tidak pernah sampai ke PostgreSQL.
  */
 const express = require('express');
 const { q, one } = require('../db');
@@ -13,8 +15,69 @@ const { demoExpiry } = require('../auth');
 const { idValid, notFound } = require('./_id');
 const { validateBody } = require('./_validate');
 
+/**
+ * Peta kolom FK → tabel rujukannya (kunci: nama kolom; dipakai bersama oleh
+ * crudRouter dan routes/tanam.js). Sumber: constraint FK live di PostgreSQL
+ * (information_schema.table_constraints) untuk SEMUA tabel yang ditulis lewat
+ * rute tulis: tanamen.id_meja → mejas, sikluses.id_tanaman → tanamen,
+ * semais.{id_tanaman,id_siklus,id_meja}, peremajaans.{id_semai,id_meja},
+ * pendewasaans.{id_peremajaan,id_meja}, panens.id_pendewasaan → pendewasaans.
+ * Nama kolom lain (id_panen dsb.) sengaja TIDAK dimasukkan tanpa bukti constraint.
+ */
+const FK_TARGETS = {
+  id_meja: { table: 'mejas', pk: 'id_meja' },
+  id_tanaman: { table: 'tanamen', pk: 'id_tanaman' },
+  id_siklus: { table: 'sikluses', pk: 'id_siklus' },
+  id_semai: { table: 'semais', pk: 'id_semai' },
+  id_peremajaan: { table: 'peremajaans', pk: 'id_peremajaan' },
+  id_pendewasaan: { table: 'pendewasaans', pk: 'id_pendewasaan' },
+};
+
+/**
+ * V5 — cek keberadaan relasi (FK) SEBELUM query tulis.
+ * Dulu nilai FK berbentuk benar tetapi TIDAK ADA di tabel induk lolos validasi
+ * (angka bulat) lalu dibuang PostgreSQL dengan FK violation 23503 → 500 generik
+ * (mis. POST /tanaman {"id_meja":999999}). Kini tiap kolom FK yang dikirim dicek
+ * dulu lewat SELECT ringan dan dijawab 422 kontrak per-field:
+ *     422 {"message":"Data tidak valid.","errors":{"id_meja":["id_meja tidak terdaftar."]}}
+ * (format identik dengan cek FK di routes/konfigurasi.js).
+ * @param {string[]} cols kolom FK pada body (intersect dengan FK_TARGETS)
+ * @param {object} body  body hasil validasi Zod
+ * @returns {Promise<Record<string, string[]>>} errors per-field (kosong = lolos)
+ */
+async function fkErrors(cols, body) {
+  const errors = {};
+  for (const col of cols) {
+    const ref = FK_TARGETS[col];
+    if (!ref) continue;
+    const raw = body[col];
+    if (raw === null || raw === undefined) continue; // kolom nullable → biarkan DB
+    const num = typeof raw === 'number' ? raw : (/^-?\d+$/.test(String(raw).trim()) ? Number(String(raw).trim()) : NaN);
+    if (Number.isNaN(num)) {
+      errors[col] = [`Kolom ${col} harus berupa bilangan bulat.`];
+      continue;
+    }
+    if (!Number.isSafeInteger(num)) {
+      // di luar rentang bigint → mustahil ada (dulu SQLSTATE 22003 → 500)
+      errors[col] = [`${col} tidak terdaftar.`];
+      continue;
+    }
+    const ada = await one(`SELECT 1 AS ada FROM ${ref.table} WHERE ${ref.pk} = $1`, [num]);
+    if (!ada) errors[col] = [`${col} tidak terdaftar.`];
+  }
+  return errors;
+}
+
+/** Balasan 422 seragam untuk hasil cek FK. */
+const fkReject = (res, errors) => res.status(422).json({ message: 'Data tidak valid.', errors });
+
 function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins }) {
   const router = express.Router();
+  // V5 — kolom tulis yang merupakan FK (otomatis dari whitelist `columns` ∩ FK_TARGETS):
+  // tanaman.id_meja · siklus.id_tanaman · semai.{id_tanaman,id_siklus,id_meja} ·
+  // peremajaan.{id_semai,id_meja} · pendewasaan.{id_peremajaan,id_meja} ·
+  // panen.id_pendewasaan. /meja & /ambang tanpa FK → jalur tulis TIDAK berubah sama sekali.
+  const fkCols = columns.filter((c) => c in FK_TARGETS);
   // P1 — daftar SELALU menyertakan primary key (PK tidak seragam antar tabel:
   // users.id, mejas.id_meja, tanamen.id_tanaman, ... ) supaya frontend punya id
   // untuk memanggil PUT/DELETE /:id. PK tidak ikut whitelist kolom tulis.
@@ -92,6 +155,14 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
     try {
       const fields = columns.filter((c) => c in req.body);
       if (fields.length === 0) return res.status(422).json({ message: 'Tidak ada data yang dikirim.', errors: {} });
+      // V5 — FK dicek SEBELUM INSERT: relasi tak ada → 422 per-field (dulu 23503 → 500).
+      if (fkCols.length) {
+        const fks = fkCols.filter((c) => fields.includes(c));
+        if (fks.length) {
+          const errors = await fkErrors(fks, req.body);
+          if (Object.keys(errors).length) return fkReject(res, errors);
+        }
+      }
       const exp = demoExpiry(req.user);
       const allFields = exp ? [...fields, 'expires_at'] : fields;
       const values = fields.map((c) => req.body[c]);
@@ -109,6 +180,19 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
     try {
       const fields = columns.filter((c) => c in req.body);
       if (fields.length === 0) return res.status(422).json({ message: 'Tidak ada data yang dikirim.', errors: {} });
+      // V5 — urutan UPDATE dipertahankan persis seperti dulu: baris LAMA dibaca dulu
+      // (id tak ada → 404 IDENTIK, tanpa menyentuh FK), BARU relasi dicek (422, dulu
+      // 23503 → 500), baru UPDATE. Tanpa pembacaan awal ini, id tak-ada + FK tak-ada
+      // akan berubah 404 → 422 (regresi kontrak 404 lama).
+      if (fkCols.length) {
+        const fks = fkCols.filter((c) => fields.includes(c));
+        if (fks.length) {
+          const lama = await one(`SELECT 1 AS ada FROM ${table} WHERE ${pk} = $1`, [req.params.id]);
+          if (!lama) return notFound(res);
+          const errors = await fkErrors(fks, req.body);
+          if (Object.keys(errors).length) return fkReject(res, errors);
+        }
+      }
       const sets = fields.map((c, i) => `${c} = $${i + 1}`);
       const values = fields.map((c) => req.body[c]);
       values.push(req.params.id);
@@ -148,4 +232,4 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
   return router;
 }
 
-module.exports = { crudRouter };
+module.exports = { crudRouter, fkErrors, FK_TARGETS };
