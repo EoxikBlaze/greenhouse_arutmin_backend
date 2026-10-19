@@ -13,15 +13,23 @@ const { demoExpiry } = require('../auth');
 const { idValid, notFound } = require('./_id');
 const { validateBody } = require('./_validate');
 
-function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
+function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins }) {
   const router = express.Router();
   // P1 — daftar SELALU menyertakan primary key (PK tidak seragam antar tabel:
   // users.id, mejas.id_meja, tanamen.id_tanaman, ... ) supaya frontend punya id
   // untuk memanggil PUT/DELETE /:id. PK tidak ikut whitelist kolom tulis.
   const listColumns = columns.includes(pk) ? columns : [pk, ...columns];
-  const cols = listColumns.join(', ');
+  // P5 — readColumns: kolom BACA-SAJA yang ikut SELECT/daftar tetapi TIDAK boleh
+  // ditulis (stempel waktu created_at/updated_at/expires_at di mejas). Tanpa opsi
+  // ini GET /meja hanya mengembalikan kolom whitelist — kolom waktu tak pernah
+  // sampai ke klien; dengan opsi ini pun POST/PUT tetap membuangnya (lihat
+  // warnUnknown) sehingga audit trail tidak bisa dipalsukan klien.
+  const readCols = (Array.isArray(readColumns) ? readColumns : [])
+    .filter((c) => c !== pk && !listColumns.includes(c));
+  const allColumns = [...listColumns, ...readCols];
+  const cols = allColumns.join(', ');
   const select = withJoins
-    ? `SELECT ${listColumns.map((c) => `${table}.${c}`).join(', ')}${withJoins ? ', ' + withJoins : ''} FROM ${table}`
+    ? `SELECT ${allColumns.map((c) => `${table}.${c}`).join(', ')}${withJoins ? ', ' + withJoins : ''} FROM ${table}`
     : `SELECT ${cols} FROM ${table}`;
 
   // V1 — validasi path param :id. Semua PK yang dipakai crudRouter adalah bigint

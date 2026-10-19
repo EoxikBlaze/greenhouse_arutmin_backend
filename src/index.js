@@ -98,6 +98,7 @@ const laporan = require('./routes/laporan');
 const profil = require('./routes/profil');
 const user = require('./routes/user');
 const notifWa = require('./routes/notifWa');
+const konfigurasi = require('./routes/konfigurasi');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
 app.use('/api', monitoring.api);                       // ESP32 (guard X-API-KEY per route)
@@ -117,6 +118,9 @@ app.use('/user', ...adminDemo, user);
 // wrapper di sini agar rute tak dikenal tetap 404 JSON (bukan 401).
 app.use('/', master);                                  // /meja, /tanaman, /siklus, /ambang
 app.use('/', tahap);                                   // /semai, /peremajaan, /pendewasaan, /panen
+// Guard tiap sub-rute ada di dalam modul (sama seperti master) — rute tak dikenal
+// tetap 404 JSON.
+app.use('/', konfigurasi);                             // /konfigurasi-dosis, /timing-operasi, /aturan-fail-safe, /jadwal-perawatan, /kalibrasi-sensor, /mapping-channel, /target-nutrisi, /penampung-states (skema V2)
 
 /* ── 404 & error handler — JSON generik, TANPA stack trace ─────────── */
 app.use((req, res) => {

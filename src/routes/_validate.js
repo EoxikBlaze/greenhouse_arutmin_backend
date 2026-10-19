@@ -48,8 +48,11 @@ const MSG_BODY = 'Body harus berupa objek JSON.';
  *   tipe           : 'string' | 'integer' | 'number' | 'enum'
  *   requiredCreate : wajib saat CREATE (POST); UPDATE selalu opsional
  *   minLen/maxLen  : batas panjang teks (default string: 1..500)
- *   min/max        : batas angka (integer = bilangan bulat, number = desimal)
- *   enum           : daftar nilai yang diizinkan
+ *   min/max        : batas angka (integer = bilangan bulat, number = desimal);
+ *                    minInclusive/maxInclusive = false → batas TERBUKA (Zod gt/lt)
+ *                    dipakai untuk kolom dengan CHECK `> 0` agar nilainya tidak
+ *                    lolos validasi lalu ditolak PostgreSQL (500)
+ *   enum           : daftar nilai yang diizinkan (harus SENADA dengan CHECK DB)
  * Batas di bawah ini adalah batas SPESIFIKASI (docs/DB_SCHEMA.md hanya menyebut tipe
  * varchar tanpa panjang — dokumen itu TIDAK memuat varchar(200)). Batas efektif saat
  * runtime = MIN(maxLen di sini, panjang kolom aktual dari information_schema):
@@ -60,12 +63,55 @@ const TABLE_SPECS = {
   mejas: {
     meja: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 200 },
     jumlah_lubang: { tipe: 'integer', requiredCreate: true, min: 1, max: 1000000 },
+    // — kolom fisik talang/penampung (migrasi skema V2 2026-10-19, lihat
+    //   docs/ANALISIS_DB_PERANCANGAN.md §e) — SEMUANYA wajib spec eksplisit:
+    //   inferSpec hanya mengenali pola jumlah_*/waktu_* sebagai integer, sehingga
+    //   tanpa spec ini kapasitas/panjang/laju/kenaikan dianggap STRING (angka 70
+    //   ditolak 422 yang salah) dan jenis_talang bebas → lolos Zod lalu kena
+    //   CHECK DB (500, bukan 422 terstruktur).
+    jenis_talang: { tipe: 'enum', enum: ['NFT', 'DFT'] },            // CHECK live: IN ('NFT','DFT')
+    kapasitas_penampung_l: { tipe: 'number', min: 0, minInclusive: false, max: 999999.99 }, // CHECK > 0 · numeric(6,2)
+    jumlah_talang: { tipe: 'integer', min: 0 },
+    lubang_per_talang: { tipe: 'integer', min: 0 },
+    panjang_talang_m: { tipe: 'number', min: 0, max: 99.99 },        // numeric(4,2)
+    laju_per_talang_lpm: { tipe: 'number', min: 0, max: 999.99 },    // numeric(5,2)
+    kenaikan_air_cm: { tipe: 'integer', min: 0 },                    // DEFAULT 40 di DB (dipasang lewat DEFAULT, bukan Zod)
   },
   sensor_thresholds: {
     // Daftar nilai tertutup sesuai docs/DB_SCHEMA.md (feed ESP32).
     sensor: { tipe: 'enum', enum: ['waterTemp', 'ph', 'tds', 'airTemp', 'humidity'] },
     min: { tipe: 'number' },
     max: { tipe: 'number' },
+  },
+  // ── Tabel konfigurasi V2 (migrasi 2026-10-19) — dipakai PUT /konfigurasi-dosis,
+  //    PUT /timing-operasi, PUT /target-nutrisi (routes/konfigurasi.js). PK (param/id)
+  //    tidak pernah ditulis sehingga tidak butuh spec. requiredCreate mencerminkan
+  //    kolom NOT NULL tanpa DEFAULT bila kelak ada POST; hari ini hanya mode 'update'.
+  konfigurasi_dosis: {
+    nilai: { tipe: 'number', requiredCreate: true },                 // numeric(12,4) NOT NULL
+    satuan: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 24 },
+    keterangan: { tipe: 'string', minLen: 1, maxLen: 500 },          // kolom text (dibatasi DEFAULT_STR_MAX)
+    sumber: { tipe: 'string', minLen: 1, maxLen: 120 },
+  },
+  timing_operasi: {
+    nilai: { tipe: 'number' },                                       // numeric(10,3) NULL
+    satuan: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 24 },
+    keterangan: { tipe: 'string', minLen: 1, maxLen: 500 },
+    sumber: { tipe: 'string', minLen: 1, maxLen: 120 },
+  },
+  target_nutrisi: {
+    id_tanaman: { tipe: 'integer', min: 1 },                         // FK → tanamen (dicek di handler, 422)
+    tahap: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 32 },
+    umur_min_hari: { tipe: 'integer', min: 0 },
+    umur_max_hari: { tipe: 'integer', min: 0 },
+    ec_min_ppm: { tipe: 'number', min: 0, max: 99999999.99 },        // numeric(8,2)
+    ec_max_ppm: { tipe: 'number', min: 0, max: 99999999.99 },
+    ph_min: { tipe: 'number', min: 0, max: 999.99 },                 // numeric(4,2)
+    ph_max: { tipe: 'number', min: 0, max: 999.99 },
+    // CHECK live: IN ('menunggu_konfirmasi','aktif','kadaluarsa')
+    status: { tipe: 'enum', enum: ['menunggu_konfirmasi', 'aktif', 'kadaluarsa'] },
+    keterangan: { tipe: 'string', minLen: 1, maxLen: 500 },
+    sumber: { tipe: 'string', minLen: 1, maxLen: 120 },
   },
 };
 
@@ -163,8 +209,11 @@ function schemaFor(specs, columns, mode) {
       }
       case 'number': {
         s = z.number();
-        if (spec.min !== undefined) s = s.min(spec.min);
-        if (spec.max !== undefined) s = s.max(spec.max);
+        // minInclusive/maxInclusive = false → batas terbuka (gt/lt): dipakai kolom
+        // dengan CHECK `> 0` (mis. mejas.kapasitas_penampung_l) supaya 0/-5 ditolak
+        // 422 DI APLIKASI, bukan jatuh ke error CHECK PostgreSQL (500).
+        if (spec.min !== undefined) s = spec.minInclusive === false ? s.gt(spec.min) : s.min(spec.min);
+        if (spec.max !== undefined) s = spec.maxInclusive === false ? s.lt(spec.max) : s.max(spec.max);
         break;
       }
       case 'enum':
@@ -202,6 +251,12 @@ function messageFor(issue, spec, field, value) {
       }
       return `Kolom ${field} harus berupa bilangan bulat.`;
     case 'number':
+      if (issue.code === 'too_small' && spec.minInclusive === false) {
+        return `Kolom ${field} harus lebih besar dari ${spec.min}.`;
+      }
+      if (issue.code === 'too_big' && spec.maxInclusive === false) {
+        return `Kolom ${field} harus lebih kecil dari ${spec.max}.`;
+      }
       if (issue.code === 'too_small' || issue.code === 'too_big') {
         return `Kolom ${field} harus antara ${spec.min ?? '-∞'} dan ${spec.max ?? '∞'}.`;
       }

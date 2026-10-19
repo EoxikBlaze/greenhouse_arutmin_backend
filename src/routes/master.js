@@ -10,7 +10,24 @@ const guard = [requireAuth, requireRole(['admin', 'demo'])];
 
 router.use('/meja', ...guard,
   demoGuard('meja.store'),
-  crudRouter({ table: 'mejas', pk: 'id_meja', columns: ['meja', 'jumlah_lubang'], name: 'meja', orderBy: 'id_meja' }));
+  crudRouter({
+    table: 'mejas', pk: 'id_meja',
+    // Whitelist kolom TULIS — daftar lengkap kolom mejas selain PK & stempel waktu.
+    // 7 kolom fisik talang/penampung (migrasi skema V2, ANALISIS_DB_PERANCANGAN §e)
+    // WAJIB ada di sini: kolom di luar whitelist tidak ikut SELECT (crudRouter) sehingga
+    // dulu tidak muncul di GET/POST/PUT /meja; spec tipe ada di _validate.js TABLE_SPECS
+    // (jenis_talang enum NFT|DFT sesuai CHECK, kapasitas/laju/panjang numerik,
+    // kenaikan_air_cm integer DEFAULT 40).
+    columns: [
+      'meja', 'jumlah_lubang',
+      'jenis_talang', 'kapasitas_penampung_l', 'jumlah_talang', 'lubang_per_talang',
+      'panjang_talang_m', 'laju_per_talang_lpm', 'kenaikan_air_cm',
+    ],
+    // Kolom baca-saja: ikut GET (baris berjumlah 13 kolom = 1 PK + 9 tulis + 3 waktu)
+    // tetapi tetap ditolak/divalidasi sebagai kolom di luar whitelist saat POST/PUT.
+    readColumns: ['created_at', 'updated_at', 'expires_at'],
+    name: 'meja', orderBy: 'id_meja',
+  }));
 
 router.use('/tanaman', ...guard,
   demoGuard('tanaman.store'),
