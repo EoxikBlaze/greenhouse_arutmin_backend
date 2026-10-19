@@ -4,6 +4,7 @@ const express = require('express');
 const { q, one } = require('../db');
 const { demoGuard, requireAuth, requireRole } = require('../auth');
 const { crudRouter } = require('./_crud');
+const { idValid, notFound } = require('./_id');
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(['admin', 'demo'])];
@@ -12,9 +13,7 @@ const guard = [requireAuth, requireRole(['admin', 'demo'])];
 // rentang bigint Postgres → 404 PERSIS sama dengan id yang tidak ada (anti-enumeration),
 // dicek di depan query (dulu 'abc'/id raksasa → 500). Body 404 diseragamkan dengan
 // kontrak baru {message, errors:{}} (sebelumnya batch/:id membalas tanpa errors:{}).
-const BIGINT_MAX = 9223372036854775807n;
-const idValid = (req) => /^[0-9]+$/.test(req.params.id) && BigInt(req.params.id) <= BIGINT_MAX;
-const notFound = (res) => res.status(404).json({ message: 'Data tidak ditemukan.', errors: {} });
+// Definisi bersama (BIGINT_MAX / idValid / notFound) kini ada di ./_id.
 
 /* ── SEMAI (ada endpoint khusus — letakkan SEBELUM crud) ───────────── */
 router.get('/semai/selesai', ...guard, async (_req, res, next) => {

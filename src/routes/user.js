@@ -4,6 +4,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { q, one } = require('../db');
 const { publicUser, json } = require('../auth');
+const { idValid, notFound } = require('./_id');
 
 const router = express.Router();
 
@@ -15,9 +16,7 @@ const LEVELS = ['admin', 'user', 'petani'];
 // melempar SQLSTATE 22003 → 500; rentang dicek di sini dengan BigInt (predikat di
 // depan query — alasan lengkap ada di _crud.js validId). Dipakai DI DALAM handler
 // (setelah cek demo) supaya urutan jawaban 403 demo tidak berubah.
-const BIGINT_MAX = 9223372036854775807n;
-const idValid = (req) => /^[0-9]+$/.test(req.params.id) && BigInt(req.params.id) <= BIGINT_MAX;
-const notFound = (res) => json(res, 404, { message: 'Data tidak ditemukan.', errors: {} });
+// Definisi bersama (BIGINT_MAX / idValid / notFound) kini ada di ./_id.
 
 router.get('/', async (_req, res, next) => {
   try {

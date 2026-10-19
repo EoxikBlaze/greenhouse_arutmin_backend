@@ -3,15 +3,14 @@
 const express = require('express');
 const { q, one } = require('../db');
 const { demoGuard, demoExpiry, json } = require('../auth');
+const { idValid, notFound } = require('./_id');
 
 const router = express.Router();
 
 // V2 — validasi path param :id (lihat _crud.js validId): non-angka ATAU melebihi
 // rentang bigint Postgres → 404 PERSIS sama dengan id yang tidak ada (anti-enumeration),
 // dicek di depan query supaya tidak pernah menyentuh DB (dulu → 500 SQLSTATE 22003).
-const BIGINT_MAX = 9223372036854775807n;
-const idValid = (req) => /^[0-9]+$/.test(req.params.id) && BigInt(req.params.id) <= BIGINT_MAX;
-const notFound = (res) => json(res, 404, { message: 'Data tidak ditemukan.', errors: {} });
+// Definisi bersama (BIGINT_MAX / idValid / notFound) kini ada di ./_id.
 
 router.get('/', async (_req, res, next) => {
   try {

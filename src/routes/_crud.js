@@ -10,6 +10,7 @@
 const express = require('express');
 const { q, one } = require('../db');
 const { demoExpiry } = require('../auth');
+const { idValid, notFound } = require('./_id');
 
 function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
   const router = express.Router();
@@ -34,13 +35,9 @@ function crudRouter({ table, pk, columns, name, orderBy, withJoins }) {
   // dan gampang terlewat di endpoint baru. Pola /^[0-9]+$/ dipertahankan (bukan
   // {1,19}) supaya id valid ber-nol-depan tetap diterima seperti sebelumnya.
   // Id tidak valid dijawab 404 PERSIS sama dengan id yang tidak ada
-  // (anti-enumeration + konsisten dengan kontrak API).
-  const notFound = (res) => res.status(404).json({ message: 'Data tidak ditemukan.', errors: {} });
-  const BIGINT_MAX = 9223372036854775807n;
-  const validId = (req, res, next) => {
-    const id = req.params.id;
-    return /^[0-9]+$/.test(id) && BigInt(id) <= BIGINT_MAX ? next() : notFound(res);
-  };
+  // (anti-enumeration + konsisten dengan kontrak API). Konstanta + helper kini
+  // dipakai bersama lewat ./_id (satu sumber kebenaran, hilangkan duplikasi).
+  const validId = (req, res, next) => (idValid(req) ? next() : notFound(res));
 
   // P3 — kolom di luar whitelist memang TIDAK disimpan (perilaku tidak diubah),
   // tetapi dicatat ke log supaya salah nama kolom dari frontend tidak hilang diam-diam.
