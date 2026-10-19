@@ -13,7 +13,7 @@ const path = require('path');
 const config = require('./config');
 const { demoPurge, requireAuth, requireRole } = require('./auth');
 const { rateLimit } = require('./rateLimit');
-const { invalidBody } = require('./routes/_validate');
+const { invalidBody, loadColumnLengths } = require('./routes/_validate');
 
 const app = express();
 app.disable('x-powered-by');
@@ -119,8 +119,15 @@ app.use((err, _req, res, _next) => {
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Format JSON tidak valid.' });
   }
-  console.error('[500]', err.stack || err);
-  res.status(err.status || 500).json({ message: 'Terjadi kesalahan pada server.' });
+  const status = err.status || 500;
+  // Label '[500]' HANYA untuk kegagalan server sungguhan (tanpa status atau ≥500),
+  // supaya grep '[500]' di log selalu berarti 500 sejati. Error HTTP non-500 yang
+  // melewati handler ini (mis. 413 PayloadTooLargeError dari express.json limit)
+  // dicatat dengan label statusnya sendiri — dulu ikut tercatat sebagai '[500]'
+  // sehingga tidak bisa dipercaya. Respon ke client TIDAK berubah.
+  if (status >= 500) console.error('[500]', err.stack || err);
+  else console.error(`[HTTP ${status}]`, err.stack || err);
+  res.status(status).json({ message: 'Terjadi kesalahan pada server.' });
 });
 
 /* ── server (HTTP + HTTPS opsional) ────────────────────────────────── */
@@ -131,25 +138,43 @@ httpServer.keepAliveTimeout = 65_000;
 httpServer.headersTimeout = 70_000;
 httpServer.requestTimeout = 30_000;
 httpServer.maxRequestsPerSocket = 0;
-httpServer.listen(config.port, config.host, () => {
-  // hanya satu baris konfirmasi — tanpa data sensitif
-  console.log(`GARAP API (HTTP)  : http://${config.host}:${config.port}`);
-});
 
-if (config.https) {
-  const https = require('https');
-  const certDir = path.join(__dirname, '..', 'certs');
-  const keyPath = path.join(certDir, 'selfsigned.key');
-  const certPath = path.join(certDir, 'selfsigned.crt');
-  if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-    console.log('HTTPS diminta tapi cert belum ada — generate dengan:');
-    console.log(`  mkdir -p ${certDir} && openssl req -x509 -newkey rsa:2048 -nodes -keyout ${keyPath} -out ${certPath} -days 365 -subj "/CN=localhost"`);
-  } else {
-    https.createServer({
-      key: fs.readFileSync(keyPath),
-      cert: fs.readFileSync(certPath),
-    }, app).listen(config.port + 443, config.host, () => {
-      console.log(`GARAP API (HTTPS) : https://${config.host}:${config.port + 443}`);
-    });
+/**
+ * Start listener SETELAH peta panjang kolom dari information_schema terbaca (atau
+ * fallback aktif) — menjamin request PERTAMA sudah divalidasi dengan batas panjang
+ * yang sinkron dengan DB live (lihat routes/_validate.loadColumnLengths). Query ini
+ * hanya SELECT dan tidak pernah menolak startup (gagal → fallback).
+ */
+function startServers() {
+  httpServer.listen(config.port, config.host, () => {
+    // hanya satu baris konfirmasi — tanpa data sensitif
+    console.log(`GARAP API (HTTP)  : http://${config.host}:${config.port}`);
+  });
+
+  if (config.https) {
+    const https = require('https');
+    const certDir = path.join(__dirname, '..', 'certs');
+    const keyPath = path.join(certDir, 'selfsigned.key');
+    const certPath = path.join(certDir, 'selfsigned.crt');
+    if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+      console.log('HTTPS diminta tapi cert belum ada — generate dengan:');
+      console.log(`  mkdir -p ${certDir} && openssl req -x509 -newkey rsa:2048 -nodes -keyout ${keyPath} -out ${certPath} -days 365 -subj "/CN=localhost"`);
+    } else {
+      https.createServer({
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      }, app).listen(config.port + 443, config.host, () => {
+        console.log(`GARAP API (HTTPS) : https://${config.host}:${config.port + 443}`);
+      });
+    }
   }
 }
+
+loadColumnLengths()
+  .then((map) => {
+    console.log(map
+      ? `Batas panjang teks  : ${Object.keys(map).length} kolom varchar dari information_schema`
+      : 'Batas panjang teks  : information_schema gagal dibaca — memakai fallback batas spec');
+  })
+  .catch(() => { /* loadColumnLengths sudah menangkap errornya sendiri */ })
+  .finally(startServers);

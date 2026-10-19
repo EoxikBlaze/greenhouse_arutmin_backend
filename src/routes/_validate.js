@@ -21,16 +21,24 @@
  *  - Tabel tanpa spec eksplisit memakai inferensi longgar (string 1..500 / integer
  *    int4 / id_ → bigint) supaya SEMUA tabel ikut terlindungi tanpa menebak-nebak
  *    nilai yang boleh (tidak ada asumsi enum yang tidak terdokumentasi).
+ *  - Panjang teks EFEKTIF = MIN(batas spec/inferensi, panjang kolom aktual dari
+ *    information_schema) — dibaca sekali saat startup lewat loadColumnLengths().
+ *    Kolom live mis. mejas.meja varchar(50), tanamen.nama_tanaman varchar(50),
+ *    sikluses.nama_siklus varchar(100), semais.status varchar(255); tanpa pembatasan
+ *    ini teks 60/150/300 karakter lolos validasi lalu dibuang PostgreSQL dengan
+ *    'value too long for type character varying' → 500. Bila query gagal / peta belum
+ *    ada, fallback ke batas spec (perilaku lama) — server tetap jalan.
  *
  * Pilihan Zod (bukan ajv/Joi) mengacu RISET_PENGEMBANGAN_GARAP.md: nol dependensi
  * inti, ringan, dan skema bisa dipakai ulang untuk dokumentasi OpenAPI.
  */
 const { z } = require('zod');
+const { q } = require('../db'); // hanya SELECT information_schema — lihat loadColumnLengths()
 
 /** Batas integer (int4) Postgres — kolom integer mentah. */
 const INT4_MIN = -2147483648;
 const INT4_MAX = 2147483647;
-/** Panjang teks default untuk kolom varchar tanpa spec eksplisit. */
+/** Batas teks default untuk kolom varchar tanpa spec eksplisit (dibatasi lagi oleh panjang kolom DB). */
 const DEFAULT_STR_MAX = 500;
 /** Pesan seragam untuk body yang bukan objek JSON (null/array/angka/teks). */
 const MSG_BODY = 'Body harus berupa objek JSON.';
@@ -42,8 +50,11 @@ const MSG_BODY = 'Body harus berupa objek JSON.';
  *   minLen/maxLen  : batas panjang teks (default string: 1..500)
  *   min/max        : batas angka (integer = bilangan bulat, number = desimal)
  *   enum           : daftar nilai yang diizinkan
- * Batas mengikuti docs/DB_SCHEMA.md — mejas.meja varchar(200), mejas.jumlah_lubang
- * integer dengan rentang 1..1000000 (sesuai mandat perbaikan).
+ * Batas di bawah ini adalah batas SPESIFIKASI (docs/DB_SCHEMA.md hanya menyebut tipe
+ * varchar tanpa panjang — dokumen itu TIDAK memuat varchar(200)). Batas efektif saat
+ * runtime = MIN(maxLen di sini, panjang kolom aktual dari information_schema):
+ * mejas.meja varchar(50) di DB live → efektif maksimal 50 karakter.
+ * mejas.jumlah_lubang integer dengan rentang 1..1000000 (sesuai mandat perbaikan).
  */
 const TABLE_SPECS = {
   mejas: {
@@ -83,11 +94,57 @@ function inferSpec(col) {
   return { tipe: 'string', minLen: 1, maxLen: DEFAULT_STR_MAX };
 }
 
+/* ── Panjang kolom aktual dari information_schema ───────────────────────
+ * Peta 'table.column' → character_maximum_length, dibaca SEKALI saat startup
+ * (SELECT read-only; tidak ada DDL/DML). Supaya validasi tetap sinkron dengan DB
+ * live, maxLen teks efektif = MIN(batas spec/inferensi, batas DB). Tanpa ini,
+ * spec eksplisit meja 1..200 maupun inferensi 500 tetap lebih longgar daripada
+ * varchar(50)/varchar(100)/varchar(255) di DB → teks panjang lolos Zod lalu jatuh
+ * ke error PostgreSQL 'value too long for type character varying' (500).
+ * null = peta belum/gagal dimuat → memakai batas spec (fallback perilaku lama). */
+let columnLengths = null;
+/** Versi peta — dinaikkan tiap peta dimuat supaya cache skema lama otomatis kadaluarsa. */
+let lengthGen = 0;
+
+/**
+ * Baca panjang semua kolom bertipe varchar sekali saat startup.
+ * Gagal (DB mati dsb.) → kembalikan null, catat ke log, dan biarkan batas fallback
+ * berlaku — startup tidak pernah digagalkan oleh query ini.
+ * @returns {Promise<Record<string, number>|null>}
+ */
+async function loadColumnLengths() {
+  try {
+    const rows = await q(`SELECT table_name, column_name, character_maximum_length
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND character_maximum_length IS NOT NULL`);
+    const map = {};
+    for (const r of rows) map[`${r.table_name}.${r.column_name}`] = Number(r.character_maximum_length);
+    columnLengths = map;
+    lengthGen += 1;
+    return map;
+  } catch (e) {
+    console.warn(`[validate] information_schema tidak terbaca — batas panjang memakai fallback spec (${e.message})`);
+    return null;
+  }
+}
+
+/**
+ * Batasi maxLen teks sebuah string-spec dengan panjang kolom DB = MIN(spec, DB).
+ * Objek spec TIDAK dimutasi (TABLE_SPECS dipakai bersama) — selalu salinan baru.
+ */
+function capWithDb(spec, table, col) {
+  if (spec.tipe !== 'string' || columnLengths === null) return spec;
+  const dbLen = columnLengths[`${table}.${col}`];
+  const specMax = spec.maxLen ?? DEFAULT_STR_MAX;
+  if (dbLen === undefined || dbLen >= specMax) return spec;
+  return { ...spec, maxLen: dbLen };
+}
+
 /** Gabungkan spec eksplisit tabel dengan inferensi untuk kolom yang belum tercantum. */
 function specsFor(table, columns) {
   const explicit = TABLE_SPECS[table] || {};
   const specs = {};
-  for (const col of columns) specs[col] = explicit[col] || inferSpec(col);
+  for (const col of columns) specs[col] = capWithDb(explicit[col] || inferSpec(col), table, col);
   return specs;
 }
 
@@ -191,9 +248,17 @@ const invalidBody = (res) => res.status(422).json({ message: 'Data tidak valid.'
  * @returns {(req: import('express').Request, res: import('express').Response, next: Function) => void}
  */
 function validateBody({ table, columns, mode }) {
-  const specs = specsFor(table, columns);
-  const schema = schemaFor(specs, columns, mode);
+  // Skema dibangun LAZY pada request pertama (bukan saat modul dimuat) karena peta
+  // information_schema baru tersedia setelah startup async; hasilnya di-cache per
+  // (tabel, mode) dan dibangun ulang otomatis bila peta dimuat ulang (lengthGen naik).
+  // Tanpa cache ini Zod akan menyusun skema di setiap request.
+  let built;
   return function validate(req, res, next) {
+    if (!built || built.gen !== lengthGen) {
+      const specs = specsFor(table, columns);
+      built = { gen: lengthGen, specs, schema: schemaFor(specs, columns, mode) };
+    }
+    const { specs, schema } = built;
     // body bisa undefined (tanpa content-type) → perlakukan sebagai objek kosong;
     // null/array/teks/angka tetap ditolak lewat issue path kosong ('body').
     const body = req.body === undefined ? {} : req.body;
@@ -203,4 +268,7 @@ function validateBody({ table, columns, mode }) {
   };
 }
 
-module.exports = { validateBody, invalidBody, inferSpec, specsFor, TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX };
+module.exports = {
+  validateBody, invalidBody, inferSpec, specsFor, loadColumnLengths,
+  TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX,
+};
