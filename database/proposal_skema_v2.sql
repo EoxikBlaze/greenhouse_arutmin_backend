@@ -109,7 +109,7 @@ BEGIN
           AND (to_date(substring(c.relname from '([0-9]{4}_[0-9]{2})$'), 'YYYY_MM')
                + interval '1 month')::date <= now()::date - lama_hari
     LOOP
-        EXECUTE format('DETACH PARTITION public.%I', r.relname);
+        EXECUTE format('ALTER TABLE public.sensor_readings DETACH PARTITION public.%I', r.relname);
         EXECUTE format('DROP TABLE public.%I', r.relname);
         n := n + 1;
     END LOOP;
@@ -713,6 +713,8 @@ AS $$
       AND mulai_pada <= CURRENT_TIMESTAMP
       AND (berakhir_pada IS NULL OR berakhir_pada > CURRENT_TIMESTAMP);
 $$;
+COMMENT ON FUNCTION fn_override_aktif(bigint, varchar) IS
+    'Ambil nilai override AKTIF untuk (id_meja, field) — dipakai view v_bacaan_efektif';
 
 COMMIT;
 
