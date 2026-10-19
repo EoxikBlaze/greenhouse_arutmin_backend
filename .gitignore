@@ -2,3 +2,8 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# Sampah instalasi skills (npx skills add)
+.agents/
+.claude/
+skills-lock.json
