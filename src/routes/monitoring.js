@@ -3,7 +3,7 @@
  * Monitoring + endpoint ESP32.
  *   GET  /monitoring, /monitoring/chart-data, /monitoring/tarik, /monitoring/tarik/csv
  *   GET  /monitoring/getReport6Jam        (publik)
- *   POST /monitoring/saveSensor|saveAlert (publik, kompatibilitas CI4)
+ *   POST /monitoring/saveSensor|saveAlert (kompatibilitas CI4 — X-API-KEY)
  *   GET  /api/latest-sensor               (publik — polling SPA)
  *   GET  /api/get-thresholds              (X-API-KEY)
  *   POST /api/save-sensor                 (X-API-KEY)
@@ -108,7 +108,10 @@ router.get('/getReport6Jam', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/saveSensor', async (req, res, next) => {
+// Guard SAMA dengan POST /api/save-sensor (:requireApiKey) — kedua rute kompatibilitas
+// CI4 ini menulis data, jadi tidak boleh lagi menerima request anonim (BFLA: dulu
+// anonim → 400 'No payload' / bahkan 200). Klien lama cukup menambah header X-API-KEY.
+router.post('/saveSensor', requireApiKey, async (req, res, next) => {
   try {
     const data = req.body || {};
     if (!Object.keys(data).length) return json(res, 400, { status: 'error', message: 'No payload' });
@@ -118,7 +121,7 @@ router.post('/saveSensor', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/saveAlert', async (req, res, next) => {
+router.post('/saveAlert', requireApiKey, async (req, res, next) => {
   try {
     const { type, value } = req.body || {};
     if (!type || value == null || String(value) === '') return json(res, 400, { status: 'error' });

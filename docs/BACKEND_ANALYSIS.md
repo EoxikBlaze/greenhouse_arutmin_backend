@@ -9,7 +9,7 @@ Tanggal: 2026-10-14 · Status: Laravel (existing) dianalisis → di-port ke **No
 | Framework | Laravel 13.31 · PHP 8.5 · session auth (cookie) |
 | Database | PostgreSQL 17 (`vertonik_smartfarm`) — sebelumnya SQLite |
 | Frontend | React SPA (Vite) di belakang proxy same-origin; backend API-only (JSON, tanpa HTML) |
-| Perangkat | ESP32 → endpoint `/api/*` (X-API-KEY) + `/monitoring/saveSensor` (publik) |
+| Perangkat | ESP32 → endpoint `/api/*` dan `/monitoring/saveSensor` (sama-sama X-API-KEY sejak G7) |
 | Notifikasi | WhatsApp via Fonnte (API key + nomor di tabel `wa_settings`) |
 
 ## 2) Inventaris API (104 route → dikontrak ulang 1:1 di Node)
@@ -21,8 +21,8 @@ Tanggal: 2026-10-14 · Status: Laravel (existing) dianalisis → di-port ke **No
 | GET | `/api/get-thresholds` | ambang untuk ESP32 (**X-API-KEY**) |
 | POST | `/api/save-sensor` | terima data sensor ESP32 (**X-API-KEY**) |
 | POST | `/api/notif-hardware` | alert dari ESP32 → alert_logs + WA (**X-API-KEY**) |
-| POST | `/monitoring/saveSensor` | duplikat publik (kompatibilitas CI4) |
-| POST | `/monitoring/saveAlert` | alert publik (tanpa kirim WA) |
+| POST | `/monitoring/saveSensor` | duplikat ber-guard X-API-KEY (sejak G7) |
+| POST | `/monitoring/saveAlert` | alert ber-guard X-API-KEY (tanpa kirim WA; sejak G7) |
 | GET | `/monitoring/getReport6Jam` | rata-rata 6 jam + alert 6 jam (JSON) |
 
 ### Auth

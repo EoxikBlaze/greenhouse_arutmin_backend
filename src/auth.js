@@ -20,7 +20,11 @@ function signToken(user) {
 
 function verifyToken(token) {
   try {
-    return jwt.verify(token, config.jwtSecret);
+    const payload = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
+    // Wajib klaim exp: token yang dibuat tanpa masa berlaku DITOLAK (dulu 200),
+    // token kedaluwarsa tetap ditolak oleh jsonwebtoken (TokenExpiredError).
+    if (!payload || typeof payload.exp !== 'number') return null;
+    return payload;
   } catch {
     return null;
   }
@@ -119,12 +123,26 @@ function publicUser(row) {
   return { id: row.id, username: row.username, email: row.email, level: row.level, is_demo: !!row.is_demo };
 }
 
+/**
+ * Hash DUMMY tetap (bcrypt cost 12 = cost yang dipakai seluruh baris users di
+ * DB) — dibuat SEKALI di modul dari string acak. Dipakai saat user TIDAK ADA
+ * supaya waktu verifyLogin kasus "user tak ada" sama dengan kasus "password
+ * salah" (menutup enumerasi username lewat timing; dulu 0,8 ms vs 260 ms).
+ * Nilai tidak pernah dibandingkan dengan data mana pun, hanya menahan waktu.
+ */
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(24).toString('hex'), 12);
+
 async function verifyLogin(username, password) {
   const user = await one(
     'SELECT * FROM users WHERE username = lower(trim($1)) LIMIT 1',
     [String(username || '')],
   );
-  if (!user) return null;
+  if (!user) {
+    // Jalankan bcrypt.compare terhadap hash dummy dulu → waktu kasus ini
+    // ~= kasus password salah, lalu tetap return null (pesan 422 identik).
+    await bcrypt.compare(String(password || ''), DUMMY_HASH);
+    return null;
+  }
   // Hash Laravel memakai prefix $2y$ — bcryptjs mengenali $2b$; normalisasi dulu.
   const hash = String(user.password).replace(/^\$2y\$/, '$2b$');
   const ok = await bcrypt.compare(String(password || ''), hash);

@@ -59,6 +59,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── TRUST PROXY (1 hop) ────────────────────────────────────────────────
+// Deploy production menaruh nginx di depan backend (backend hanya bind
+// 127.0.0.1). Tanpa pengaturan ini req.ip SELALU 127.0.0.1 sehingga SEMUA
+// klien berbagi SATU bucket rate limit (11 login bisa mengunci semua orang
+// 60 detik). Dengan 'trust proxy' = 1: akses langsung (tanpa X-Forwarded-For)
+// req.ip tetap IP socket; di belakang nginx req.ip jadi entri TERAKHIR
+// X-Forwarded-For (hop terdekat setelah hop yang dipercaya) — nginx memakai
+// $proxy_add_x_forwarded_for (menambahkan IP klien di ujung kanan), sehingga
+// entri terakhir = IP klien asli dan header kiriman klien tidak bisa dipakai
+// untuk menyamar (diverifikasi uji: 'A, B' memakai bucket B).
+app.set('trust proxy', 1);
+
 // ── PEMBATAS ANTI-SPAM (per IP) ────────────────────────────────────────
 // Nilai bisa dioverride via env (RATE_LIMIT_VIEW/WRITE/LOGIN) atau dimatikan
 // untuk benchmark (RATE_LIMIT_OFF=1 — mensimulasikan 1000 IP berbeda).
