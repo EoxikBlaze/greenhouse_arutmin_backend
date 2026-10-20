@@ -13,6 +13,7 @@ const express = require('express');
 const { q, one } = require('../db');
 const cache = require('../cache');
 const { requireApiKey, requireAuth, json } = require('../auth');
+const { queryParam } = require('./_id');
 
 const router = express.Router();
 const api = express.Router();
@@ -144,7 +145,10 @@ router.get('/chart-data', requireAuth, async (_req, res, next) => {
 
 router.get('/tarik', requireAuth, async (req, res, next) => {
   try {
-    const { dari, sampai, per_page: perPage = 10 } = req.query;
+    // queryParam: normalisasi case filter (?DARI/ ?SAMPAI/ ?PER_PAGE — _id.js).
+    const dari = queryParam(req.query, 'dari');
+    const sampai = queryParam(req.query, 'sampai');
+    const perPage = queryParam(req.query, 'per_page') ?? 10;
     const allowed = [10, 25, 50, 100];
     const limit = allowed.includes(Number(perPage)) ? Number(perPage) : 10;
     const rows = await q(
@@ -159,7 +163,8 @@ router.get('/tarik', requireAuth, async (req, res, next) => {
 
 router.get('/tarik/csv', requireAuth, async (req, res, next) => {
   try {
-    const { dari, sampai } = req.query;
+    const dari = queryParam(req.query, 'dari');
+    const sampai = queryParam(req.query, 'sampai');
     const rows = await q(
       `SELECT * FROM monitorings
        WHERE ($1::timestamptz IS NULL OR created_at >= $1) AND ($2::timestamptz IS NULL OR created_at <= $2)

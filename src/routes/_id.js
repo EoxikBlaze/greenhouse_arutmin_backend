@@ -27,6 +27,11 @@ const BIGINT_MAX = 9223372036854775807n;
  * @returns {boolean}
  */
 function idValidValue(str) {
+  // Tolak non-string: array dari query (?id_meja[]=2) lolos RegExp#test karena
+  // test() meng-ToString argumennya ('[2]' → '2') lalu pg kirim '{2}' → 500
+  // 'invalid input syntax for type bigint'. Kini hanya string asli divalidasi;
+  // array/objek/angka → false (422/404 terstruktur).
+  if (typeof str !== 'string') return false;
   return /^[0-9]+$/.test(str) && BigInt(str) <= BIGINT_MAX;
 }
 
@@ -36,4 +41,26 @@ const idValid = (req) => idValidValue(req && req.params ? req.params.id : undefi
 /** Balasan 404 seragam untuk id tidak valid maupun data yang tidak ada. */
 const notFound = (res) => res.status(404).json({ message: 'Data tidak ditemukan.', errors: {} });
 
-module.exports = { BIGINT_MAX, idValid, idValidValue, notFound };
+/**
+ * Baca query param filter dgn toleransi huruf besar-kecil (?ID_MEJA = ?id_meja).
+ *
+ * Alasan (temuan debugging G9b): nama param filter bersifat case-sensitive —
+ * klien mengirim ?ID_MEJA=3 lalu param itu diabaikan SENYAP sehingga klien
+ * menerima data TANPA filter (kelihatan valid, isinya salah). Dua opsi perbaikan
+ * dievaluasi: (a) 422 eksplisit, (b) normalisasi case. DIPILIH (b): filter bukan
+ * kontrak identitas — menolak permintaan yang jelas bermaksud memfilter hanya
+ * memutus klien salah kapitalisasi, sedangkan normalisasi membuatnya bekerja
+ * sebagaimana maksud. Param yang TIDAK dikenal tetap diabaikan (kontrak lama).
+ * Nilai array (?id_meja=1&id_meja=2) diteruskan apa adanya → idValidValue
+ * menolaknya dengan 422 terstruktur.
+ * @param {object} query req.query
+ * @param {string} name nama param (huruf kecil semua)
+ */
+function queryParam(query, name) {
+  if (!query || typeof query !== 'object') return undefined;
+  if (query[name] !== undefined) return query[name];
+  const key = Object.keys(query).find((k) => k.toLowerCase() === name.toLowerCase());
+  return key !== undefined ? query[key] : undefined;
+}
+
+module.exports = { BIGINT_MAX, idValid, idValidValue, notFound, queryParam };

@@ -2,6 +2,7 @@
 /** Laporan matriks + CSV. */
 const express = require('express');
 const { q } = require('../db');
+const { queryParam } = require('./_id');
 
 const router = express.Router();
 
@@ -25,14 +26,17 @@ async function matrix(dari, sampai) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { dari, sampai } = req.query;
+    // queryParam: ?DARI=... dikenali spt ?dari=... (normalisasi case — _id.js).
+    const dari = queryParam(req.query, 'dari');
+    const sampai = queryParam(req.query, 'sampai');
     res.json({ page: 'laporan', dari, sampai, matriks: await matrix(dari, sampai) });
   } catch (e) { next(e); }
 });
 
 router.get('/csv', async (req, res, next) => {
   try {
-    const { dari, sampai } = req.query;
+    const dari = queryParam(req.query, 'dari');
+    const sampai = queryParam(req.query, 'sampai');
     const rows = await matrix(dari, sampai);
     const lines = ['PERIODE,SEMAI,REMAJA,DEWASA,PANEN (KG),RATA-RATA PH'];
     for (const r of rows) lines.push([r.periode, r.semai, r.remaja, r.dewasa, r.panen_kg, r.rata_ph].join(','));

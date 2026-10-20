@@ -135,6 +135,36 @@ app.use((err, _req, res, _next) => {
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Format JSON tidak valid.' });
   }
+  // G9b — jaring pengaman SQLSTATE: NOT NULL (23502) & CHECK (23514) yang masih
+  // lolos dari validasi aplikasi (kasus baru/tak terduga) dijawab 422 per-field
+  // kontrak §2, bukan 500 generik. Ekstraksi field memakai protokol PostgreSQL:
+  // 23502 → err.column / pola 'column "..."' di message; 23514 → err.constraint
+  // (mis. semais_status_check) dipotong prefix tabel + suffix _check. Bila gagal
+  // diekstrak → jatuh ke jalur 500 lama (perilaku lama dipertahankan utk kasus
+  // yang tidak terpetakan — jangan menebak field secara keliru).
+  if (err?.code === '23502' || err?.code === '23514') {
+    let field = null;
+    if (err.code === '23502') {
+      field = err.column || (/column "([^"]+)"/.exec(err.message || '') || [])[1] || null;
+      if (field) {
+        console.warn('[db->422]', err.code, err.table || '', field);
+        return res.status(422).json({
+          message: 'Data tidak valid.',
+          errors: { [field]: [`Kolom ${field} wajib diisi.`] },
+        });
+      }
+    } else if (err.constraint) {
+      let f = String(err.constraint).replace(/_check$/, '');
+      if (err.table && f.startsWith(`${err.table}_`)) f = f.slice(err.table.length + 1);
+      if (f) {
+        console.warn('[db->422]', err.code, err.table || '', err.constraint);
+        return res.status(422).json({
+          message: 'Data tidak valid.',
+          errors: { [f]: [`Kolom ${f} tidak memenuhi aturan data.`] },
+        });
+      }
+    }
+  }
   const status = err.status || 500;
   // Label '[500]' HANYA untuk kegagalan server sungguhan (tanpa status atau ≥500),
   // supaya grep '[500]' di log selalu berarti 500 sejati. Error HTTP non-500 yang

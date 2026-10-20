@@ -42,7 +42,7 @@
 const express = require('express');
 const { q, one } = require('../db');
 const { requireAuth, requireRole, demoGuard } = require('../auth');
-const { idValidValue, notFound } = require('./_id');
+const { idValidValue, notFound, queryParam } = require('./_id');
 const { validateBody } = require('./_validate');
 
 const router = express.Router();
@@ -126,17 +126,21 @@ function daftar(s) {
     try {
       const params = [];
       let where = '';
-      if (req.query.id_meja !== undefined && s.columns.includes('id_meja')) {
-        // Sumber tanpa kolom id_meja mengabaikan param (dokumentasi di KONTRAK_API);
-        // id_meja yang bukan angka → 422 terstruktur, bukan 500 dari PostgreSQL.
-        if (!idValidValue(req.query.id_meja)) {
+      // queryParam: ?ID_MEJA=3 dikenali spt ?id_meja=3 (normalisasi case — lihat
+      // _id.js). Tanpa ini filter case-variant diabaikan senyap → klien terima
+      // data TANPA filter. Sumber tanpa kolom id_meja tetap mengabaikan param
+      // (dokumentasi di KONTRAK_API).
+      const idMeja = queryParam(req.query, 'id_meja');
+      if (idMeja !== undefined && s.columns.includes('id_meja')) {
+        // id_meja bukan angka / array (?id_meja[]=2) → 422 terstruktur, bukan 500.
+        if (!idValidValue(idMeja)) {
           return res.status(422).json({
             message: 'Data tidak valid.',
             errors: { id_meja: ['Filter id_meja harus berupa angka yang valid.'] },
           });
         }
         where = ` WHERE ${s.table}.id_meja = $1`;
-        params.push(req.query.id_meja);
+        params.push(idMeja);
       }
       res.json(await q(`${selectOf(s)}${where} ORDER BY ${s.table}.${s.pk}`, params));
     } catch (e) { next(e); }

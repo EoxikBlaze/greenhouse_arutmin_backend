@@ -111,22 +111,32 @@ const TABLE_SPECS = {
   //    tidak pernah ditulis sehingga tidak butuh spec. requiredCreate mencerminkan
   //    kolom NOT NULL tanpa DEFAULT bila kelak ada POST; hari ini hanya mode 'update'.
   konfigurasi_dosis: {
-    nilai: { tipe: 'number', requiredCreate: true },                 // numeric(12,4) NOT NULL
+    // numeric(12,4) NOT NULL → maksimum 99999999.9999 (precision 12 − scale 4
+    // = 8 digit int). min 0: dosis negatif dulu diterima 200. 1e30/-1e30 dulu →
+    // 500 "numeric field overflow" (22003) karena Zod tanpa batas.
+    nilai: { tipe: 'number', requiredCreate: true, min: 0, max: 99999999.9999 },
     satuan: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 24 },
     keterangan: { tipe: 'string', minLen: 1, maxLen: 500 },          // kolom text (dibatasi DEFAULT_STR_MAX)
     sumber: { tipe: 'string', minLen: 1, maxLen: 120 },
   },
   timing_operasi: {
-    nilai: { tipe: 'number' },                                       // numeric(10,3) NULL
+    // numeric(10,3) nullable → maksimum 9999999.999 (7 digit int); min 0;
+    // null diizinkan karena kolom is_nullable=YES (dulu null → 422 keliru,
+    // 1e12 → 500 overflow).
+    nilai: { tipe: 'number', min: 0, max: 9999999.999, nullable: true },
     satuan: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 24 },
     keterangan: { tipe: 'string', minLen: 1, maxLen: 500 },
     sumber: { tipe: 'string', minLen: 1, maxLen: 120 },
   },
   target_nutrisi: {
-    id_tanaman: { tipe: 'integer', min: 1 },                         // FK → tanamen (dicek di handler, 422)
+    // bigint — batas safe-integer mencegah 22003 saat cek FK (kolom lain memakai
+    // fkErrors yang memblokir angka tak-aman serupa).
+    id_tanaman: { tipe: 'integer', min: 1, max: Number.MAX_SAFE_INTEGER },
     tahap: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 32 },
-    umur_min_hari: { tipe: 'integer', min: 0 },
-    umur_max_hari: { tipe: 'integer', min: 0 },
+    // integer (int4): batas atas WAJIB — 9999999999 dulu → 500 int4 out-of-range
+    // (22003). Kolom nullable; null tetap ditolak Zod kecuali spec nullable.
+    umur_min_hari: { tipe: 'integer', min: 0, max: INT4_MAX },
+    umur_max_hari: { tipe: 'integer', min: 0, max: INT4_MAX },
     ec_min_ppm: { tipe: 'number', min: 0, max: 99999999.99 },        // numeric(8,2)
     ec_max_ppm: { tipe: 'number', min: 0, max: 99999999.99 },
     ph_min: { tipe: 'number', min: 0, max: 999.99 },                 // numeric(4,2)
@@ -135,6 +145,20 @@ const TABLE_SPECS = {
     status: { tipe: 'enum', enum: ['menunggu_konfirmasi', 'aktif', 'kadaluarsa'] },
     keterangan: { tipe: 'string', minLen: 1, maxLen: 500 },
     sumber: { tipe: 'string', minLen: 1, maxLen: 120 },
+  },
+  semais: {
+    // CHECK live semais_status_check: IN ('proses','selesai','gagal') — divalidasi
+    // Zod SEBELUM query (dulu PUT /semai/:id {status:'ngawur'} → 500 CHECK 23514;
+    // mapper SQLSTATE di index.js tetap jaring pengaman untuk CHECK lain).
+    status: { tipe: 'enum', enum: ['proses', 'selesai', 'gagal'] },
+    // Kolom NOT NULL TANPA DEFAULT (information_schema live): jumlah_benih,
+    // tgl_awal_semai, tgl_akhir_semai. Dulu POST /semai tanpa salah satunya lolos
+    // Zod lalu jatuh ke PostgreSQL 23502 → 500. Dgn requiredCreate: 422 per-field
+    // 'wajib diisi' SEBELUM SQL. Rentang jumlah_benih = rentang infer lama (int4)
+    // supaya pesan 422 utk nilai yang SELAMA INI divalidasi tetap identik.
+    jumlah_benih: { tipe: 'integer', requiredCreate: true, min: INT4_MIN, max: INT4_MAX },
+    tgl_awal_semai: { tipe: 'date', requiredCreate: true },
+    tgl_akhir_semai: { tipe: 'date', requiredCreate: true },
   },
 };
 
@@ -264,9 +288,18 @@ function schemaFor(specs, columns, mode) {
       }
       case 'string':
       default:
-        s = z.string().min(spec.minLen ?? 1).max(spec.maxLen ?? DEFAULT_STR_MAX);
+        s = z.string().min(spec.minLen ?? 1).max(spec.maxLen ?? DEFAULT_STR_MAX)
+          // Tolak byte NUL (0x00): lolos validasi lalu PostgreSQL melempar
+          // 'invalid byte sequence for encoding "UTF8": 0x00' → 500 (temuan
+          // debugging: POST /meja {"meja":"PROBE\u0000"} & PUT /konfigurasi-dosis).
+          .refine((v) => !v.includes('\u0000'));
         break;
     }
+    // Spec nullable: kolom DB is_nullable=YES (mis. timing_operasi.nilai) — null
+    // harus DITERIMA (dulu ditolak 422 keliru sehingga kolom tak bisa dikosongkan
+    // lewat API). Kolom non-nullable TETAP menolak null dgn pesan lama
+    // 'Kolom X tidak boleh null.' (lihat messageFor).
+    if (spec.nullable) s = s.nullable();
     // UPDATE: semua opsional (tipe/panjang tetap dicek bila dikirim).
     shape[col] = mode === 'create' && spec.requiredCreate ? s : s.optional();
   }
@@ -281,6 +314,9 @@ function messageFor(issue, spec, field, value) {
   if (value === null) return `Kolom ${field} tidak boleh null.`;
   switch (spec.tipe) {
     case 'string':
+      // Issue custom pada string = rafine NUL (0x00) di schemaFor — pesan Zod
+      // asli (Inggris) tidak pernah dipakai; ganti dgn pesan Indonesia ini.
+      if (issue.code === 'custom') return `Kolom ${field} tidak boleh mengandung karakter terlarang.`;
       if (issue.code === 'too_big') return `Kolom ${field} maksimal ${spec.maxLen ?? DEFAULT_STR_MAX} karakter.`;
       if (issue.code === 'too_small') {
         return (spec.minLen ?? 1) > 1
