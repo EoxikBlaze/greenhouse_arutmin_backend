@@ -135,16 +135,35 @@ app.use((err, _req, res, _next) => {
   if (err?.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Format JSON tidak valid.' });
   }
-  // G9b — jaring pengaman SQLSTATE: NOT NULL (23502) & CHECK (23514) yang masih
+  // G10 — error HTTP 400 non-JSON (mis. percent-encoding path gagal didecode,
+  // URIError status 400) dulu memakai teks 'Terjadi kesalahan pada server.' —
+  // galat KLIEN dipresentasikan sbg kesalahan server. 400 → pesan klien yang
+  // benar. (400 entity.parse.failed sudah dipegang di atas.)
+  if (err?.status === 400) {
+    return res.status(400).json({ message: 'Permintaan tidak valid.' });
+  }
+  // G10 — jaring pengaman SQLSTATE: NOT NULL (23502) & CHECK (23514) yang masih
   // lolos dari validasi aplikasi (kasus baru/tak terduga) dijawab 422 per-field
   // kontrak §2, bukan 500 generik. Ekstraksi field memakai protokol PostgreSQL:
   // 23502 → err.column / pola 'column "..."' di message; 23514 → err.constraint
   // (mis. semais_status_check) dipotong prefix tabel + suffix _check. Bila gagal
   // diekstrak → jatuh ke jalur 500 lama (perilaku lama dipertahankan utk kasus
   // yang tidak terpetakan — jangan menebak field secara keliru).
-  if (err?.code === '23502' || err?.code === '23514') {
+  if (err?.code === '23502' || err?.code === '23514' || err?.code === '23505') {
     let field = null;
-    if (err.code === '23502') {
+    if (err.code === '23505') {
+      // G10 — UNIQUE violation (jaring pengaman utk rute tanpa tangkapan lokal):
+      // 'users_email_unique' → 'email'; gagal dipetakan → jatuh 500 lama.
+      let u = err.constraint ? String(err.constraint).replace(/_unique$/, '') : '';
+      if (u && err.table && u.startsWith(`${err.table}_`)) u = u.slice(err.table.length + 1);
+      if (u && !u.includes('_')) {
+        console.warn('[db->422]', err.code, err.table || '', err.constraint);
+        return res.status(422).json({
+          message: 'Data tidak valid.',
+          errors: { [u]: [`Kolom ${u} sudah dipakai.`] },
+        });
+      }
+    } else if (err.code === '23502') {
       field = err.column || (/column "([^"]+)"/.exec(err.message || '') || [])[1] || null;
       if (field) {
         console.warn('[db->422]', err.code, err.table || '', field);

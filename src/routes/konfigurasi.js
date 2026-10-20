@@ -114,6 +114,10 @@ const SUMBERS = [
 function idOk(s, id) {
   if (typeof id !== 'string' || id.length === 0) return false;
   if (s.tipePk === 'angka') return idValidValue(id);       // bigint: pola §2b
+  // G10 — %00 (NUL) lolos cek panjang lalu membuat PostgreSQL melempar
+  // 'invalid byte sequence for encoding UTF8' → 500. NUL ditolak → 404 seragam
+  // (KEPUTUSAN: konsisten dgn pola id angka cacat yang menjawab 404, bukan 422).
+  if (id.includes('\u0000')) return false;
   return id.length <= 64;                                  // varchar(64) terpanjang (param)
 }
 

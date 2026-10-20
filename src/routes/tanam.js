@@ -94,8 +94,12 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
     if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
     const exp = demoExpiry(req.user);
     const row = await one(
-      `INSERT INTO semais (id_tanaman, id_siklus, id_meja, jumlah_benih, tgl_awal_semai, status, keterangan, benih_berhasil, benih_gagal, expires_at, created_at, updated_at)
-       VALUES ($1,$2,$3,$4, coalesce($5::date, now()::date), 'proses', $6, 0, 0, $7, now(), now())
+      // G10 — tgl_akhir_semai NOT NULL tanpa default: dahulu kolom ini TIDAK ikut
+      // INSERT → 23502 → 500 → fitur Mulai Tanam MATI TOTAL (seluruh payload lolos
+      // validasi tetap 500). Diisi = tgl_awal (penanda 'belum ditutup'); penutupan
+      // asli terjadi di handler /:tipe/:id/selesai via CASE (lihat bawah).
+      `INSERT INTO semais (id_tanaman, id_siklus, id_meja, jumlah_benih, tgl_awal_semai, tgl_akhir_semai, status, keterangan, benih_berhasil, benih_gagal, expires_at, created_at, updated_at)
+       VALUES ($1,$2,$3,$4, coalesce($5::date, now()::date), coalesce($5::date, now()::date), 'proses', $6, 0, 0, $7, now(), now())
        RETURNING *`,
       [b.id_tanaman ?? null, b.id_siklus ?? null, b.id_meja ?? null, b.jumlah_benih ?? 0, b.tgl_awal_semai ?? null, b.keterangan ?? null, exp],
     );
@@ -117,7 +121,16 @@ router.post('/:tipe/:id/selesai', demoGuard('tanam.selesai'), async (req, res, n
     // V2 — urutan TETAP: tipe dulu (kontrak lama 422), baru id (404 identik).
     if (!idValid(req)) return notFound(res);
     const sets = ["status = 'selesai'", 'updated_at = now()'];
-    if (t.tgl) sets.splice(1, 0, `${t.tgl} = coalesce(${t.tgl}, now()::date)`);
+    // G10 — coalesce lama tak pernah menutup batch baru (tgl_akhir sudah terisi
+    // penanda = tgl_awal saat INSERT /mulai). CASE: null ATAU == tgl_awal →
+    // tutup dgn hari ini; sudah diisi asli (> awal / tabel tanpa awal) → biarkan
+    // (baris 'selesai' existing tak pernah tertimpa).
+    if (t.tgl) {
+      const awal = t.table === 'semais' ? ' tgl_awal_semai' : '';
+      sets.splice(1, 0, awal
+        ? `${t.tgl} = CASE WHEN ${t.tgl} IS NULL OR ${t.tgl} = tgl_awal_semai THEN now()::date ELSE ${t.tgl} END`
+        : `${t.tgl} = coalesce(${t.tgl}, now()::date)`);
+    }
     const row = await one(
       `UPDATE ${t.table} SET ${sets.join(', ')} WHERE ${t.pk} = $1 RETURNING *`, [req.params.id]);
     if (!row) return notFound(res);

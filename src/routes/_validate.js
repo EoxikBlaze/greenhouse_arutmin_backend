@@ -67,6 +67,80 @@ function isDateString(v) {
 }
 
 /**
+ * Cek komponen tanggal terhadap kalender Gregorian (bulan 1-12, hari sesuai
+ * bulan & tahun kabisat). Tahun 0 ditolak — PostgreSQL sendiri menolaknya
+ * (22008 'date/time field value out of range').
+ */
+function kalenderOk(y, m, d) {
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+  if (y < 1 || y > 99999 || m < 1 || m > 12) return false;
+  const hari = [31, (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28,
+    31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return d >= 1 && d <= hari[m - 1];
+}
+
+/**
+ * Validasi nilai query `?dari=` / `?sampai=` SEBELUM SQL (temuan G10:
+ * 'bukan-tanggal','2026-13-45','2026-02-30','1e5','2026-01-01T99:99:99' dahulu
+ * membuat `$1::timestamptz` melempar 22007/22008 → 500).
+ *
+ * KEPUTUSAN FORMAT (dikunci di sini — dikirim ulang ke kontrak lewat komentar ini):
+ *  - FE (react-web-app SensorRealtimePage) memakai <input type="date"> →
+ *    YYYY-MM-DD; format itulah yang dijanjikan.
+ *  - Nilai yang PERNAH diterima PostgreSQL selama ini TETAP diterima supaya
+ *    kontrol tidak berubah: literal 'infinity' & '-infinity', tanggal
+ *    satu-digit ('2026-1-1'), padat '20260101', tahun ≥5 digit ('99999-01-01'),
+ *    ISO datetime dgn 'T'/' ' + zona (Z/±HH:MM, offset maksimal ±15:59),
+ *    '2026-01-01T24:00:00' (tengah malam PG), dan spasi pinggir (di-trim,
+ *    PostgreSQL juga mengabaikannya).
+ *  - Ditolak: bukan teks (array ?dari[]=1), tahun 0, bulan/hari/tidak kabisat
+ *    di luar kalender, jam > 24 (atau 24:xx selain 24:00:00), menit/detik > 59,
+ *    offset > 15:59 (PG 22009), angka berpangkat '1e5', teks bebas.
+ * Rentang terbalik / kosong TIDAK divalidasi di sini: dibiarkan seperti selama
+ * ini (kueri menghasilkan baris kosong → 200).
+ * @param {unknown} v nilai query (string | array | objek | undefined)
+ * @returns {boolean} true bila aman dikirim ke $1::timestamptz / $1::date
+ */
+function isQueryDate(v) {
+  if (typeof v !== 'string') return false;
+  const s = v.trim();
+  if (s === '') return true;                       // '' = tanpa filter (perlakuan lama: `dari || null`)
+  if (s === 'infinity' || s === '-infinity') return true;
+  const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+  if (compact) return kalenderOk(+compact[1], +compact[2], +compact[3]);
+  const m = /^(\d{1,6})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.\d{1,6})?)?(Z|z|[+-]\d{1,3}:?\d{2})?)?$/.exec(s);
+  if (!m) return false;
+  if (!kalenderOk(+m[1], +m[2], +m[3])) return false;
+  if (m[4] === undefined) return true;              // tanggal polos YYYY-M-D
+  const H = +m[4]; const M = +m[5]; const S = m[6] === undefined ? 0 : +m[6];
+  if (M > 59 || S > 59) return false;
+  if (H > 24 || (H === 24 && (M !== 0 || S !== 0))) return false;
+  if (m[7] && m[7] !== 'Z' && m[7] !== 'z') {
+    const off = /^([+-])(\d{1,3}):?(\d{2})$/.exec(m[7]);
+    if (!off || +off[2] > 15 || +off[3] > 59) return false; // PG 22009: displacement maks ±15:59
+  }
+  return true;
+}
+
+/**
+ * G10 — kumpulkan error 422 untuk query `?dari=` & `?sampai=` (empat endpoint:
+ * /laporan, /laporan/csv, /monitoring/tarik, /monitoring/tarik/csv).
+ * Nilai kosong/absen = tanpa filter (perlakuan lama `x || null`), nilai cacat →
+ * kunci field; rentang terbalik/tanpa baris TIDAK divalidasi (tetap 200).
+ * @returns {Record<string, string[]>} errors (kosong = lolos)
+ */
+function tanggalErrors(dari, sampai) {
+  const errors = {};
+  for (const [nama, nilai] of [['dari', dari], ['sampai', sampai]]) {
+    if (nilai === undefined || nilai === '') continue;
+    if (!isQueryDate(nilai)) {
+      errors[nama] = [`Filter ${nama} harus berupa tanggal (YYYY-MM-DD / ISO-8601).`];
+    }
+  }
+  return errors;
+}
+
+/**
  * Spec eksplisit per tabel. Key = nama kolom, value:
  *   tipe           : 'string' | 'integer' | 'number' | 'enum' | 'date'
  *   requiredCreate : wajib saat CREATE (POST); UPDATE selalu opsional
@@ -416,5 +490,6 @@ function validateBody({ table, columns, mode }) {
 
 module.exports = {
   validateBody, invalidBody, inferSpec, specsFor, loadColumnLengths,
-  TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX, DATE_RE, isDateString,
+  TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX, DATE_RE, isDateString, isQueryDate,
+  tanggalErrors,
 };

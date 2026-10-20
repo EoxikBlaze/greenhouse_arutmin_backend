@@ -3,6 +3,7 @@
 const express = require('express');
 const { q } = require('../db');
 const { queryParam } = require('./_id');
+const { tanggalErrors } = require('./_validate');
 
 const router = express.Router();
 
@@ -29,6 +30,11 @@ router.get('/', async (req, res, next) => {
     // queryParam: ?DARI=... dikenali spt ?dari=... (normalisasi case — _id.js).
     const dari = queryParam(req.query, 'dari');
     const sampai = queryParam(req.query, 'sampai');
+    // G10 — tanggal query divalidasi SEBELUM SQL (dulu 500 22007/22008).
+    const errors = tanggalErrors(dari, sampai);
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ message: 'Data tidak valid.', errors });
+    }
     res.json({ page: 'laporan', dari, sampai, matriks: await matrix(dari, sampai) });
   } catch (e) { next(e); }
 });
@@ -37,6 +43,11 @@ router.get('/csv', async (req, res, next) => {
   try {
     const dari = queryParam(req.query, 'dari');
     const sampai = queryParam(req.query, 'sampai');
+    // G10 — sama dengan GET / (validasi sebelum SQL, 422 per-field).
+    const errors = tanggalErrors(dari, sampai);
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ message: 'Data tidak valid.', errors });
+    }
     const rows = await matrix(dari, sampai);
     const lines = ['PERIODE,SEMAI,REMAJA,DEWASA,PANEN (KG),RATA-RATA PH'];
     for (const r of rows) lines.push([r.periode, r.semai, r.remaja, r.dewasa, r.panen_kg, r.rata_ph].join(','));
