@@ -99,9 +99,13 @@ const profil = require('./routes/profil');
 const user = require('./routes/user');
 const notifWa = require('./routes/notifWa');
 const konfigurasi = require('./routes/konfigurasi');
+const ai = require('./routes/ai');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
 app.use('/api', monitoring.api);                       // ESP32 (guard X-API-KEY per route)
+// Asisten keputusan budidaya (AI lokal Ollama) — guard auth+role ada di dlm modul:
+// Bearer JWT wajib, role admin/petani, demo 403, Ollama mati → fallback heuristik.
+app.use('/api/ai', ai);
 app.use('/monitoring', monitoring.router);             // campur publik/terproteksi (per route)
 
 const semuaRole = [requireAuth, requireRole('all')];

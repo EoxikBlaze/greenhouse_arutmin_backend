@@ -22,4 +22,8 @@ module.exports = {
   appKey: process.env.APP_KEY || '',
   esp32ApiKey: process.env.ESP32_API_KEY || 'HARVEST123',
   https: process.env.HTTPS === '1',
+  /* Asisten AI lokal (Ollama) — dipakai src/routes/ai.js.
+   * Default aman: model ringan 1,5B & Ollama di mesin yang sama (lihat docs/AI_LOKAL_PI.md). */
+  aiModel: process.env.AI_MODEL || 'deepseek-r1:1.5b',
+  aiOllamaUrl: String(process.env.AI_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, ''),
 };
