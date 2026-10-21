@@ -10,13 +10,13 @@
 # Aman dijalankan berulang-kali (idempotent).
 #
 # Pilihan model (bisa juga di-override lewat env: AI_MODEL=... ./setup-ai.sh):
-#   RAM 4 GB  -> deepseek-r1:1.5b  (default, ±1,1 GB saat muat model)
-#   RAM 8 GB  -> deepseek-r1:1.5b  atau qwen2.5:3b (lebih rapi jawabannya)
+#   RAM 4 GB  -> qwen2.5:1.5b  (default, ±1,1 GB saat muat model)
+#   RAM 8 GB  -> qwen2.5:1.5b  atau qwen2.5:3b (lebih rapi jawabannya)
 #   RAM 2 GB  -> qwen2.5:0.5b      (catatan di bawah, model 0,5B)
 # ============================================================================
 set -euo pipefail
 
-MODEL="${AI_MODEL:-deepseek-r1:1.5b}"
+MODEL="${AI_MODEL:-qwen2.5:1.5b}"
 MODEL_0_5B="qwen2.5:0.5b"                 # alternatif untuk Pi RAM 2 GB
 OLLAMA_URL="http://127.0.0.1:11434"
 jalan() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }

@@ -9,18 +9,55 @@ const jwt = require('jsonwebtoken');
 const config = require('./config');
 const { q, one } = require('./db');
 
+/* ── JWT_SECRET — wajib eksplisit (S10: gagal-loud, bukan fallback) ── *
+ * fallback historis 'dev-secret-ganti' (dan nilai 'dev-secret-ganti' apa pun
+ * yang sengaja/tidak terisi di .env) DITOLAK: secret publik = siapa pun bisa
+ * menandatangani token admin. KEPUTUSAN: THROW saat start (fail-fast), BUKAN
+ * secret acak proses — alasan: (a) secret acak membatalkan semua token di
+ * SETIAP restart (pengguna keluar tiap deploy/restart — saat peresmian itu
+ * terlihat sebagai bug), (b) proses kedua (worker/uji eksternal) tidak akan
+ * pernah bisa memverifikasi token yang sama, (c) kegagalan konfigurasi harus
+ * terdengar keras sekali di log, bukan disembunyikan oleh "kerja tapi aneh".
+ * Nilai .env yang ada TIDAK berubah perilaku: dipakai persis apa adanya
+ * (tanpa trim) sehingga token yang ditandatangani pihak lain — mis. craftToken
+ * di test/integration/_server.js — tetap cocok.
+ */
+const FALLBACK_JWT_SECRET = 'dev-secret-ganti';
+
+function resolveJwtSecret() {
+  const raw = typeof config.jwtSecret === 'string' ? config.jwtSecret : '';
+  const nilai = raw.trim();
+  if (!nilai || nilai === FALLBACK_JWT_SECRET) {
+    throw new Error(
+      'JWT_SECRET tidak diatur — server MENOLAK start (fallback \'dev-secret-ganti\' sudah tidak dipakai, '
+      + 'karena secret publik membolehkan siapa pun menandatangani token admin). '
+      + 'Isi JWT_SECRET (≥32 karakter acak) di .env, lalu restart. Contoh pembuat nilai: '
+      + 'node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'base64url\'))" '
+      + 'Catatan: token lama yang ditandatangani fallback TIDAK akan sah setelah secret baru diisi.',
+    );
+  }
+  if (nilai.length < 32) {
+    // Peringatan saja (tidak menggagalkan) — secret lama yang valid jangan
+    // sampai mematikan deploy yang sudah jalan.
+    console.warn('[SECURITY] JWT_SECRET <32 karakter — disarankan ≥32 karakter acak (mis. randomBytes(48).base64url).');
+  }
+  return raw; // persis nilai env (tanpa trim) → identik dgn pemakaian luar
+}
+
+const JWT_SECRET = resolveJwtSecret();
+
 /* ── token ─────────────────────────────────────────────────────────── */
 function signToken(user) {
   return jwt.sign(
     { sub: user.id, username: user.username, level: user.level, demo: !!user.is_demo },
-    config.jwtSecret,
+    JWT_SECRET,
     { expiresIn: '12h' },
   );
 }
 
 function verifyToken(token) {
   try {
-    const payload = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] });
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     // Wajib klaim exp: token yang dibuat tanpa masa berlaku DITOLAK (dulu 200),
     // token kedaluwarsa tetap ditolak oleh jsonwebtoken (TokenExpiredError).
     if (!payload || typeof payload.exp !== 'number') return null;
@@ -96,8 +133,41 @@ function demoGuard(routeName) {
   };
 }
 
-/** API key perangkat ESP32 (header X-API-KEY / field api_key). */
+/**
+ * API key perangkat ESP32 (header X-API-KEY / field api_key).
+ *
+ * HARDENING (S3-sejalan): bila key AKTIF kosong ATAU sama dgn fallback
+ * historis 'HARVEST123' (nilai default config.js yang tidak boleh dianggap
+ * rahasia), guard TIDAK PERNAH menerima — semua permintaan ditolak 403
+ * dgn body kontrak yang SAMA persis (tanpa bocor info) + peringatan log.
+ * Dulu: key kosong → '' cocok dgn '' (tanpa header pun lolos!), dan
+ * 'HARVEST123' diterima siapa pun yang tahu default publik.
+ * Perbaikan dilakukan DI SINI (bukan di config.js) agar fallback di config
+ * tetap utuh untuk konsumen lain sementara endpoint jadi gagal-loud.
+ */
+const FALLBACK_ESP32_KEY = 'HARVEST123';
+let lastKeyWarn = 0;
+
+function esp32KeyAktifTidakAman() {
+  const aktif = typeof config.esp32ApiKey === 'string' ? config.esp32ApiKey.trim() : '';
+  return !aktif || aktif === FALLBACK_ESP32_KEY;
+}
+
+function warnKeyTidakAman() {
+  if (Date.now() - lastKeyWarn < 60_000) return; // jangan banjir log (rate-limit 1/menit)
+  lastKeyWarn = Date.now();
+  console.warn(
+    "[SECURITY] ESP32_API_KEY kosong atau masih memakai fallback 'HARVEST123' — "
+    + 'SEMUA permintaan ber-X-API-KEY ditolak 403. Isi ESP32_API_KEY unik di .env lalu restart; '
+    + 'kirim ulang key baru ke perangkat ESP32.',
+  );
+}
+
 function requireApiKey(req, res, next) {
+  if (esp32KeyAktifTidakAman()) {
+    warnKeyTidakAman();
+    return json(res, 403, { status: false, msg: 'Unauthorized' });
+  }
   const key = req.headers['x-api-key'] || req.body?.api_key;
   // perbandingan timing-safe (anti timing-attack)
   const a = Buffer.from(String(key ?? ''));

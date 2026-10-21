@@ -134,7 +134,7 @@ function tanggalErrors(dari, sampai) {
   for (const [nama, nilai] of [['dari', dari], ['sampai', sampai]]) {
     if (nilai === undefined || nilai === '') continue;
     if (!isQueryDate(nilai)) {
-      errors[nama] = [`Filter ${nama} harus berupa tanggal (YYYY-MM-DD / ISO-8601).`];
+      errors[nama] = [`Filter ${nama} harus berupa tanggal (contoh: 2026-01-01 / ISO-8601).`];
     }
   }
   return errors;
@@ -228,12 +228,33 @@ const TABLE_SPECS = {
     // Kolom NOT NULL TANPA DEFAULT (information_schema live): jumlah_benih,
     // tgl_awal_semai, tgl_akhir_semai. Dulu POST /semai tanpa salah satunya lolos
     // Zod lalu jatuh ke PostgreSQL 23502 → 500. Dgn requiredCreate: 422 per-field
-    // 'wajib diisi' SEBELUM SQL. Rentang jumlah_benih = rentang infer lama (int4)
+    // '<Field> belum diisi.' SEBELUM SQL. Rentang jumlah_benih = rentang infer lama (int4)
     // supaya pesan 422 utk nilai yang SELAMA INI divalidasi tetap identik.
     jumlah_benih: { tipe: 'integer', requiredCreate: true, min: INT4_MIN, max: INT4_MAX },
     tgl_awal_semai: { tipe: 'date', requiredCreate: true },
     tgl_akhir_semai: { tipe: 'date', requiredCreate: true },
   },
+};
+
+/**
+ * Kolom NOT NULL TANPA DEFAULT di DB live yang BELUM punya requiredCreate di
+ * TABLE_SPECS (sumber: information_schema — daftar identik dgn query startup).
+ * Tanpa entri di sini kolom terlewat validasi Zod lalu jatuh ke jaring SQLSTATE
+ * 23502 di src/index.js → pesan teknis 'Kolom nama_siklus wajib diisi.'
+ * (temuan review awam yang melatarbelakangi perubahan ini). DENGAN entri ini,
+ * POST yang sama dijawab 422 Zod LEBIH DULU dengan bahasa manusia:
+ *     'Nama siklus belum diisi.' / 'Tanggal panen belum diisi.'
+ * Status (422), kunci errors (nama kolom asli) dan kontrak {message, errors}
+ * TIDAK berubah; request yang SELAMA INI berhasil tetap berhasil karena semua
+ * kolom ini memang wajib juga di DB.
+ */
+const REQUIRED_CREATE = {
+  tanamen: ['nama_tanaman'],
+  sikluses: ['nama_siklus', 'waktu_siklus'],
+  peremajaans: ['benih_berhasil', 'benih_gagal', 'tgl_awal_peremajaan', 'tgl_akhir_peremajaan'],
+  pendewasaans: ['tanaman_berhasil', 'tanaman_gagal', 'tgl_awal_pendewasaan', 'tgl_akhir_pendewasaan'],
+  panens: ['id_pendewasaan', 'tgl_panen'],
+  sensor_thresholds: ['sensor'],
 };
 
 /** Nama kolom bertipe desimal (bukan bulat). */
@@ -317,8 +338,12 @@ function capWithDb(spec, table, col) {
 /** Gabungkan spec eksplisit tabel dengan inferensi untuk kolom yang belum tercantum. */
 function specsFor(table, columns) {
   const explicit = TABLE_SPECS[table] || {};
+  const wajib = REQUIRED_CREATE[table] || []; // kolom NOT NULL tanpa DEFAULT (lihat REQUIRED_CREATE)
   const specs = {};
-  for (const col of columns) specs[col] = capWithDb(explicit[col] || inferSpec(col), table, col);
+  for (const col of columns) {
+    const spec = capWithDb(explicit[col] || inferSpec(col), table, col);
+    specs[col] = wajib.includes(col) ? { ...spec, requiredCreate: true } : spec;
+  }
   return specs;
 }
 
@@ -371,8 +396,8 @@ function schemaFor(specs, columns, mode) {
     }
     // Spec nullable: kolom DB is_nullable=YES (mis. timing_operasi.nilai) — null
     // harus DITERIMA (dulu ditolak 422 keliru sehingga kolom tak bisa dikosongkan
-    // lewat API). Kolom non-nullable TETAP menolak null dgn pesan lama
-    // 'Kolom X tidak boleh null.' (lihat messageFor).
+    // lewat API). Kolom non-nullable TETAP menolak null dgn pesan
+    // '<Field> tidak boleh kosong (null).' (lihat messageFor).
     if (spec.nullable) s = s.nullable();
     // UPDATE: semua opsional (tipe/panjang tetap dicek bila dikirim).
     shape[col] = mode === 'create' && spec.requiredCreate ? s : s.optional();
@@ -382,54 +407,150 @@ function schemaFor(specs, columns, mode) {
   return z.object(shape);
 }
 
-/** Pesan Indonesia per issue — tidak pernah membocorkan pesan bawaan Zod (Inggris). */
+/* ── Label manusia per kolom ────────────────────────────────────────────
+ * Temuan review awam: "Kolom nama_siklus wajib diisi." membingungkan petani
+ * (istilah DB + nama kolom teknis). SEMUA pesan 422 kini memakai label
+ * sehari-hari: "Nama siklus belum diisi." KESADARAN PENTING (kontrak):
+ *  - kunci objek errors TETAP nama kolom asli (errors.nama_siklus), hanya
+ *    TEKS di dalamnya yang berubah;
+ *  - format 422 {message:'Data tidak valid.', errors:{<field>:[pesan]}} TIDAK
+ *    berubah (docs/KONTRAK_API.md §2);
+ *  - kolom tanpa entri di sini memakai humanize() (pola tgl_, id_, jumlah_).
+ */
+const FIELD_LABELS = {
+  // — meja / talang —
+  meja: 'Nama meja',
+  id_meja: 'Meja',
+  jumlah_lubang: 'Jumlah lubang',
+  jenis_talang: 'Jenis talang',
+  kapasitas_penampung_l: 'Kapasitas penampung (liter)',
+  jumlah_talang: 'Jumlah talang',
+  lubang_per_talang: 'Lubang per talang',
+  panjang_talang_m: 'Panjang talang (meter)',
+  laju_per_talang_lpm: 'Laju air per talang (liter/menit)',
+  kenaikan_air_cm: 'Kenaikan air (cm)',
+  // — tanaman / siklus —
+  nama_tanaman: 'Nama tanaman',
+  id_tanaman: 'Tanaman',
+  nama_siklus: 'Nama siklus',
+  waktu_siklus: 'Waktu siklus (hari)',
+  id_siklus: 'Siklus',
+  // — tahap (semai / peremajaan / pendewasaan / panen) —
+  id_semai: 'Semai',
+  id_peremajaan: 'Peremajaan',
+  id_pendewasaan: 'Pendewasaan',
+  jumlah_benih: 'Jumlah benih',
+  jumlah_masuk: 'Jumlah masuk',
+  tgl_awal_semai: 'Tanggal mulai semai',
+  tgl_akhir_semai: 'Tanggal akhir semai',
+  tgl_awal_peremajaan: 'Tanggal mulai peremajaan',
+  tgl_akhir_peremajaan: 'Tanggal akhir peremajaan',
+  tgl_awal_pendewasaan: 'Tanggal mulai pendewasaan',
+  tgl_akhir_pendewasaan: 'Tanggal akhir pendewasaan',
+  tgl_panen: 'Tanggal panen',
+  benih_berhasil: 'Benih berhasil',
+  benih_gagal: 'Benih gagal',
+  tanaman_berhasil: 'Tanaman berhasil',
+  tanaman_gagal: 'Tanaman gagal',
+  panen_berhasil: 'Panen berhasil',
+  panen_gagal: 'Panen gagal',
+  // — konfigurasi / ambang —
+  sensor: 'Sensor',
+  min: 'Nilai minimum',
+  max: 'Nilai maksimum',
+  nilai: 'Nilai',
+  satuan: 'Satuan',
+  keterangan: 'Keterangan',
+  sumber: 'Sumber',
+  tahap: 'Tahap',
+  status: 'Status',
+  umur_min_hari: 'Umur minimum (hari)',
+  umur_max_hari: 'Umur maksimum (hari)',
+  ec_min_ppm: 'EC minimum (ppm)',
+  ec_max_ppm: 'EC maksimum (ppm)',
+  ph_min: 'pH minimum',
+  ph_max: 'pH maksimum',
+};
+
+/** Kapitalisasi depan: 'jenis_talang' → 'Jenis talang'. */
+function kata(col) {
+  const t = String(col).split('_').join(' ');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * Label cadangan untuk kolom yang tidak ada di FIELD_LABELS — pola teknis
+ * dikenali dulu: tgl_panen → 'Tanggal panen', id_semai → 'Semai',
+ * jumlah_lubang → 'Jumlah lubang'; selain itu nama kolom tanpa awalan 'Kolom'.
+ */
+function humanize(col) {
+  const s = String(col);
+  const tgl = /^tgl_(.+)$/.exec(s);
+  if (tgl) return `Tanggal ${kata(tgl[1])}`;
+  const idm = /^id_(.+)$/.exec(s);
+  if (idm) return kata(idm[1]);
+  const jml = /^jumlah_(.+)$/.exec(s);
+  if (jml) return `Jumlah ${kata(jml[1])}`;
+  return kata(s);
+}
+
+/** Label manusia untuk sebuah kolom (dipakai semua pesan di messageFor). */
+const labelFor = (field) => FIELD_LABELS[field] || humanize(field);
+
+/**
+ * Pesan Indonesia per issue — bahasa sehari-hari + label kolom yang dikenal
+ * manusia (bukan 'Kolom nama_siklus'), tidak pernah membocorkan pesan bawaan
+ * Zod (Inggris). Contoh: required → 'Nama siklus belum diisi.',
+ * rentang → 'Jumlah lubang harus bernilai antara 1 dan 1000000.'
+ */
 function messageFor(issue, spec, field, value) {
-  if (value === undefined) return `Kolom ${field} wajib diisi.`;
-  if (value === null) return `Kolom ${field} tidak boleh null.`;
+  const L = labelFor(field);
+  if (value === undefined) return `${L} belum diisi.`;
+  if (value === null) return `${L} tidak boleh kosong (null).`;
   switch (spec.tipe) {
     case 'string':
       // Issue custom pada string = rafine NUL (0x00) di schemaFor — pesan Zod
       // asli (Inggris) tidak pernah dipakai; ganti dgn pesan Indonesia ini.
-      if (issue.code === 'custom') return `Kolom ${field} tidak boleh mengandung karakter terlarang.`;
-      if (issue.code === 'too_big') return `Kolom ${field} maksimal ${spec.maxLen ?? DEFAULT_STR_MAX} karakter.`;
+      if (issue.code === 'custom') return `${L} tidak boleh mengandung karakter terlarang.`;
+      if (issue.code === 'too_big') return `${L} maksimal ${spec.maxLen ?? DEFAULT_STR_MAX} karakter.`;
       if (issue.code === 'too_small') {
         return (spec.minLen ?? 1) > 1
-          ? `Kolom ${field} minimal ${spec.minLen} karakter.`
-          : `Kolom ${field} wajib diisi.`;
+          ? `${L} minimal ${spec.minLen} karakter.`
+          : `${L} belum diisi.`;
       }
-      return `Kolom ${field} harus berupa teks.`;
+      return `${L} harus berupa teks.`;
     case 'integer':
       if (issue.code === 'too_small' || issue.code === 'too_big') {
-        return `Kolom ${field} harus antara ${spec.min ?? '-∞'} dan ${spec.max ?? '∞'}.`;
+        return `${L} harus bernilai antara ${spec.min ?? '-∞'} dan ${spec.max ?? '∞'}.`;
       }
-      return `Kolom ${field} harus berupa bilangan bulat.`;
+      return `${L} harus berupa angka bulat.`;
     case 'number':
       if (issue.code === 'too_small' && spec.minInclusive === false) {
-        return `Kolom ${field} harus lebih besar dari ${spec.min}.`;
+        return `${L} harus lebih besar dari ${spec.min}.`;
       }
       if (issue.code === 'too_big' && spec.maxInclusive === false) {
-        return `Kolom ${field} harus lebih kecil dari ${spec.max}.`;
+        return `${L} harus lebih kecil dari ${spec.max}.`;
       }
       if (issue.code === 'too_small' || issue.code === 'too_big') {
-        return `Kolom ${field} harus antara ${spec.min ?? '-∞'} dan ${spec.max ?? '∞'}.`;
+        return `${L} harus bernilai antara ${spec.min ?? '-∞'} dan ${spec.max ?? '∞'}.`;
       }
-      return `Kolom ${field} harus berupa angka.`;
+      return `${L} harus berupa angka.`;
     case 'enum':
-      return `Kolom ${field} harus salah satu dari: ${spec.enum.join(', ')}.`;
+      return `${L} hanya boleh diisi: ${spec.enum.join(', ')}.`;
     case 'date': {
       // urutan sama dengan tipe 'string' supaya pesan lama identik:
       // teks kepanjangan / terlalu pendek → pesan panjang; selain itu format.
-      if (issue.code === 'too_big') return `Kolom ${field} maksimal ${spec.maxLen ?? DEFAULT_STR_MAX} karakter.`;
+      if (issue.code === 'too_big') return `${L} maksimal ${spec.maxLen ?? DEFAULT_STR_MAX} karakter.`;
       if (issue.code === 'too_small') {
         return (spec.minLen ?? 1) > 1
-          ? `Kolom ${field} minimal ${spec.minLen} karakter.`
-          : `Kolom ${field} wajib diisi.`;
+          ? `${L} minimal ${spec.minLen} karakter.`
+          : `${L} belum diisi.`;
       }
-      if (typeof value !== 'string') return `Kolom ${field} harus berupa teks.`; // dulu pesan tipe 'string'
-      return `Kolom ${field} harus berformat YYYY-MM-DD.`;
+      if (typeof value !== 'string') return `${L} harus berupa teks.`; // dulu pesan tipe 'string'
+      return `${L} harus berupa tanggal (format YYYY-MM-DD, contoh: 2026-10-21).`;
     }
     default:
-      return `Kolom ${field} tidak valid.`;
+      return `${L} tidak valid.`;
   }
 }
 
@@ -490,6 +611,6 @@ function validateBody({ table, columns, mode }) {
 
 module.exports = {
   validateBody, invalidBody, inferSpec, specsFor, loadColumnLengths,
-  TABLE_SPECS, MSG_BODY, INT4_MIN, INT4_MAX, DATE_RE, isDateString, isQueryDate,
-  tanggalErrors,
+  TABLE_SPECS, REQUIRED_CREATE, MSG_BODY, INT4_MIN, INT4_MAX, DATE_RE, isDateString,
+  isQueryDate, tanggalErrors, labelFor,
 };

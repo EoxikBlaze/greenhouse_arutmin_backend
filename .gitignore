@@ -3,6 +3,9 @@ node_modules/
 *.log
 .DS_Store
 
+# Backup database (jangan sampai ke-commit: berisi dump + salinan .env)
+database/backup/
+
 # Sampah instalasi skills (npx skills add)
 .agents/
 .claude/

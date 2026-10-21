@@ -102,6 +102,9 @@ test('POST /meja HANYA kolom di luar whitelist → 422 (wajib create tidak terpe
   assert.equal(res.body.message, 'Data tidak valid.');
   assert.ok(res.body.errors.meja, 'errors.meja harus ada');
   assert.ok(res.body.errors.jumlah_lubang, 'errors.jumlah_lubang harus ada');
+  // Pesan 422 memakai label manusia, bukan istilah DB (temuan review awam):
+  assert.equal(res.body.errors.meja[0], 'Nama meja belum diisi.');
+  assert.equal(res.body.errors.jumlah_lubang[0], 'Jumlah lubang belum diisi.');
   assert.equal(res.body.errors.warna, undefined, 'kolom asing tidak divalidasi');
 });
 
@@ -111,7 +114,7 @@ test('POST /meja tipe salah (jumlah_lubang teks) → 422 terstruktur, bukan 500'
   assert.equal(res.status, 422);
   assert.equal(res.body.message, 'Data tidak valid.');
   assert.ok(Array.isArray(res.body.errors.jumlah_lubang));
-  assert.equal(res.body.errors.jumlah_lubang[0], 'Kolom jumlah_lubang harus berupa bilangan bulat.');
+  assert.equal(res.body.errors.jumlah_lubang[0], 'Jumlah lubang harus berupa angka bulat.');
 });
 
 test('POST /meja oleh token PETANI → 403 (PetaniGuard)', async () => {

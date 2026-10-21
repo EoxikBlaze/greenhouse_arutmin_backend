@@ -15,7 +15,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { startServer, adminToken, craftToken, bearer } = require('./_server');
+const { startServer, adminToken, craftToken, bearer, ROOT } = require('./_server');
 
 const ID_TIDAK_ADA = '9223372036854775806';
 const PESAN_PETANI = 'Menu ini untuk pengelola. Silakan gunakan menu "Tanam Saya".';
@@ -132,4 +132,74 @@ test('PUT /user/:id (admin, id tak-ada) → 404 kontrak — pembanding: guard ad
   const res = await request(base).put(`/user/${ID_TIDAK_ADA}`).set(auth).send({ email: 'x@y.z' });
   assert.equal(res.status, 404, `body: ${res.text}`);
   assert.deepEqual(res.body, { message: 'Data tidak ditemukan.', errors: {} });
+});
+
+/* ── HARDENING prioritas peresmian — S3 (helmet) + S10 (JWT) + guard ESP32 ── */
+
+test('Header helmet ada pada respons API: CSP + nosniff + DENY + no-referrer + CORP, x-powered-by tetap mati', async () => {
+  const res = await request(base).get('/rute-tidak-ada');
+  assert.equal(res.headers['x-content-type-options'], 'nosniff');
+  assert.equal(res.headers['x-frame-options'], 'DENY');
+  assert.equal(res.headers['referrer-policy'], 'no-referrer');
+  assert.equal(res.headers['cache-control'], 'no-store');
+  assert.equal(res.headers['x-powered-by'], undefined);
+  // Header baru hasil helmet:
+  assert.match(res.headers['content-security-policy'] || '', /default-src 'self'/);
+  assert.match(res.headers['content-security-policy'] || '', /object-src 'none'/);
+  assert.equal(res.headers['cross-origin-resource-policy'], 'same-origin');
+  assert.equal(res.headers['cross-origin-opener-policy'], 'same-origin');
+});
+
+test('HSTS TIDAK dikirim pada http:// lokal (SECURITY_HSTS default auto) — terkirim saat request bertanda TLS', async () => {
+  const lokal = await request(base).get('/rute-tidak-ada');
+  assert.equal(lokal.headers['strict-transport-security'], undefined,
+    'http:// lokal tidak boleh menerima HSTS (jangan mengunci origin dev)');
+  const tls = await request(base).get('/rute-tidak-ada').set('X-Forwarded-Proto', 'https');
+  assert.match(String(tls.headers['strict-transport-security'] || ''), /^max-age=\d+/,
+    'di belakang TLS (X-Forwarded-Proto https) HSTS wajib terkirim');
+});
+
+test("requireApiKey: key aktif kosong / fallback 'HARVEST123' → SEMUA permintaan 403, key asli tetap 200", () => {
+  const cfg = require('../../src/config');
+  const { requireApiKey } = require('../../src/auth');
+  const asli = cfg.esp32ApiKey;
+  const jalankan = (headers) => {
+    let status = null;
+    let lolos = false;
+    const res = { status(c) { status = c; return res; }, json() { return res; } };
+    requireApiKey({ headers: headers || {}, body: {} }, res, () => { lolos = true; });
+    return { status, lolos };
+  };
+  try {
+    for (const kunciKosong /* '' | 'HARVEST123' */ of ['', 'HARVEST123']) {
+      cfg.esp32ApiKey = kunciKosong;
+      const label = kunciKosong === '' ? '(kosong)' : "'HARVEST123'";
+      const tanpaHeader = jalankan();
+      assert.equal(tanpaHeader.lolos, false, `key aktif ${label}: tanpa header TIDAK boleh lolos`);
+      assert.equal(tanpaHeader.status, 403, `key aktif ${label}: tanpa header harus 403`);
+      const dgnHeaderFallback = jalankan({ 'x-api-key': kunciKosong === '' ? '' : 'HARVEST123' });
+      assert.equal(dgnHeaderFallback.lolos, false, `key aktif ${label}: mengirim key itu TIDAK boleh lolos`);
+      assert.equal(dgnHeaderFallback.status, 403, `key aktif ${label}: harus 403 kontrak Unauthorized`);
+    }
+    // Key asli (dari .env) tetap berperilaku normal — guard tidak "menolak semua".
+    cfg.esp32ApiKey = 'kunci-uji-bukan-fallback';
+    assert.equal(jalankan({ 'x-api-key': 'kunci-uji-bukan-fallback' }).lolos, true, 'key asli harus tetap diterima');
+    assert.equal(jalankan({ 'x-api-key': 'salah' }).lolos, false, 'key salah tetap 403');
+    assert.equal(jalankan().lolos, false, 'tanpa header dengan key valid tetap 403');
+  } finally {
+    cfg.esp32ApiKey = asli; // pulihkan — jangan bocor ke tes lain di file ini
+  }
+});
+
+test("JWT_SECRET kosong / 'dev-secret-ganti' → proses MENOLAK start (fail-fast, pesan jelas)", () => {
+  const { spawnSync } = require('node:child_process');
+  const env = { ...process.env, JWT_SECRET: '' }; // '' → config.js tidak pakai .env → fallback
+  const r = spawnSync(process.execPath, ['-e', "require('./src/auth')"], { cwd: ROOT, env, encoding: 'utf8' });
+  assert.notEqual(r.status, 0, 'server harus GAGAL start, bukan diam-diam memakai secret publik');
+  assert.match(r.stderr, /JWT_SECRET tidak diatur/, `stderr: ${r.stderr}`);
+  // Varian: nilai eksplisit = fallback historis juga ditolak.
+  const r2 = spawnSync(process.execPath, ['-e', "require('./src/auth')"],
+    { cwd: ROOT, env: { ...process.env, JWT_SECRET: 'dev-secret-ganti' }, encoding: 'utf8' });
+  assert.notEqual(r2.status, 0, "JWT_SECRET='dev-secret-ganti' harus ditolak");
+  assert.match(r2.stderr, /JWT_SECRET tidak diatur/);
 });

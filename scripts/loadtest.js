@@ -25,7 +25,7 @@ async function login() {
   const res = await fetch(`${BASE}/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: adminPassword }),
+    body: JSON.stringify({ username: 'garap', password: adminPassword }),
   });
   return (await res.json()).token;
 }

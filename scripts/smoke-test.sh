@@ -15,10 +15,10 @@ hr "2. Navigasi browser (Sec-Fetch-Mode: navigate) -> 204 kosong"
 curl -s -o /dev/null -w 'HTTP %{http_code} | body %{size_download} byte\n' -H 'Sec-Fetch-Mode: navigate' "$BE/dashboard"
 
 hr "3. Login salah -> 422"
-curl -s -w '\nHTTP %{http_code}\n' -X POST "$BE/login" -H "$J" -d '{"username":"admin","password":"salah"}'
+curl -s -w '\nHTTP %{http_code}\n' -X POST "$BE/login" -H "$J" -d '{"username":"garap","password":"salah"}'
 
-hr "4. Login admin -> token JWT"
-curl -s -X POST "$BE/login" -H "$J" -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASSWORD\"}" > /tmp/vsf_login.json
+hr "4. Login superadmin (garap) -> token JWT"
+curl -s -X POST "$BE/login" -H "$J" -d "{\"username\":\"garap\",\"password\":\"$ADMIN_PASSWORD\"}" > /tmp/vsf_login.json
 python3 -c "import json;d=json.load(open('/tmp/vsf_login.json'));print('status=',d['status'],'user=',d['user']['username'],d['user']['level'],'token_len=',len(d['token']))"
 cp /tmp/vsf_login.json /tmp/vsf_login.json.bak
 python3 -c "import json;open('/tmp/vsf_tok','w').write(json.load(open('/tmp/vsf_login.json'))['token'])"

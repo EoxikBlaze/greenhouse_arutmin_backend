@@ -118,7 +118,7 @@ function adminToken(base) {
       const env = readEnv();
       if (!env.ADMIN_PASSWORD) throw new Error('ADMIN_PASSWORD tidak ada di .env');
       const res = await request(base).post('/login')
-        .send({ username: 'admin', password: env.ADMIN_PASSWORD });
+        .send({ username: 'garap', password: env.ADMIN_PASSWORD });
       if (res.status !== 200 || !res.body.token) {
         throw new Error(`login admin gagal (status ${res.status})`);
       }

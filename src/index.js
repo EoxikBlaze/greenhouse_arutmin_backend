@@ -10,6 +10,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const helmet = require('helmet');
 const config = require('./config');
 const { demoPurge, requireAuth, requireRole } = require('./auth');
 const { rateLimit } = require('./rateLimit');
@@ -39,11 +40,56 @@ app.use((err, req, res, next) => {
   return next(err);
 });
 
-// Header keamanan minimal (tanpa dependensi)
+// ── HEADER KEAMANAN (helmet 8) ─────────────────────────────────────────
+// Nilai yang WAJIB tetap (dites test/integration): X-Content-Type-Options
+// nosniff · X-Frame-Options DENY · Referrer-Policy no-referrer ·
+// Cache-Control no-store · X-Powered-By mati (app.disable di atas).
+//
+// CSP disetel agar SPA tetap jalan: backend ini TIDAK PERNAH menyajikan HTML
+// (rute navigasi dijawab 204), sedangkan frontend :5173 disajikan Vite dan
+// di-proxy same-origin — jadi 'unsafe-inline' untuk script-src & style-src
+// dipertahankan (bundle Vite bisa menyuntik inline module-preload & style
+// React) sementara objek/embed diblokir. Uji frontend :5173 + login lulus.
+//
+// HSTS hanya bila TIDAK merusak http:// lokal:
+//   SECURITY_HSTS=auto (default) → kirim hanya saat request datang lewat TLS
+//     (req.secure, menghormati X-Forwarded-Proto di belakang nginx)
+//   SECURITY_HSTS=on  → kirim selalu (untuk deploy yang TLS-nya di depan dan
+//     tidak mengirim X-Forwarded-Proto)
+//   SECURITY_HSTS=off → tidak pernah (mode dev keras)
+const hstsMode = String(process.env.SECURITY_HSTS || 'auto').toLowerCase();
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", "'unsafe-inline'"],
+      'style-src': ["'self'", "'unsafe-inline'"],
+      'img-src': ["'self'", 'data:', 'blob:'],
+      'font-src': ["'self'", 'data:'],
+      'connect-src': ["'self'"],
+      'object-src': ["'none'"],
+      'base-uri': ["'self'"],
+      'form-action': ["'self'"],
+      'frame-ancestors': ["'none'"],
+    },
+  },
+  frameguard: { action: 'deny' },   // X-Frame-Options: DENY (kontrak lama)
+  noSniff: true,                    // X-Content-Type-Options: nosniff
+  referrerPolicy: { policy: ['no-referrer'] },
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin' },
+  hsts: false,                      // HSTS kondisional — lihat middleware bawah
+}));
+// HSTS kondisional (lihat komentar di atas) — pada http:// lokal header ini
+// TIDAK dikirim sama sekali sehingga tidak pernah "mengunci" origin lokal.
+app.use((req, res, next) => {
+  const lewatTls = req.secure === true || req.get('x-forwarded-proto') === 'https';
+  if (hstsMode !== 'off' && (hstsMode === 'on' || lewatTls)) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
+  next();
+});
 app.use((_req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
   next();
 });

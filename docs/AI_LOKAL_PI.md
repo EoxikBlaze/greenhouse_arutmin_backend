@@ -25,7 +25,7 @@ heuristik transparan** (bukan error).
                                                     │ Ollama di Raspberry │
                                                     │ Pi :11434           │
                                                     │ model AI_MODEL      │
-                                                    │ (deepseek-r1:1.5b)  │
+                                                    │ (qwen2.5:1.5b)  │
                                                     └─────────┬───────────┘
                                                               │ JSON {keputusan,
                                                               │ alasan, prioritas}
@@ -103,7 +103,7 @@ curl -s -X POST http://127.0.0.1:8000/api/ai/langkah-selanjutnya \
 Ketika **Ollama hidup dan jawabannya valid**, dua field ini berubah:
 
 ```json
-{ "sumber": "ollama", "model": "deepseek-r1:1.5b", "fallback_karena": null }
+{ "sumber": "ollama", "model": "qwen2.5:1.5b", "fallback_karena": null }
 ```
 
 ### Arti field
@@ -114,7 +114,7 @@ Ketika **Ollama hidup dan jawabannya valid**, dua field ini berubah:
 | `alasan` | Semua temuan yang mendasarinya (disertai angka & sumbernya). |
 | `prioritas` | `tinggi` / `sedang` / `rendah`. |
 | `sumber` | `ollama` = jawaban dari model AI; `heuristik` = jawaban dari aturan. |
-| `model` | Nama model yang dipakai (`deepseek-r1:1.5b`); **`null` saat heuristik** (tidak ada LLM yang dipakai). |
+| `model` | Nama model yang dipakai (`qwen2.5:1.5b`); **`null` saat heuristik** (tidak ada LLM yang dipakai). |
 | `fallback_karena` | `null` bila pakai Ollama; kalau heuristik: `koneksi`, `timeout`, `respons_ollama_tidak_valid`, atau `json_invalid`. |
 | `aturan` | Daftar aturan heuristik yang terpicu (transparan, bisa diaudit). |
 | `ringkasan` | Data nyata dari DB yang dipakai menilai (sensor, ambang, alert, tahap, panen). |
@@ -159,7 +159,7 @@ chmod +x deploy-pi/setup-ai.sh
 
 Script akan: (0) cek arsitektur & RAM, (1) instal Ollama resmi
 `curl -fsSL https://ollama.com/install.sh | sh`, (2) `systemctl enable --now ollama`,
-(3) verifikasi `curl http://127.0.0.1:11434/api/version`, (4) `ollama pull deepseek-r1:1.5b`,
+(3) verifikasi `curl http://127.0.0.1:11434/api/version`, (4) `ollama pull qwen2.5:1.5b`,
 (5) uji jawaban model, (6) cek RAM/swap + rekomendasi swap file/zram, (7)
 menampilkan baris `.env` yang perlu diisi.
 
@@ -178,17 +178,17 @@ curl -s http://127.0.0.1:11434/api/version  # {"version":"..."}
 curl -s http://127.0.0.1:11434/api/tags     # daftar model (awalnya kosong)
 
 # 4. unduh model ringan (sekali saja, ±1 GB)
-ollama pull deepseek-r1:1.5b
+ollama pull qwen2.5:1.5b
 
 # 5. uji model
 curl -s http://127.0.0.1:11434/api/generate \
-  -d '{"model":"deepseek-r1:1.5b","prompt":"Balas JSON: {\"ok\":true}","stream":false}'
+  -d '{"model":"qwen2.5:1.5b","prompt":"Balas JSON: {\"ok\":true}","stream":false}'
 ```
 
 ### Konfigurasi backend (berkas `.env` di root backend)
 
 ```
-AI_MODEL=deepseek-r1:1.5b
+AI_MODEL=qwen2.5:1.5b
 AI_OLLAMA_URL=http://127.0.0.1:11434
 ```
 
@@ -210,7 +210,7 @@ npm start
 ```bash
 ollama pull qwen2.5:1.5b        # unduh model lain
 ollama list                     # lihat model yang terpasang
-ollama rm deepseek-r1:1.5b      # (opsional) hapus model lama
+ollama rm qwen2.5:1.5b      # (opsional) hapus model lama
 ```
 
 Lalu ubah di `.env`:
@@ -226,10 +226,10 @@ Rekomendasi ukuran RAM:
 | RAM Pi | Model | Catatan |
 |---|---|---|
 | 2 GB | `qwen2.5:0.5b` | Model 1,5B berisiko ter-kill OOM. |
-| 4 GB | `deepseek-r1:1.5b` (default) | Sediakan swap 2 GB atau zram. |
-| 8 GB | `deepseek-r1:1.5b` / `qwen2.5:3b` | Bisa naik ke 3B untuk jawaban lebih rapi. |
+| 4 GB | `qwen2.5:1.5b` (default) | Sediakan swap 2 GB atau zram. |
+| 8 GB | `qwen2.5:1.5b` / `qwen2.5:3b` | Bisa naik ke 3B untuk jawaban lebih rapi. |
 
-Catatan: `deepseek-r1:1.5b` adalah model *reasoning* — kadang panjang
+Catatan: `qwen2.5:1.5b` adalah model *reasoning* — kadang panjang
 berpikirnya sehingga lambat di Pi. Alternatif yang lebih cepat & ringan:
 `qwen2.5:1.5b` atau `smollm2:135m` (sangat ringan, kualitas seadanya).
 

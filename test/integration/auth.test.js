@@ -19,7 +19,7 @@ after(async () => { if (srv) await srv.stop(); });
 
 test('POST /login valid (admin .env) → 200 + token + user.level=admin', async () => {
   const res = await request(base).post('/login')
-    .send({ username: 'admin', password: env.ADMIN_PASSWORD });
+    .send({ username: 'garap', password: env.ADMIN_PASSWORD });
   assert.equal(res.status, 200, 'kredensial admin dari .env harus diterima');
   assert.equal(res.body.status, true);
   assert.equal(res.body.user.level, 'admin');
