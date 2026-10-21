@@ -229,6 +229,8 @@ function ubah(s) {
           values,
         );
         if (!row) return notFound(res);
+        // Audit trail — perubahan konfigurasi V2 (before/after dari snapshot `lama`).
+        req.audit = { aksi: 'update', tabel: s.table, row_id: String(row[s.pk]), before: lama, after: row };
         res.json({ status: true, message: 'Data berhasil diperbarui.', data: row });
       } catch (e) { next(e); }
     },

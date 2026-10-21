@@ -1,7 +1,8 @@
 'use strict';
 /**
  * Integripsi gelombang-2 #5 — RBAC/Authorization lintas rute:
- *   petani  → /user, /notifikasi-wa, /meja, POST /user  → 403 PetaniGuard
+ *   petani  → /user, /meja, POST /user  → 403 PetaniGuard
+ *   (/notifikasi-wa dihapus dari backend — rutenya kini 404, diuji di bawah)
  *   level tak dikenal (bukan admin/petani) → 403 'Akses ditolak.'
  *   demo    → baca lolos (200), TULIS di luar whitelist DEMO_BOLEH_TAMBAH → 403
  *             dengan pesan kontrak persis (demoGuard), termasuk PUT/PATCH/DELETE
@@ -47,10 +48,11 @@ test('GET /user (petani) → 403 PetaniGuard', async () => {
   assert.deepEqual(res.body, { message: PESAN_PETANI });
 });
 
-test('GET /notifikasi-wa (petani) → 403 PetaniGuard', async () => {
+test('GET /notifikasi-wa → 404 (fitur notifikasi WhatsApp dihapus — rute tak dikenal)', async () => {
   const res = await request(base).get('/notifikasi-wa').set(tokenPetani());
-  assert.equal(res.status, 403, `body: ${res.text}`);
-  assert.deepEqual(res.body, { message: PESAN_PETANI });
+  assert.equal(res.status, 404, `body: ${res.text}`);
+  assert.match(res.body.message || '', /could not be found/,
+    'route /notifikasi-wa harus hilang total (404 JSON generik), bukan 403/401');
 });
 
 test('POST /user (petani) → 403 PetaniGuard (metode tulis pun diblokir guard role)', async () => {

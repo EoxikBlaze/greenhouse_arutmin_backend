@@ -131,6 +131,30 @@ function sensorErrors(data) {
 }
 
 /**
+ * B3 — batas panjang kolom varchar SEBELUM SQL (monitorings.water_level
+ * varchar(20); dulu teks 30 karakter → 22001 'value too long for type
+ * character varying(20)' → 500). sensorErrors() di atas hanya menolak NUL —
+ * panjang dulu lolos ke PostgreSQL.
+ * Sengaja TERPISAH dari sensorErrors(): galat tipe/NUL rute ESP32 ini sudah
+ * lama dijawab 400 (kontrak lama dipertahankan), sedangkan panjang yang dulu
+ * membuat 500 kini dijawab 422 kontrak 'Data tidak valid.' — pesan manusiawi
+ * per-field, tanpa menyentuh status galat tipe yang sudah ada.
+ * @param {Record<string,unknown>} data body sensor
+ * @returns {Record<string,string[]>} errors per-field (kosong = lolos)
+ */
+function panjangSensorErrors(data) {
+  const BATAS = { water_level: 20 }; // monitorings.water_level varchar(20)
+  const errors = {};
+  for (const [k, max] of Object.entries(BATAS)) {
+    const v = data[k];
+    if (typeof v === 'string' && v.length > max) {
+      errors[k] = [`Field ${k} maksimal ${max} karakter.`];
+    }
+  }
+  return errors;
+}
+
+/**
  * G10 — validasi alert SEBELUM INSERT (kolom live: type varchar(50),
  * value varchar(100); dulu kepanjangan → 22001 & NUL → 22021 → 500).
  * @returns {string|null} pesan galat, atau null bila lolos
@@ -164,6 +188,11 @@ router.post('/saveSensor', requireApiKey, async (req, res, next) => {
     const data = req.body || {};
     if (!Object.keys(data).length) return json(res, 400, { status: 'error', message: 'No payload' });
     // G10 — tipe data sensor divalidasi SEBELUM SQL (dulu 500 22P02/22003).
+    // B3 — panjang kolom varchar divalidasi SEBELUM SQL (dulu 22001 → 500).
+    const panjang = panjangSensorErrors(data);
+    if (Object.keys(panjang).length) {
+      return json(res, 422, { message: 'Data tidak valid.', errors: panjang });
+    }
     const errs = sensorErrors(data);
     if (Object.keys(errs).length) {
       return json(res, 400, { status: 'error', message: 'Data sensor tidak valid.', errors: errs });
@@ -268,6 +297,11 @@ api.post('/save-sensor', requireApiKey, async (req, res, next) => {
     const data = req.body || {};
     if (!Object.keys(data).length) return json(res, 400, { status: 'error', message: 'No payload' });
     // G10 — validasi tipe sensor sebelum SQL (sama dgn /monitoring/saveSensor).
+    // B3 — panjang kolom varchar divalidasi SEBELUM SQL (dulu 22001 → 500).
+    const panjang = panjangSensorErrors(data);
+    if (Object.keys(panjang).length) {
+      return json(res, 422, { message: 'Data tidak valid.', errors: panjang });
+    }
     const errs = sensorErrors(data);
     if (Object.keys(errs).length) {
       return json(res, 400, { status: 'error', message: 'Data sensor tidak valid.', errors: errs });

@@ -93,7 +93,9 @@ function kalenderOk(y, m, d) {
  *    ISO datetime dgn 'T'/' ' + zona (Z/±HH:MM, offset maksimal ±15:59),
  *    '2026-01-01T24:00:00' (tengah malam PG), dan spasi pinggir (di-trim,
  *    PostgreSQL juga mengabaikannya).
- *  - Ditolak: bukan teks (array ?dari[]=1), tahun 0, bulan/hari/tidak kabisat
+ *  - Ditolak: bukan teks (array ?dari[]=1), TEKS SPASI SAJA (' ', '%20', '%0A'
+ *    — lolos trim tapi handler mengirim nilai mentah ke cast → 22007 → 500),
+ *    tahun 0, bulan/hari/tidak kabisat
  *    di luar kalender, jam > 24 (atau 24:xx selain 24:00:00), menit/detik > 59,
  *    offset > 15:59 (PG 22009), angka berpangkat '1e5', teks bebas.
  * Rentang terbalik / kosong TIDAK divalidasi di sini: dibiarkan seperti selama
@@ -104,7 +106,13 @@ function kalenderOk(y, m, d) {
 function isQueryDate(v) {
   if (typeof v !== 'string') return false;
   const s = v.trim();
-  if (s === '') return true;                       // '' = tanpa filter (perlakuan lama: `dari || null`)
+  // '' (string kosong persis) = tanpa filter (perlakuan lama: `dari || null`).
+  // whitespace-only (' ', '%20', '%0A', '\t') DITOLAK di sini: handler memakai
+  // nilai MENTAH (bukan hasil trim), dan PostgreSQL menolak literal yang isinya
+  // spasi saja — ' '::date → 22007 "invalid input syntax" → 500. Ditolak sebelum
+  // SQL → 422 per-field lewat tanggalErrors(). Nilai berisi tanggal dgn spasi
+  // pinggir (' 2026-01-01 ') TETAP lolos — PostgreSQL menerimanya.
+  if (s === '') return v === '';
   if (s === 'infinity' || s === '-infinity') return true;
   const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
   if (compact) return kalenderOk(+compact[1], +compact[2], +compact[3]);

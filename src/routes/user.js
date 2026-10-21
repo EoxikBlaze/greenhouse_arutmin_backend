@@ -16,10 +16,37 @@ const LEVELS = ['admin', 'user', 'petani'];
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** G10 — galat 422 utk field email (dipakai POST & PUT; null/kosong = wajib). */
+/**
+ * B4 — panjang kolom live: users.username varchar(50), users.email varchar(100).
+ * Teks lebih panjang membuat PostgreSQL melempar SQLSTATE 22001
+ * ("value too long for type character varying(50)/(100)") → 500, dan byte NUL
+ * membuat 22021 (teks SQL tidak boleh memuat \u0000) → 500. Keduanya kini ditolak
+ * SEBELUM query tulis, dengan 422 kontrak + errors per-field (pola G10).
+ */
+const MAX_USERNAME = 50;
+const MAX_EMAIL = 100;
+const NUL = '\u0000';
+
+/**
+ * B4 — galat 422 utk field username (dipakai POST /user; sebelumnya cuma min-3,
+ * jadi username 60 karakter lolos lalu jatuh ke 22001 → 500).
+ * Panjang diukur pada nilai yang benar-benar DISIMPAN (lower(trim($1))).
+ */
+function usernameError(username) {
+  if (!username || String(username).trim().length < 3) return ['Nama pengguna min 3 karakter.'];
+  const u = String(username).trim();
+  if (u.includes(NUL)) return ['Nama pengguna tidak boleh mengandung karakter terlarang.'];
+  if (u.length > MAX_USERNAME) return [`Nama pengguna maks ${MAX_USERNAME} karakter.`];
+  return null;
+}
+
+/** G10/B4 — galat 422 utk field email (dipakai POST & PUT; null/kosong = wajib). */
 function emailError(email) {
   if (email === null || email === undefined || String(email).trim() === '') return ['Email wajib diisi.'];
   if (typeof email !== 'string' || !EMAIL_RE.test(String(email).trim())) return ['Format email tidak valid.'];
+  // B4 — panjang & NUL ditolak di sini supaya tidak jatuh ke 22001/22021 (500).
+  if (String(email).includes(NUL)) return ['Email tidak boleh mengandung karakter terlarang.'];
+  if (String(email).length > MAX_EMAIL) return [`Email maks ${MAX_EMAIL} karakter.`];
   return null;
 }
 
@@ -43,7 +70,9 @@ router.post('/', async (req, res, next) => {
     if (req.user.demo) return json(res, 403, { message: 'Mode demo tidak boleh mengelola user.' });
     const { username, email, password, level = 'user', is_demo = false } = req.body || {};
     const errors = {};
-    if (!username || String(username).trim().length < 3) errors.username = ['Nama pengguna min 3 karakter.'];
+    // B4 — username 3..50 + tanpa NUL (dulu cuma min-3 → 60 karakter → 22001 → 500).
+    const un = usernameError(username);
+    if (un) errors.username = un;
     if (!password || String(password).length < 6) errors.password = ['Password min 6 karakter.'];
     if (!LEVELS.includes(level)) errors.level = ['Level harus admin/user/petani.'];
     // G10 — email wajib + format (dulu tanpa cek → 23502 → 500; objek lolos 201).
@@ -58,6 +87,9 @@ router.post('/', async (req, res, next) => {
        RETURNING id, username, email, level, is_demo, created_at, updated_at`,
       [username, email ?? null, hash, level, !!is_demo],
     );
+    // Audit trail — kata sandi TIDAK ikut: publicUser tidak memuat kolom password
+    // dan src/audit.js membuang kunci rahasia dari before/after.
+    req.audit = { aksi: 'create', tabel: 'users', row_id: String(row.id), before: null, after: publicUser(row) };
     res.status(201).json({ status: true, message: 'User berhasil ditambahkan.', data: publicUser(row) });
   } catch (e) {
     // G10 — 23505 dipetakan per-field: constraint email → 'Email sudah dipakai.'
@@ -87,7 +119,12 @@ router.put('/:id', async (req, res, next) => {
     // G10 — urutan '404 identik' (kontrak §2b): baris dicek SEBELUM validasi body.
     // Dulu PUT /user/999999 dgn body invalid → 422 tapi dgn body valid → 404 —
     // jawaban bergantung isi body. Pesan 422 utk id-ADA + body-invalid TETAP sama.
-    const lama = await one('SELECT id FROM users WHERE id = $1', [req.params.id]);
+    // Snapshot baris lama: cek 404 (urutan kontrak §2b tetap) + before_data audit
+    // (kolom rahasia tidak dipilih — hash password tidak pernah masuk log).
+    const lama = await one(
+      'SELECT id, username, email, level, is_demo FROM users WHERE id = $1',
+      [req.params.id],
+    );
     if (!lama) return notFound(res);
     const { username, email, password, level, is_demo } = req.body || {};
     const errors = {};
@@ -112,6 +149,7 @@ router.put('/:id', async (req, res, next) => {
       `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length}
        RETURNING id, username, email, level, is_demo, created_at, updated_at`, values);
     if (!row) return notFound(res);
+    req.audit = { aksi: 'update', tabel: 'users', row_id: String(row.id), before: lama, after: publicUser(row) };
     res.json({ status: true, message: 'User berhasil diperbarui.', data: publicUser(row) });
   } catch (e) {
     // G10 — 23505 unique (email/username milik lain) → 422 per-field (dulu 500);
@@ -142,6 +180,7 @@ router.delete('/:id', async (req, res, next) => {
       [req.params.id],
     );
     if (!row) return notFound(res);
+    req.audit = { aksi: 'delete', tabel: 'users', row_id: String(req.params.id), before: row, after: null };
     res.json({ status: true, message: 'User dihapus.' });
   } catch (e) { next(e); }
 });

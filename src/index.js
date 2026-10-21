@@ -14,6 +14,7 @@ const helmet = require('helmet');
 const config = require('./config');
 const { demoPurge, requireAuth, requireRole } = require('./auth');
 const { rateLimit } = require('./rateLimit');
+const { auditTrail } = require('./audit');
 const { invalidBody, loadColumnLengths } = require('./routes/_validate');
 
 const app = express();
@@ -132,6 +133,14 @@ if (process.env.RATE_LIMIT_OFF !== '1') {
 // Purge data demo otomatis (ringan, 1×/menit)
 app.use((_req, _res, next) => { demoPurge(); next(); });
 
+// ── AUDIT TRAIL ────────────────────────────────────────────────────────
+// Pencatat aksi tulis SUKSES (CREATE/UPDATE/DELETE pada rute CRUD + login
+// berhasil) ke tabel audit_logs. Satu middleware untuk semua rute: ia hanya
+// menempel `res.on('finish')` sehingga status & isi balasan TIDAK PERNAH
+// disentuh (kontrak pesan tidak mungkin berubah) dan galat pencatatan
+// ditangkap di dalam src/audit.js (request tetap 200).
+app.use(auditTrail);
+
 /* ── routing (path 1:1 dengan kontrak Laravel — lihat docs/BACKEND_ANALYSIS.md) ── */
 const authRouter = require('./routes/auth');
 const dashboard = require('./routes/dashboard');
@@ -143,9 +152,9 @@ const tahap = require('./routes/tahap');
 const laporan = require('./routes/laporan');
 const profil = require('./routes/profil');
 const user = require('./routes/user');
-const notifWa = require('./routes/notifWa');
 const konfigurasi = require('./routes/konfigurasi');
 const ai = require('./routes/ai');
+const auditLogs = require('./routes/audit');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
 app.use('/api', monitoring.api);                       // ESP32 (guard X-API-KEY per route)
@@ -162,8 +171,12 @@ app.use('/tanam', ...semuaRole, tanam);
 app.use('/profil', ...semuaRole, profil);
 app.use('/watercontrol', ...adminDemo, watercontrol);
 app.use('/laporan', ...adminDemo, laporan);
-app.use('/notifikasi-wa', ...adminDemo, notifWa);
 app.use('/user', ...adminDemo, user);
+// Riwayat audit — khusus admin. Guard dipasang DI SINI (bukan di dalam modul)
+// supaya rute tak dikenal tetap 404 JSON. requireRole(['admin']) meneruskan
+// token demo (kontrak requireRole) → halaman /audit diizinkan untuk admin+demo,
+// sedangkan token petani tetap 403 PetaniGuard.
+app.use('/audit-logs', requireAuth, requireRole(['admin']), auditLogs);
 // Guard role sudah ada di dalam modul master/tahap (per sub-router) — tanpa
 // wrapper di sini agar rute tak dikenal tetap 404 JSON (bukan 401).
 app.use('/', master);                                  // /meja, /tanaman, /siklus, /ambang

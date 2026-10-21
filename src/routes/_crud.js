@@ -172,6 +172,8 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
         `INSERT INTO ${table} (${allFields.join(', ')}) VALUES (${ph.join(', ')}) RETURNING *`,
         values,
       );
+      // Audit trail — siapkan entri; dicatat oleh middleware auditTrail (index.js).
+      req.audit = { aksi: 'create', tabel: table, row_id: String(row[pk]), before: null, after: row };
       res.status(201).json({ status: true, message: 'Data berhasil ditambahkan.', data: row });
     } catch (e) { next(e); }
   });
@@ -184,11 +186,13 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
       // (id tak ada → 404 IDENTIK, tanpa menyentuh FK), BARU relasi dicek (422, dulu
       // 23503 → 500), baru UPDATE. Tanpa pembacaan awal ini, id tak-ada + FK tak-ada
       // akan berubah 404 → 422 (regresi kontrak 404 lama).
+      // Snapshot penuh (bukan `SELECT 1`) dipakai ganda: cek 404 di atas + before_data
+      // untuk audit trail (src/audit.js) — satu query, tidak menambah biaya baca.
+      const before = await one(`SELECT * FROM ${table} WHERE ${pk} = $1`, [req.params.id]);
+      if (!before) return notFound(res);
       if (fkCols.length) {
         const fks = fkCols.filter((c) => fields.includes(c));
         if (fks.length) {
-          const lama = await one(`SELECT 1 AS ada FROM ${table} WHERE ${pk} = $1`, [req.params.id]);
-          if (!lama) return notFound(res);
           const errors = await fkErrors(fks, req.body);
           if (Object.keys(errors).length) return fkReject(res, errors);
         }
@@ -201,6 +205,8 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
         values,
       );
       if (!row) return notFound(res);
+      // Audit trail — before/after dipakai halaman riwayat (lihat src/audit.js).
+      req.audit = { aksi: 'update', tabel: table, row_id: String(row[pk]), before, after: row };
       res.json({ status: true, message: 'Data berhasil diperbarui.', data: row });
     } catch (e) { next(e); }
   };
@@ -213,6 +219,8 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
     try {
       const row = await one(`DELETE FROM ${table} WHERE ${pk} = $1 RETURNING *`, [req.params.id]);
       if (!row) return notFound(res);
+      // Audit trail — baris terakhir ikut direkam sebagai before_data.
+      req.audit = { aksi: 'delete', tabel: table, row_id: String(req.params.id), before: row, after: null };
       res.json({ status: true, message: 'Data dihapus.' });
     } catch (e) {
       // P4 — FK ON DELETE RESTRICT: data terkait masih ada → jawab 409 yang ramah,

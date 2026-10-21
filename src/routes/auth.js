@@ -32,6 +32,17 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
+    // Audit trail — sukses login dicatat middleware auditTrail (src/index.js);
+    // aktor diambil dari akun yang baru masuk (req.user belum terisi di rute ini).
+    req.audit = {
+      aksi: 'login',
+      tabel: 'users',
+      row_id: String(user.id),
+      actor: { id: user.id, label: user.username, level: user.level },
+      before: null,
+      after: { username: user.username, level: user.level, ingat: !!remember },
+    };
+
     json(res, 200, {
       status: true,
       message: 'Login berhasil.',
