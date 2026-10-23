@@ -240,3 +240,22 @@ test('Pagination & filter: page/per_page/tabel/aksi + 422 untuk parameter cacat'
     assert.ok(Array.isArray(res.body.errors[kunci]), `errors.${kunci} wajib ada`);
   }
 });
+
+test('DELETE /user untuk user yang PERNAH login → 200; jejak audit-nya tetap ada (aktor = username)', async () => {
+  // Dulu: FK SET NULL bertabrakan dgn CHECK audit_logs_user_check → 422 "Kolom user tidak memenuhi aturan data".
+  const nama = `itestlogin${Date.now().toString(36)}`;
+  const sandi = `uji-${Math.random().toString(36).slice(2)}`;
+  const buat = await request(base).post('/user').set(auth)
+    .send({ username: nama, email: `${nama}@example.com`, password: sandi, level: 'petani' });
+  assert.equal(buat.status, 201, buat.text);
+  userId = buat.body.data.id;
+  assert.equal((await request(base).post('/login').send({ username: nama, password: sandi })).status, 200);
+  await tungguMuncul((rows) => rows.some((r) => r.aksi === 'login' && r.actor_label === nama));
+
+  const hapus = await request(base).delete(`/user/${userId}`).set(auth);
+  assert.equal(hapus.status, 200, hapus.text);
+  userId = null;
+  const sisa = (await ambil({ per_page: 100 })).body.data.filter((r) => r.aksi === 'login' && r.actor_label === nama);
+  assert.ok(sisa.length >= 1, 'baris LOGIN user yang dihapus tidak boleh ikut terhapus');
+  assert.ok(sisa.every((r) => r.actor_user_id === null), 'actor_user_id di-NULL-kan oleh FK');
+});
