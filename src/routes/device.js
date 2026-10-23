@@ -37,13 +37,29 @@ const sensorGuard = requireKunci('sensor:tulis');
 const aktuatorGuard = requireKunci('aktuator:perintah');
 
 /* ── SENSOR ───────────────────────────────────────────────────────── */
+/**
+ * Penampung asal bacaan (`id_meja`, opsional demi firmware lama). Bila dikirim WAJIB bilangan bulat
+ * ≥ 1 milik meja yang ada — otomasi dosis hanya memakai bacaan yang bertanda penampungnya sendiri.
+ * @returns {Promise<{idMeja: number|null} | {errors: Record<string,string[]>}>}
+ */
+async function penampungBacaan(v) {
+  if (v === undefined || v === null || v === '') return { idMeja: null };
+  const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d{1,12}$/.test(v.trim()) ? Number(v) : NaN;
+  if (!Number.isSafeInteger(n) || n < 1) return { errors: { id_meja: ['id_meja harus bilangan bulat ≥ 1.'] } };
+  if (!(await one('SELECT 1 AS x FROM mejas WHERE id_meja = $1', [n]))) {
+    return { errors: { id_meja: [`Meja dengan id_meja ${n} tidak ditemukan.`] } };
+  }
+  return { idMeja: n };
+}
+
 perangkat.post('/sensor', sensorGuard, async (req, res, next) => {
   try {
     const data = req.body && typeof req.body === 'object' ? req.body : {};
     if (!Object.keys(data).length) return res.status(400).json({ status: false, message: 'Payload kosong.' });
-    const errs = { ...mon.sensorErrors(data), ...mon.panjangSensorErrors(data) };
+    const pen = await penampungBacaan(data.id_meja);
+    const errs = { ...mon.sensorErrors(data), ...mon.panjangSensorErrors(data), ...(pen.errors || {}) };
     if (Object.keys(errs).length) return res.status(422).json({ status: false, message: 'Data sensor tidak valid.', errors: errs });
-    await mon.saveSensorRows(data);
+    await mon.saveSensorRows(data, { idMeja: pen.idMeja });
     await tandaiTerlihat(kodePerangkat(req), req.ip, {
       firmware: typeof data.firmware === 'string' ? data.firmware.slice(0, 40) : null,
       rssi: Number.isFinite(Number(data.rssi)) ? Math.round(Number(data.rssi)) : null,

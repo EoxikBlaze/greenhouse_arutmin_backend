@@ -20,20 +20,35 @@ const { bacaKonfig, buatPerintah, PerintahDitolak } = require('./aktuator');
 const SENSOR_BASI_DETIK = 120;
 
 /**
+ * Rentang fisik wajar (Perancangan FINAL §4.1 & §9 "Sanity check sensor"): di luar ini = probe lepas /
+ * kabel putus → bacaan DIBUANG, jangan pernah mendosis darinya. EC 0,1–5 mS/cm × 500 = 50–2.500 ppm.
+ */
+const SANITY = { ph: [3, 9], tds: [50, 2500], suhuAir: [5, 45] };
+
+/** Bacaan mustahil → teks sebab; wajar → null. Nilai yang tidak dikirim (null) tidak diperiksa. */
+function bacaanMustahil({ ph, tds, suhuAir }) {
+  const luar = (v, [min, max]) => v != null && (!Number.isFinite(v) || v < min || v > max);
+  if (luar(ph, SANITY.ph)) return `pH ${ph} di luar rentang wajar ${SANITY.ph.join('–')}`;
+  if (luar(tds, SANITY.tds)) return `TDS ${tds} ppm di luar rentang wajar ${SANITY.tds.join('–')} ppm`;
+  if (luar(suhuAir, SANITY.suhuAir)) return `suhu air ${suhuAir} °C di luar rentang wajar ${SANITY.suhuAir.join('–')} °C`;
+  return null;
+}
+
+/**
  * Keputusan murni (tanpa DB) → perintah DOSIS atau null.
- * @param {{ph:number|null, tds:number|null, umurDetik:number}} sensor
+ * @param {{ph:number|null, tds:number|null, waterTemp?:number|null, umurDetik:number}} sensor
  * @param {{target_ec_ppm:number|null, target_ph:number|null}} target
  * @param {Record<string,number>} cfg konfigurasi_dosis
  * @param {number} penampung
  */
 function putuskan(sensor, target, cfg, penampung) {
   if (!sensor || sensor.umurDetik == null || sensor.umurDetik > SENSOR_BASI_DETIK) return { aksi: null, sebab: 'sensor basi/tidak ada' };
-  const ph = sensor.ph == null ? null : Number(sensor.ph);
-  const tds = sensor.tds == null ? null : Number(sensor.tds);
-  // bacaan tak masuk akal = sensor rusak/lepas → jangan dosis
-  if ((ph != null && (!Number.isFinite(ph) || ph < 2 || ph > 12)) || (tds != null && (!Number.isFinite(tds) || tds < 0 || tds > 4000))) {
-    return { aksi: null, sebab: 'bacaan sensor tidak wajar' };
-  }
+  const angka = (v) => (v == null ? null : Number(v));
+  const ph = angka(sensor.ph);
+  const tds = angka(sensor.tds);
+  // bacaan mustahil = sensor rusak/lepas → buang, jangan dosis (mis. probe EC lepas terbaca ~0 ppm)
+  const mustahil = bacaanMustahil({ ph, tds, suhuAir: angka(sensor.waterTemp) });
+  if (mustahil) return { aksi: null, sebab: `bacaan dibuang: ${mustahil}` };
 
   const tEc = target.target_ec_ppm == null ? null : Number(target.target_ec_ppm);
   const tPh = target.target_ph == null ? null : Number(target.target_ph);
@@ -61,6 +76,22 @@ function putuskan(sensor, target, cfg, penampung) {
   return { aksi: null, sebab: 'dalam pita target' };
 }
 
+/**
+ * Bacaan terbaru MILIK penampung ini (monitorings.id_meja). Bacaan meja lain atau tanpa id_meja
+ * (firmware lama / rute lama) tidak pernah dipakai untuk mendosis. null bila belum ada.
+ * created_at hanya presisi detik → `id DESC` memecah seri.
+ */
+async function bacaanTerakhir(penampung) {
+  const m = await one(
+    'SELECT ph, tds, "waterTemp", created_at FROM monitorings WHERE id_meja = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
+    [penampung]);
+  if (!m) return null;
+  return {
+    ph: m.ph, tds: m.tds, waterTemp: m.waterTemp,
+    umurDetik: Math.round((Date.now() - new Date(m.created_at).getTime()) / 1000),
+  };
+}
+
 /** Satu siklus: baca data → putuskan → antre lewat pagar. Mengembalikan ringkasan (untuk uji/log). */
 async function siklus(penampung) {
   const target = await one('SELECT target_ec_ppm, target_ph, status_lock FROM penampung_states WHERE id_meja = $1', [penampung]);
@@ -82,11 +113,8 @@ async function siklus(penampung) {
     return { aksi: null, sebab: 'menunggu pencampuran (mixing)' };
   }
 
-  const m = await one('SELECT ph, tds, created_at FROM monitorings ORDER BY created_at DESC LIMIT 1');
-  const sensor = m && {
-    ph: m.ph, tds: m.tds,
-    umurDetik: Math.round((Date.now() - new Date(m.created_at).getTime()) / 1000),
-  };
+  const sensor = await bacaanTerakhir(penampung);
+  if (!sensor) return { aksi: null, sebab: 'belum ada bacaan untuk penampung ini' };
   const { aksi, sebab } = putuskan(sensor, target, cfg, penampung);
   if (!aksi) return { aksi: null, sebab };
   try {
@@ -117,4 +145,4 @@ function mulai() {
 }
 function henti() { if (timer) clearInterval(timer); timer = null; }
 
-module.exports = { putuskan, siklus, mulai, henti };
+module.exports = { SANITY, bacaanMustahil, putuskan, bacaanTerakhir, siklus, mulai, henti };

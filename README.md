@@ -92,3 +92,9 @@ Tes: `node --test test/integration/ai-pengaman.test.js` (670+ variasi serangan a
 
 ## Catatan setup database baru
 `npm run migrate` hanya menambah migrasi di atas skema dasar. Pada database kosong, muat dulu `database/vertonik.sql` (berisi tabel `audit_logs` dan lainnya), baru `npm run migrate` lalu `npm run db:seed-fake`. Memuat `schema.sql` saja membuat halaman Riwayat Audit error 500.
+
+## Bacaan sensor per penampung
+`POST /api/device/v1/sensor` menerima `id_meja` (opsional, bilangan bulat milik meja yang ada; selain itu → 422).
+Otomasi dosis (`src/otomasi.js`) hanya memakai bacaan terbaru **milik penampung yang dikendalikan** dan membuang
+bacaan mustahil sesuai Perancangan FINAL §4.1/§9: pH di luar 3–9, TDS di luar 50–2.500 ppm (EC 0,1–5 mS/cm),
+suhu air di luar 5–45 °C. Tes: `test/otomasi.test.js`, `test/integration/sensor-penampung.test.js`.

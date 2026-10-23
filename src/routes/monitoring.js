@@ -64,16 +64,22 @@ async function latestSensorPayload() {
   });
 }
 
-async function saveSensorRows(data) {
-  // SATU round-trip CTE: anti-duplikat + simpan sensor + state katup + angkat
+/**
+ * @param {object} data payload sensor (sudah lolos sensorErrors/panjangSensorErrors)
+ * @param {{idMeja?: number|null}} [opsi] penampung asal bacaan — HANYA dari pemanggil yang sudah
+ *   memvalidasinya (rute perangkat); body mentah tidak pernah dibaca untuk kolom ini.
+ */
+async function saveSensorRows(data, { idMeja = null } = {}) {
+  // SATU round-trip CTE: anti-duplikat (per penampung) + simpan sensor + state katup + angkat
   // command pending lalu reset ke AUTO (kontrak Laravel dipertahankan).
+  // created_at hanya presisi detik → `id DESC` memecah seri bacaan dalam detik yang sama.
   const rows = await q(`
     WITH last AS (
       SELECT "waterTemp", ph, tds, "airTemp", humidity
-      FROM monitorings ORDER BY created_at DESC LIMIT 1
+      FROM monitorings WHERE id_meja IS NOT DISTINCT FROM $7::bigint ORDER BY created_at DESC, id DESC LIMIT 1
     ), ins AS (
-      INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, created_at, updated_at)
-      SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric, now(), now()
+      INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at)
+      SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric, $7::bigint, now(), now()
       WHERE NOT EXISTS (
         SELECT 1 FROM last WHERE
           "waterTemp" IS NOT DISTINCT FROM $1 AND ph IS NOT DISTINCT FROM $2 AND
@@ -98,7 +104,7 @@ async function saveSensorRows(data) {
     (() => {
       const nz = (v) => (v === '' || v === undefined ? null : v);
       return [nz(data.waterTemp), nz(data.ph), nz(data.tds), nz(data.airTemp),
-        nz(data.humidity), nz(data.solenoid_state)];
+        nz(data.humidity), nz(data.solenoid_state), idMeja];
     })(),
   );
   return rows[0]?.command ?? 'AUTO';
