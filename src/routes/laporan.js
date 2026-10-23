@@ -21,7 +21,10 @@ async function matrix(dari, sampai) {
            (SELECT count(*)::int FROM peremajaans p WHERE date_trunc('month', p.tgl_awal_peremajaan) = bln) AS remaja,
            (SELECT count(*)::int FROM pendewasaans d WHERE date_trunc('month', d.tgl_awal_pendewasaan) = bln) AS dewasa,
            (SELECT coalesce(sum(p.panen_berhasil),0)::float FROM panens p WHERE date_trunc('month', p.tgl_panen) = bln) AS panen_kg,
-           (SELECT round(avg(m.ph)::numeric,2) FROM monitorings m WHERE date_trunc('month', m.created_at) = bln) AS rata_ph
+           -- rentang (bukan date_trunc pada kolom) → idx_monitorings_created terpakai; tanpa ini SETIAP bulan
+           -- memindai seluruh riwayat sensor (uji beban: 5 juta baris → 716 ms/permintaan dan terus naik)
+           (SELECT round(avg(m.ph)::numeric,2) FROM monitorings m
+             WHERE m.created_at >= bln::timestamp AND m.created_at < (bln + interval '1 month')::timestamp) AS rata_ph
     FROM bulan ORDER BY 1 DESC`, [dari || null, sampai || null]);
 }
 
