@@ -155,8 +155,16 @@ const user = require('./routes/user');
 const konfigurasi = require('./routes/konfigurasi');
 const ai = require('./routes/ai');
 const auditLogs = require('./routes/audit');
+const device = require('./routes/device');
+const aktuatorRoutes = require('./routes/aktuator');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
+// Perangkat ESP32 (sensor & aktuator) + klien REST berkunci — kunci per-perangkat (src/kunci.js).
+app.use('/api/device/v1', device.perangkat);
+app.use('/api/v1', device.klien);
+// Kendali aktuator + manajemen API key — JWT admin (bukan demo) untuk menulis.
+app.use('/api/aktuator', aktuatorRoutes.router);
+app.use('/api/kunci', aktuatorRoutes.kunci);
 app.use('/api', monitoring.api);                       // ESP32 (guard X-API-KEY per route)
 // Asisten keputusan budidaya (AI lokal Ollama) — guard auth+role ada di dlm modul:
 // Bearer JWT wajib, role admin/petani, demo 403, Ollama mati → fallback heuristik.
@@ -305,4 +313,4 @@ loadColumnLengths()
       : 'Batas panjang teks  : information_schema gagal dibaca — memakai fallback batas spec');
   })
   .catch(() => { /* loadColumnLengths sudah menangkap errornya sendiri */ })
-  .finally(startServers);
+  .finally(() => { startServers(); require('./otomasi').mulai(); });
