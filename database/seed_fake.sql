@@ -5,11 +5,11 @@
 -- Aman diulang: bila data palsu sudah ada, skrip berhenti tanpa menambah apa pun.
 -- Penanda  : nama berawalan "DEMO", keterangan "FAKE-DEBUG", alert berawalan "[FAKE]".
 -- Isi      : 4 meja (3 NFT + 1 DFT, sesuai rancangan), 2 tanaman, siklus tanam
---            lengkap (semai→panen), 288 bacaan sensor 24 jam terakhir (ada yang
+--            lengkap (semai→panen), 288 bacaan sensor 24 jam terakhir per meja (ada yang
 --            di luar ambang), 14 alert, state penampung (normal/LOCK/pemeliharaan/
 --            hampir habis jatah), dan 4 kamera CCTV (hidup, putus, nonaktif).
 -- CATATAN  : bacaan terbaru dibuat "baru saja" → status IoT ONLINE selama ±2 menit
---            (batas 120 dtk). Jalankan ulang hapus+seed untuk memunculkan lagi.
+--            (batas 120 dtk). Agar tetap online, jalankan `npm run sim:sensor`.
 -- ============================================================================
 
 -- tabel CCTV (idempoten; sama dengan migrasi 2026-10-22_01_cctv_kamera.sql)
@@ -89,22 +89,25 @@ BEGIN
   INSERT INTO panens (id_pendewasaan, panen_berhasil, panen_gagal, tgl_panen, keterangan, created_at, updated_at)
   VALUES (pd_a, 4, 1, current_date, 'FAKE-DEBUG: sisa panen', now(), now());
 
-  -- ── bacaan sensor 24 jam (tiap 5 menit, deterministik) ──────────────────
+  -- ── bacaan sensor 24 jam per meja DEMO (tiap 5 menit, deterministik) ────
+  -- Tiap meja punya geseran nilai kecil (k) agar tabel per meja tidak kembar;
+  -- lonjakan/anomali (pH 7.4/4.7, TDS 1320/380, suhu udara 37) hanya di Meja 1.
   PERFORM setseed(0.42);
   INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, ec_ms_cm, created_at, updated_at)
   SELECT
-    round((25.5 + 2.0*sin(n/40.0) + (random()-0.5)*0.6)::numeric, 1),
-    round((CASE WHEN n % 97 = 5 THEN 7.4 WHEN n % 131 = 9 THEN 4.7
-                ELSE 6.1 + 0.25*sin(n/30.0) + (random()-0.5)*0.12 END)::numeric, 2),
-    round((CASE WHEN n BETWEEN 3 AND 9 THEN 1320 WHEN n % 173 = 11 THEN 380
-                ELSE 900 + 120*sin(n/55.0) + (random()-0.5)*40 END)::numeric, 0),
-    round((CASE WHEN n BETWEEN 100 AND 130 THEN 37 ELSE 29 + 4*sin(n/50.0) + (random()-0.5)*0.8 END)::numeric, 1),
-    round((68 + 10*sin(n/45.0 + 1) + (random()-0.5)*2)::numeric, 0),
-    m1,
-    round((CASE WHEN n BETWEEN 3 AND 9 THEN 1320 ELSE 900 + 120*sin(n/55.0) END / 500.0)::numeric, 2),
-    now() - (n * interval '5 minutes') - interval '10 seconds',
-    now() - (n * interval '5 minutes') - interval '10 seconds'
-  FROM generate_series(0, 287) AS n;
+    round((25.5 + mj.k*0.3 + 2.0*sin(n/40.0) + (random()-0.5)*0.6)::numeric, 1),
+    round((CASE WHEN mj.k = 0 AND n % 97 = 5 THEN 7.4 WHEN mj.k = 0 AND n % 131 = 9 THEN 4.7
+                ELSE 6.1 + mj.k*0.08 + 0.25*sin(n/30.0 + mj.k) + (random()-0.5)*0.12 END)::numeric, 2),
+    round((CASE WHEN mj.k = 0 AND n BETWEEN 3 AND 9 THEN 1320 WHEN mj.k = 0 AND n % 173 = 11 THEN 380
+                ELSE 900 + mj.k*25 + 120*sin(n/55.0 + mj.k) + (random()-0.5)*40 END)::numeric, 0),
+    round((CASE WHEN mj.k = 0 AND n BETWEEN 100 AND 130 THEN 37 ELSE 29 + mj.k*0.4 + 4*sin(n/50.0) + (random()-0.5)*0.8 END)::numeric, 1),
+    round((68 - mj.k*2 + 10*sin(n/45.0 + 1) + (random()-0.5)*2)::numeric, 0),
+    mj.id,
+    round((CASE WHEN mj.k = 0 AND n BETWEEN 3 AND 9 THEN 1320 ELSE 900 + mj.k*25 + 120*sin(n/55.0 + mj.k) END / 500.0)::numeric, 2),
+    now() - (n * interval '5 minutes') - (10 + mj.k) * interval '1 second',
+    now() - (n * interval '5 minutes') - (10 + mj.k) * interval '1 second'
+  FROM generate_series(0, 287) AS n
+  CROSS JOIN (VALUES (m1, 0), (m2, 1), (m3, 2), (m4, 3)) AS mj(id, k);
 
   -- ── alert (campur severity / LOCK / sudah dibaca) ───────────────────────
   INSERT INTO alert_logs (type, value, severity, locked, acknowledged, acknowledged_at, id_meja, created_at, updated_at) VALUES
