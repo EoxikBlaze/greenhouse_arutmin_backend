@@ -144,8 +144,16 @@ const KATA_TOPIK = [
   'diagnosa', 'diagnosis', 'debug', 'periksa', 'cek', 'status', 'tabel', 'kondisi', 'error',
   'offline', 'online', 'koneksi', 'bantuan', 'help', 'fitur', 'menu', 'halaman', 'login', 'akun', 'saran', 'rekomendasi', 'ringkas', 'ringkasan', 'grafik',
   'nutrient', 'water', 'stage', 'harvest', 'humidity', 'temperature', 'plant', 'status',
+  // pertanyaan kerja harian (chip saran "Apa yang harus saya lakukan hari ini?")
+  'kebun', 'lakukan', 'kerjakan', 'prioritas', 'tugas', 'jadwal', 'hari ini',
 ];
 const SAPAAN = /^(?:h(?:a)?i|halo|hai|hello|hey|pagi|siang|sore|malam|selamat \w+|terima ?kasih|makasih|thanks?|ok(?:e|ay)?|siap|baik|mantap|tolong|bantu|help|siapa kamu|kamu siapa|apa (?:itu|yang bisa) .*)[\s.!?]*$/;
+
+// salam/terima kasih murni — dijawab tetap tanpa LLM (model kecil membalas salam tanpa kata domain)
+const SALAM = /^(?:h(?:a)?i|halo|hai|hello|hey|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam)|terima ?kasih|makasih|thanks?|ok(?:e|ay)?|siap|baik|mantap|siapa kamu|kamu siapa)[\s.!?]*$/;
+function apakahSalam(pesan) {
+  return SALAM.test(normalisasi(pesan));
+}
 
 function dalamTopik(pesan, adaRiwayat) {
   const s = normalisasi(pesan);
@@ -289,7 +297,7 @@ function saringKeluaran(teks, panjangMaks = 1500) {
 }
 
 module.exports = {
-  CANARY, normalisasi, deteksi, dalamTopik, periksaPesan, pesanTolak,
+  CANARY, normalisasi, deteksi, dalamTopik, apakahSalam, periksaPesan, pesanTolak,
   sisaJeda, catatPelanggaran, resetStrike,
   netralkan, bungkusPengguna, bersihkanData, saringRiwayat, saringKeluaran,
 };

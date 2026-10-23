@@ -757,6 +757,16 @@ router.post('/chat', async (req, res, next) => {
       return res.json(wajah({ jawaban: guard.pesanTolak(cek.jenis), sumber: 'tolak', alasan: cek.jenis }));
     }
 
+    // salam/terima kasih: balasan tetap, tanpa DB/LLM
+    if (guard.apakahSalam(v.pesan)) {
+      return res.json(wajah({
+        jawaban: /kasih|thank|makasih/.test(guard.normalisasi(v.pesan))
+          ? 'Sama-sama! Kalau ada yang ingin dicek lagi soal kebun, tanyakan saja.'
+          : 'Halo! Saya asisten kebun GARAP. Tanyakan kondisi pH, TDS, suhu, alert, tahap tanam, atau ketik "Diagnosa menyeluruh" untuk pemeriksaan lengkap.',
+        sumber: 'sapaan',
+      }));
+    }
+
     const data = await kumpulData({ id_tanaman: null, id_meja: null });
 
     // jalur deterministik: diagnosa menyeluruh & tabel (angka langsung dari DB, tanpa LLM)
@@ -800,7 +810,10 @@ router.post('/chat', async (req, res, next) => {
     let tabelFallback = [];
     try { const sp = await diag.sensorPerMeja(data.ambang || {}); tabelFallback = [sp.tabel]; } catch { /* tabel opsional */ }
     return res.json(wajah({
-      jawaban: `Asisten AI sedang tidak tersedia, jadi ini saran berbasis aturan dari data terbaru. ${h.keputusan}. ${h.alasan}`,
+      // jujur soal alasannya: AI mati ≠ AI hidup tapi jawabannya tidak memakai data kebun
+      jawaban: `${fallbackKarena === 'output_tidak_sah'
+        ? 'Jawaban AI untuk pertanyaan ini tidak memakai data kebun, jadi berikut saran berbasis aturan dari data terbaru.'
+        : 'Asisten AI lokal sedang tidak bisa dihubungi, jadi berikut saran berbasis aturan dari data terbaru.'} ${h.keputusan}.`,
       tabel: tabelFallback, sumber: 'heuristik', fallback_karena: fallbackKarena,
     }));
   } catch (e) { return next(e); }
