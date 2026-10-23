@@ -154,6 +154,7 @@ const profil = require('./routes/profil');
 const user = require('./routes/user');
 const konfigurasi = require('./routes/konfigurasi');
 const ai = require('./routes/ai');
+const cctv = require('./routes/cctv');
 const auditLogs = require('./routes/audit');
 const device = require('./routes/device');
 const aktuatorRoutes = require('./routes/aktuator');
@@ -176,6 +177,7 @@ const adminDemo = [requireAuth, requireRole(['admin', 'demo'])];
 
 app.use('/dashboard', ...semuaRole, dashboard);
 app.use('/tanam', ...semuaRole, tanam);
+app.use('/cctv', ...semuaRole, cctv);
 app.use('/profil', ...semuaRole, profil);
 app.use('/watercontrol', ...adminDemo, watercontrol);
 app.use('/laporan', ...adminDemo, laporan);
