@@ -46,6 +46,8 @@ const KATA_DOMAIN = [
   'panen', 'harvest', 'alert', 'katup', 'valve', 'kelembapan', 'humidity', 'siklus',
   'hidroponik', 'budidaya', 'tanaman', 'meja', 'sensor', 'ambang', 'rentang', 'aerasi',
   'pompa', 'aliran', 'cahaya', 'lampu', 'media', 'akar', 'daun', 'gizi', 'konsentrasi',
+  // uji 23 Okt 2026: jawaban "Dosing 65% per ronde berarti…" dibuang karena tak satu pun kata di atas muncul
+  'dosing', 'dosis', 'penampung', 'tandon', 'pupuk', 'selada', 'pakcoy', 'kangkung', 'bayam', 'sawi', 'garap',
 ];
 
 
@@ -241,6 +243,34 @@ function evaluasiTahap(rows, durasi) {
       lewat_durasi: status === 'berjalan' && sisaHari != null && sisaHari < 0,
     };
   });
+}
+
+/**
+ * Nilai pH / TDS yang DISEBUT PENGGUNA dibandingkan dengan ambang DB secara deterministik.
+ * Uji 23 Okt 2026: model 1,5B menjawab "pH 7,5 masih normal, tidak perlu apa-apa" padahal ambang 5–7.
+ * Di luar ambang → jawaban tetap (tanpa LLM); di dalam ambang → null (LLM boleh menjawab).
+ * @returns {string|null}
+ */
+function cekAngkaPengguna(pesan, ambang) {
+  const s = guard.normalisasi(pesan);
+  const angka = (re) => { const m = s.match(re); return m ? Number(m[1].replace(',', '.')) : null; };
+  const fmt = (n) => String(n).replace('.', ',');
+  const out = [];
+  const ph = angka(/\bph\b[^0-9]{0,15}(\d{1,2}(?:[.,]\d{1,2})?)/);
+  const a = ambang && ambang.ph;
+  if (ph != null && a && a.min != null && a.max != null && (ph < Number(a.min) || ph > Number(a.max))) {
+    out.push(ph > Number(a.max)
+      ? `pH ${fmt(ph)} berada DI ATAS batas aman ${fmt(a.min)}–${fmt(a.max)}. Turunkan bertahap dengan pH Down (satu langkah kecil), tunggu pencampuran ±15 menit, lalu baca ulang sebelum menambah lagi.`
+      : `pH ${fmt(ph)} berada DI BAWAH batas aman ${fmt(a.min)}–${fmt(a.max)}. Naikkan bertahap dengan pH Up (satu langkah kecil), tunggu pencampuran ±15 menit, lalu baca ulang sebelum menambah lagi.`);
+  }
+  const tds = angka(/\btds\b[^0-9]{0,15}(\d{2,5})/);
+  const b = ambang && ambang.tds;
+  if (tds != null && b && b.min != null && b.max != null && (tds < Number(b.min) || tds > Number(b.max))) {
+    out.push(tds > Number(b.max)
+      ? `TDS ${tds} ppm berada DI ATAS batas aman ${b.min}–${b.max} ppm. Jangan menambah nutrisi; encerkan dengan air bersih bila level air rendah, lalu baca ulang. Bila tetap tinggi saat level air aman, periksa sensor.`
+      : `TDS ${tds} ppm berada DI BAWAH batas aman ${b.min}–${b.max} ppm. Tambahkan nutrisi AB bertahap (±65% dari kekurangan per ronde), tunggu pencampuran ±15 menit, lalu baca ulang.`);
+  }
+  return out.length ? out.join(' ') : null;
 }
 
 async function kumpulData(filter) {
@@ -562,7 +592,7 @@ async function panggilOllama(prompt) {
       body: JSON.stringify({
         // think:false — matikan chain-of-thought model reasoning (Ollama ≥0.40):
         // respons cepat & taat format; di Pi pun tetap jauh di bawah timeout 30s.
-        model: config.aiModel, prompt, stream: false, think: false,
+        model: config.aiModel, prompt, stream: false, think: false, keep_alive: '30m',
         options: { temperature: 0.2 },
       }),
       signal: ctrl.signal,
@@ -717,7 +747,7 @@ async function panggilOllamaChat(messages) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: config.aiModel, messages, stream: false, think: false,
+        model: config.aiModel, messages, stream: false, think: false, keep_alive: '30m',
         options: { temperature: 0.3, num_predict: 500 },
       }),
       signal: ctrl.signal,
@@ -770,6 +800,10 @@ router.post('/chat', async (req, res, next) => {
     const data = await kumpulData({ id_tanaman: null, id_meja: null });
 
     // jalur deterministik: diagnosa menyeluruh & tabel (angka langsung dari DB, tanpa LLM)
+    // angka yang disebut pengguna di luar ambang → jawaban pasti dari data, bukan tebakan model
+    const fakta = cekAngkaPengguna(v.pesan, data.ambang);
+    if (fakta) return res.json(wajah({ jawaban: fakta, sumber: 'data' }));
+
     const niat = diag.deteksiNiat(guard.normalisasi(v.pesan));
     if (niat) {
       const h = await diag.jawabNiat(niat, data);
@@ -795,10 +829,22 @@ router.post('/chat', async (req, res, next) => {
       }
       const e = diagnosaEkstrak(s.teks);
       const rendah = guard.normalisasi(e.teks + ' ' + JSON.stringify(e.tabel));
-      if (e.teks && KATA_DOMAIN.some((k) => rendah.includes(k))) {
+      // kata UTUH (dulu substring: "ec" cocok dgn "secara", "air" dgn "fair" → hampir semua jawaban lolos)
+      const kata = new Set(rendah.split(/[^a-z0-9]+/).filter(Boolean));
+      const bertopik = KATA_DOMAIN.some((k) => kata.has(k));
+      // model kecil bisa tetap menjawab hal lain walau diminta menolak → buang bila jawabannya keluar topik / berbahaya
+      const sebab = !e.teks ? 'kosong' : !bertopik ? 'tanpa_kata_domain'
+        : guard.luarTopik(rendah) ? 'kata_luar_topik'
+        : guard.deteksi(e.teks).includes('berbahaya') ? 'berbahaya'
+        : guard.adaKode(s.teks) ? 'kode'
+        : guard.paragrafLuarTopik(e.teks) ? 'paragraf_luar_topik' : null;
+      if (!sebab) {
         jawaban = e.teks.slice(0, BATAS_JAWABAN);
         tabelLlm = e.tabel;
-      } else fallbackKarena = 'output_tidak_sah';
+      } else {
+        fallbackKarena = 'output_tidak_sah';
+        console.warn('[ai-guard] keluaran LLM dibuang', { sebab }); // nama pemeriksaan saja, tanpa isi jawaban
+      }
     } catch (e) {
       fallbackKarena = klasifikasiGagal(e);
     }
@@ -806,17 +852,20 @@ router.post('/chat', async (req, res, next) => {
     if (jawaban) {
       return res.json(wajah({ jawaban, tabel: tabelLlm, sumber: 'ollama', model: config.aiModel }));
     }
+    // AI hidup tetapi jawabannya di luar bidang → tolak jelas (bukan "saran alert" yang membingungkan)
+    if (fallbackKarena === 'output_tidak_sah') {
+      return res.json(wajah({ jawaban: guard.pesanTolak('topik'), sumber: 'tolak', alasan: 'keluaran_luar_topik' }));
+    }
     const h = heuristik(data);
     let tabelFallback = [];
     try { const sp = await diag.sensorPerMeja(data.ambang || {}); tabelFallback = [sp.tabel]; } catch { /* tabel opsional */ }
     return res.json(wajah({
-      // jujur soal alasannya: AI mati ≠ AI hidup tapi jawabannya tidak memakai data kebun
-      jawaban: `${fallbackKarena === 'output_tidak_sah'
-        ? 'Jawaban AI untuk pertanyaan ini tidak memakai data kebun, jadi berikut saran berbasis aturan dari data terbaru.'
-        : 'Asisten AI lokal sedang tidak bisa dihubungi, jadi berikut saran berbasis aturan dari data terbaru.'} ${h.keputusan}.`,
+      // sampai di sini hanya bila AI lokal mati / timeout / balasannya rusak
+      jawaban: `Asisten AI lokal sedang tidak bisa dihubungi, jadi berikut saran berbasis aturan dari data terbaru. ${h.keputusan}.`,
       tabel: tabelFallback, sumber: 'heuristik', fallback_karena: fallbackKarena,
     }));
   } catch (e) { return next(e); }
 });
 
 module.exports = router;
+module.exports.cekAngkaPengguna = cekAngkaPengguna;
