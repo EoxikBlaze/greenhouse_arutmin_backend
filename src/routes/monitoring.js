@@ -69,24 +69,24 @@ async function saveSensorRows(data) {
   // command pending lalu reset ke AUTO (kontrak Laravel dipertahankan).
   const rows = await q(`
     WITH last AS (
-      SELECT "waterTemp", ph, tds, "airTemp", humidity, water_level
+      SELECT "waterTemp", ph, tds, "airTemp", humidity
       FROM monitorings ORDER BY created_at DESC LIMIT 1
     ), ins AS (
-      INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, water_level, created_at, updated_at)
-      SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric,$6::text, now(), now()
+      INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, created_at, updated_at)
+      SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric, now(), now()
       WHERE NOT EXISTS (
         SELECT 1 FROM last WHERE
           "waterTemp" IS NOT DISTINCT FROM $1 AND ph IS NOT DISTINCT FROM $2 AND
           tds IS NOT DISTINCT FROM $3 AND "airTemp" IS NOT DISTINCT FROM $4 AND
-          humidity IS NOT DISTINCT FROM $5 AND water_level IS NOT DISTINCT FROM $6
+          humidity IS NOT DISTINCT FROM $5
       )
       RETURNING id
     )
     UPDATE water_controls SET
-      valve_state = CASE WHEN $7::text IS NULL THEN valve_state
-                         WHEN upper($7) = 'ON' THEN 'ON' ELSE 'OFF' END,
+      valve_state = CASE WHEN $6::text IS NULL THEN valve_state
+                         WHEN upper($6) = 'ON' THEN 'ON' ELSE 'OFF' END,
       command = CASE
-        WHEN mode = 'MANUAL' AND $7::text IS NOT NULL AND upper($7) = 'ON' THEN 'FORCE_STOP'
+        WHEN mode = 'MANUAL' AND $6::text IS NOT NULL AND upper($6) = 'ON' THEN 'FORCE_STOP'
         WHEN command <> 'AUTO' THEN 'AUTO'
         ELSE command END,
       updated_at = now()
@@ -98,7 +98,7 @@ async function saveSensorRows(data) {
     (() => {
       const nz = (v) => (v === '' || v === undefined ? null : v);
       return [nz(data.waterTemp), nz(data.ph), nz(data.tds), nz(data.airTemp),
-        nz(data.humidity), nz(data.water_level), nz(data.solenoid_state)];
+        nz(data.humidity), nz(data.solenoid_state)];
     })(),
   );
   return rows[0]?.command ?? 'AUTO';
@@ -123,7 +123,7 @@ function sensorErrors(data) {
       : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v));
     if (!ok) errors[k] = [`Field ${k} harus berupa angka.`];
   }
-  for (const k of ['water_level', 'solenoid_state']) {
+  for (const k of ['solenoid_state']) {
     const v = data[k];
     if (typeof v === 'string' && v.includes('\u0000')) errors[k] = [`Field ${k} mengandung karakter terlarang.`];
   }
@@ -143,7 +143,7 @@ function sensorErrors(data) {
  * @returns {Record<string,string[]>} errors per-field (kosong = lolos)
  */
 function panjangSensorErrors(data) {
-  const BATAS = { water_level: 20 }; // monitorings.water_level varchar(20)
+  const BATAS = {}; // water_level tidak dipakai lagi (rancangan FINAL: hanya float switch)
   const errors = {};
   for (const [k, max] of Object.entries(BATAS)) {
     const v = data[k];
@@ -265,9 +265,9 @@ router.get('/tarik/csv', requireAuth, async (req, res, next) => {
        ORDER BY created_at DESC LIMIT 5000`,
       [dari || null, sampai || null],
     );
-    const lines = ['WAKTU,SUHU AIR (C),PH,TDS (PPM),SUHU UDARA (C),KELEMBAPAN (%),LEVEL TANDON'];
+    const lines = ['WAKTU,SUHU AIR (C),PH,TDS (PPM),SUHU UDARA (C),KELEMBAPAN (%)'];
     for (const r of rows) {
-      lines.push([r.created_at, r.waterTemp, r.ph, r.tds, r.airTemp, r.humidity, r.water_level].join(','));
+      lines.push([r.created_at, r.waterTemp, r.ph, r.tds, r.airTemp, r.humidity].join(','));
     }
     res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
     res.setHeader('Content-Disposition', 'attachment; filename="sensor.csv"');
@@ -321,7 +321,7 @@ api.post('/notif-hardware', requireApiKey, async (req, res, next) => {
     // G10 — panjang/NUL tipe alert divalidasi sebelum SQL (gaya respon endpoint ini).
     const bad = alertError(String(type), String(value));
     if (bad) return json(res, 400, { status: false, msg: bad });
-    const cooldown = { solenoid: 60, water_level: 300 }[type] ?? 600;
+    const cooldown = { solenoid: 60 }[type] ?? 600;
     const last = await one(
       'SELECT created_at FROM alert_logs WHERE type = $1 AND value = $2 ORDER BY created_at DESC LIMIT 1',
       [type, String(value)],
@@ -334,4 +334,4 @@ api.post('/notif-hardware', requireApiKey, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-module.exports = { router, api };
+module.exports = { router, api, saveSensorRows, sensorErrors, panjangSensorErrors, thresholdsMap, latestSensorPayload };
