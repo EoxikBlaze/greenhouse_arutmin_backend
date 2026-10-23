@@ -15,7 +15,7 @@
  * (nilai target menunggu kesepakatan tim — bila NULL, otomasi tidak berbuat apa-apa).
  */
 const { q, one } = require('./db');
-const { bacaKonfig, buatPerintah, PerintahDitolak } = require('./aktuator');
+const { bacaKonfig, buatPerintah, PerintahDitolak, kunciPenampung, selesaikanKejadian } = require('./aktuator');
 
 const SENSOR_BASI_DETIK = 120;
 
@@ -98,6 +98,17 @@ async function siklus(penampung) {
   if (!target) return { aksi: null, sebab: 'penampung belum punya state/target' };
   if (target.status_lock) return { aksi: null, sebab: 'penampung terkunci' };
 
+  // B4 — 3 bacaan mustahil berturut-turut = sensor dicurigai rusak → ALERT + LOCK dosing (Perancangan §9)
+  const tiga = await q(
+    'SELECT ph, tds, "waterTemp" FROM monitorings WHERE id_meja = $1 ORDER BY created_at DESC, id DESC LIMIT 3', [penampung]);
+  const sebabMustahil = tiga.map((m) => bacaanMustahil({
+    ph: m.ph == null ? null : Number(m.ph), tds: m.tds == null ? null : Number(m.tds), suhuAir: m.waterTemp == null ? null : Number(m.waterTemp),
+  }));
+  if (tiga.length === 3 && sebabMustahil.every(Boolean)) {
+    await kunciPenampung(penampung, { alasan: 'Sensor: 3x bacaan invalid berturut-turut', type: 'sensor', value: sebabMustahil[0] });
+    return { aksi: null, sebab: '3x bacaan invalid → LOCK' };
+  }
+
   const aktif = await one(
     `SELECT 1 AS x FROM perintah_aktuator
       WHERE perangkat_kode = 'aktuator-01' AND status IN ('menunggu','dikirim') AND tipe IN ('DOSIS','BILAS','SAMPLING','ISI_AIR') LIMIT 1`);
@@ -116,6 +127,7 @@ async function siklus(penampung) {
   const sensor = await bacaanTerakhir(penampung);
   if (!sensor) return { aksi: null, sebab: 'belum ada bacaan untuk penampung ini' };
   const { aksi, sebab } = putuskan(sensor, target, cfg, penampung);
+  if (!aksi && sebab === 'dalam pita target') await selesaikanKejadian(penampung); // kejadian berjalan berhasil
   if (!aksi) return { aksi: null, sebab };
   try {
     const p = await buatPerintah({ ...aksi, sumber: 'otomasi', ttlDetik: 120 });

@@ -86,6 +86,16 @@ router.post('/estop/reset', adminSungguhan, async (_req, res, next) => {
   try { await A.resetEstop(); res.json({ status: true, estop: false }); } catch (e) { next(e); }
 });
 
+/** Buka LOCK penampung setelah diperiksa. Hitungan harian tetap (reset 00:00 WITA). */
+router.post('/penampung/:id/buka-kunci', adminSungguhan, async (req, res, next) => {
+  try {
+    if (!idOk(req.params.id)) return json(res, 404, { message: 'Penampung tidak ditemukan.' });
+    const ok = await A.bukaKunci(req.params.id, req.user.username);
+    if (!ok) return json(res, 409, { message: 'Penampung tidak sedang terkunci.' });
+    res.json({ status: true, status_lock: false });
+  } catch (e) { next(e); }
+});
+
 /* ── Manajemen API key (admin) ────────────────────────────────────── */
 kunci.use(requireAuth, adminSungguhan);
 

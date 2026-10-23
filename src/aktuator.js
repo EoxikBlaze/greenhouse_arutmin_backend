@@ -21,6 +21,71 @@ class PerintahDitolak extends Error {
   }
 }
 
+/** Penolakan yang juga MENGUNCI penampung (Perancangan FINAL Aturan 9: alert 3 & 4 → LOCK). */
+function tolakDanKunci(status, pesan, kunci) {
+  const e = new PerintahDitolak(status, pesan);
+  e.kunci = kunci; // { alasan, type, value } — diterapkan SETELAH rollback, agar tetap tersimpan
+  return e;
+}
+
+/** Kejadian tanpa ronde baru selama ini dianggap selesai (mixing 15 mnt × 5 ronde masih jauh di bawahnya). */
+const KEJADIAN_BASI_MENIT = 60;
+const HARI_WITA = "(now() AT TIME ZONE 'Asia/Makassar')::date";
+
+/**
+ * LOCK penampung + alert kritis + tutup kejadian berjalan + batalkan dosis yang masih menunggu.
+ * Dosing mati sampai admin membuka kunci; sensor, pencatatan, sirkulasi tetap jalan.
+ * @returns {Promise<boolean>} false bila penampung sudah terkunci (alert tidak didobel)
+ */
+async function kunciPenampung(idMeja, { alasan, type, value }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('INSERT INTO penampung_states (id_meja) VALUES ($1) ON CONFLICT (id_meja) DO NOTHING', [idMeja]);
+    const baru = (await client.query(
+      `UPDATE penampung_states SET status_lock = true, lock_alasan = $2, lock_sejak = now(), updated_at = now()
+        WHERE id_meja = $1 AND NOT status_lock RETURNING id_meja`, [idMeja, String(alasan).slice(0, 100)])).rows[0];
+    if (!baru) { await client.query('ROLLBACK'); return false; }
+    const alert = (await client.query(
+      `INSERT INTO alert_logs (type, value, id_meja, severity, locked, created_at, updated_at)
+       VALUES ($1, $2, $3, 'critical', true, now(), now()) RETURNING id`,
+      [type, String(value).slice(0, 100), idMeja])).rows[0];
+    await client.query(
+      `UPDATE dosing_events SET hasil = 'lock', lock_terpicu = true, id_alert = $2, selesai_pada = now(), updated_at = now()
+        WHERE id_meja = $1 AND hasil = 'berjalan'`, [idMeja, alert.id]);
+    await client.query(
+      `UPDATE perintah_aktuator SET status = 'batal', selesai_pada = now()
+        WHERE status = 'menunggu' AND tipe = 'DOSIS' AND (parameter->>'penampung')::bigint = $1`, [idMeja]);
+    await client.query('COMMIT');
+    return true;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Buka LOCK (admin, setelah memeriksa). Hitungan harian TIDAK direset (Perancangan: reset hanya 00:00). */
+async function bukaKunci(idMeja, oleh) {
+  const row = await one(
+    `UPDATE penampung_states SET status_lock = false, lock_alasan = NULL, lock_sejak = NULL, updated_at = now()
+      WHERE id_meja = $1 AND status_lock RETURNING id_meja`, [idMeja]);
+  if (!row) return false;
+  await q(
+    `INSERT INTO alert_logs (type, value, id_meja, severity, locked, created_at, updated_at)
+     VALUES ('reset', $1, $2, 'info', false, now(), now())`,
+    [`LOCK dibuka oleh ${oleh || 'admin'}`.slice(0, 100), idMeja]);
+  return true;
+}
+
+/** Tutup kejadian berjalan sebagai sukses (otomasi: bacaan sudah kembali ke pita target). */
+async function selesaikanKejadian(idMeja) {
+  await q(
+    `UPDATE dosing_events SET hasil = 'sukses', selesai_pada = now(), updated_at = now()
+      WHERE id_meja = $1 AND hasil = 'berjalan'`, [idMeja]);
+}
+
 /** Peta konfigurasi_dosis → {param: number}. */
 async function bacaKonfig(runner = q) {
   const rows = await runner('SELECT param, nilai FROM konfigurasi_dosis', []);
@@ -90,6 +155,7 @@ const berisiko = (tipe, param) => tipe === 'DOSIS' || tipe === 'BILAS' || tipe =
 async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = null, alasan = null, ttlDetik = 120, perangkat = PERANGKAT_AKTUATOR }) {
   const ttl = Math.min(600, Math.max(10, Number(ttlDetik) || 120));
   const client = await pool.connect();
+  let released = false;
   try {
     await client.query('BEGIN');
     const cfg = await bacaKonfig((t, pr) => client.query(t, pr));
@@ -122,13 +188,61 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
       ab = Number(ab); ph = Number(ph);
       if (st.status_lock) throw new PerintahDitolak(423, `Penampung terkunci${st.lock_alasan ? ` (${st.lock_alasan})` : ''} — dosis ditolak.`);
       if (st.mode_pemeliharaan && sumber !== 'pengguna') throw new PerintahDitolak(423, 'Penampung dalam mode pemeliharaan — dosis otomatis ditolak.');
+      // volume harian = pagar utama. Otomasi yang mentok → LOCK + alert (alert 4); pengguna cukup ditolak
+      // (boleh meminta takaran lebih kecil).
+      const habis = (jenis, isi, batas) => {
+        const pesan = `Batas volume ${jenis} harian tercapai (${isi}/${batas} mL).`;
+        return sumber === 'pengguna' ? new PerintahDitolak(409, pesan)
+          : tolakDanKunci(409, `${pesan} Penampung dikunci.`, { alasan: `Jatah volume ${jenis} harian habis`, type: 'batas_dosis', value: `${jenis} ${isi}/${batas} mL` });
+      };
       if (param.larutan === 'AB') {
         const batas = cfg.maks_volume_ab_hari_ml ?? 500;
-        if (ab + param.ml > batas) throw new PerintahDitolak(409, `Batas volume AB harian tercapai (${ab}/${batas} mL).`);
-        ab += param.ml; kej += 1;
+        if (ab + param.ml > batas) throw habis('AB', ab, batas);
+        ab += param.ml;
+
+        // B3 — KEJADIAN: 1 sesi perbaikan = sampai 5 suntikan; hanya kejadian BARU yang memotong jatah 8/hari.
+        await client.query(
+          `UPDATE dosing_events SET hasil = 'timeout', selesai_pada = now(), updated_at = now()
+            WHERE id_meja = $1 AND hasil = 'berjalan'
+              AND (hari < ${HARI_WITA} OR updated_at < now() - interval '${KEJADIAN_BASI_MENIT} minutes')`, [param.penampung]);
+        let ev = (await client.query(
+          "SELECT id, ronde_total FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' ORDER BY id DESC LIMIT 1 FOR UPDATE",
+          [param.penampung])).rows[0];
+        const maksSuntik = cfg.maks_suntikan_per_kejadian ?? 5;
+        const maksKej = cfg.maks_kejadian_per_hari ?? 8;
+        if (ev && ev.ronde_total >= maksSuntik) {
+          // B4 — retry habis (alert 3): target tak tercapai setelah 5 suntikan
+          throw tolakDanKunci(423, `Retry habis: ${ev.ronde_total} suntikan dalam satu kejadian belum mencapai target. Penampung dikunci — periksa sebelum membuka kunci.`,
+            { alasan: `Retry EC habis (${ev.ronde_total}x)`, type: 'retry_habis', value: `${ev.ronde_total}/${maksSuntik} suntikan` });
+        }
+        if (!ev) {
+          if (kej >= maksKej) {
+            // B4 — jatah kejadian harian habis (alert 4)
+            throw tolakDanKunci(409, `Jatah ${maksKej} kejadian dosing hari ini habis. Penampung dikunci sampai diperiksa.`,
+              { alasan: `Jatah ${maksKej} kejadian/hari habis`, type: 'batas_dosis', value: `${kej}/${maksKej} kejadian` });
+          }
+          const manual = sumber === 'pengguna' && userId != null;
+          ev = (await client.query(
+            `INSERT INTO dosing_events (id_meja, hari, pemicu, aktor_tipe, dipicu_oleh, alasan)
+             VALUES ($1, ${HARI_WITA}, $2, $3, $4, $5) RETURNING id, ronde_total`,
+            [param.penampung, manual ? 'USER_MANUAL' : sumber === 'otomasi' ? 'SISTEM' : 'API',
+              manual ? 'user' : 'system', manual ? userId : null, alasan ? String(alasan).slice(0, 200) : null])).rows[0];
+          kej += 1;
+          const dini = cfg.peringatan_dini_kejadian ?? 3;
+          if (kej === dini) {
+            // PERINGATAN DINI (belum LOCK): cek talang bocor, sensor, atau kebutuhan tanaman
+            await client.query(
+              `INSERT INTO alert_logs (type, value, id_meja, severity, locked, created_at, updated_at)
+               VALUES ('batas_dosis', $1, $2, 'info', false, now(), now())`,
+              [`${kej} kejadian dosing hari ini — cek talang, sensor, kebutuhan tanaman`, param.penampung]);
+          }
+        }
+        await client.query(
+          'UPDATE dosing_events SET ronde_total = ronde_total + 1, volume_total_ml = volume_total_ml + $2, updated_at = now() WHERE id = $1',
+          [ev.id, param.ml]);
       } else {
         const batas = cfg.maks_volume_ph_hari_ml ?? 100;
-        if (ph + param.ml > batas) throw new PerintahDitolak(409, `Batas volume pH harian tercapai (${ph}/${batas} mL).`);
+        if (ph + param.ml > batas) throw habis('pH', ph, batas);
         ph += param.ml;
       }
       await client.query(
@@ -152,9 +266,16 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
     return row;
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
+    if (e.kunci) {
+      client.release();
+      released = true;
+      // lock dicatat terpisah dari transaksi perintah yang dibatalkan; galatnya tidak boleh menutupi penolakan
+      await kunciPenampung(Number(parameter.penampung), e.kunci)
+        .catch((err) => console.error('[aktuator] gagal mengunci penampung:', err.message));
+    }
     throw e;
   } finally {
-    client.release();
+    if (!released) client.release();
   }
 }
 
@@ -198,6 +319,17 @@ async function laporHasil(perangkat, id, { status, hasil }) {
     const { penampung, larutan, ml } = row.parameter;
     const kol = larutan === 'AB' ? 'volume_ab_hari_ml' : 'volume_ph_hari_ml';
     await q(`UPDATE penampung_states SET ${kol} = GREATEST(0, ${kol} - $2), updated_at = now() WHERE id_meja = $1`, [penampung, ml]);
+    if (larutan === 'AB') {
+      // suntikan gagal bukan ronde; kejadian yang jadi kosong tidak memotong jatah harian
+      const ev = await one(
+        `UPDATE dosing_events SET ronde_total = GREATEST(0, ronde_total - 1), volume_total_ml = GREATEST(0, volume_total_ml - $2), updated_at = now()
+          WHERE id = (SELECT id FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' ORDER BY id DESC LIMIT 1)
+          RETURNING id, ronde_total`, [penampung, ml]);
+      if (ev && ev.ronde_total === 0) {
+        await q('DELETE FROM dosing_events WHERE id = $1', [ev.id]);
+        await q('UPDATE penampung_states SET kejadian_dosis_hari = GREATEST(0, kejadian_dosis_hari - 1), updated_at = now() WHERE id_meja = $1', [penampung]);
+      }
+    }
   }
   return row;
 }
@@ -212,4 +344,5 @@ async function statusEstop() {
 module.exports = {
   TIPE, LARUTAN, PERANGKAT_AKTUATOR, PerintahDitolak,
   bacaKonfig, validasiPerintah, buatPerintah, ambilPerintah, laporHasil, rapikanAntrean, resetEstop, statusEstop,
+  kunciPenampung, bukaKunci, selesaikanKejadian, KEJADIAN_BASI_MENIT,
 };

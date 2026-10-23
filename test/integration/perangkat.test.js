@@ -9,9 +9,10 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { startServer, adminToken, craftToken, bearer } = require('./_server');
 const { q } = require('../../src/db');
-const { validasiPerintah, PerintahDitolak } = require('../../src/aktuator');
+const { validasiPerintah, PerintahDitolak, buatPerintah, laporHasil } = require('../../src/aktuator');
+const { siklus } = require('../../src/otomasi');
 
-let srv; let base; let admin; let meja; let snapState;
+let srv; let base; let admin; let meja; let snapState; let mejaUji; let awalEvent; let awalAlert;
 const idKunci = [];
 const hdr = (k) => ({ 'X-API-KEY': k });
 const CFG = { maks_ml_per_suntikan: 214, maks_ml_ph_per_suntikan: 10, maks_ml_bilas_per_perintah: 500 };
@@ -30,6 +31,10 @@ before(async () => {
   // JANGAN hapus baris seed penampung_states (suite lain bergantung padanya): simpan lalu pulihkan.
   snapState = (await q('SELECT volume_ab_hari_ml, volume_ph_hari_ml, kejadian_dosis_hari, reset_harian_pada FROM penampung_states WHERE id_meja = $1', [meja]))[0] || null;
   await q('UPDATE penampung_states SET volume_ab_hari_ml = 0, volume_ph_hari_ml = 0, kejadian_dosis_hari = 0 WHERE id_meja = $1', [meja]);
+  awalEvent = Number((await q('SELECT COALESCE(max(id), 0) AS m FROM dosing_events'))[0].m);
+  awalAlert = Number((await q('SELECT COALESCE(max(id), 0) AS m FROM alert_logs'))[0].m);
+  mejaUji = Number((await q(
+    "INSERT INTO mejas (meja, jumlah_lubang, created_at, updated_at) VALUES ('uji-lock-dosing', 1, now(), now()) RETURNING id_meja"))[0].id_meja);
 });
 
 after(async () => {
@@ -42,6 +47,13 @@ after(async () => {
     await q('DELETE FROM penampung_states WHERE id_meja = $1', [meja]);
   }
   if (idKunci.length) await q('DELETE FROM api_keys WHERE id = ANY($1::bigint[])', [idKunci]);
+  // kejadian & alert yang dibuat file ini (dosing_events → mejas ON DELETE RESTRICT: hapus dulu)
+  await q('DELETE FROM dosing_events WHERE id > $1 AND id_meja = ANY($2::bigint[])', [awalEvent, [meja, mejaUji]]);
+  await q('DELETE FROM alert_logs WHERE id > $1 AND id_meja = ANY($2::bigint[])', [awalAlert, [meja, mejaUji]]);
+  if (mejaUji) {
+    await q('DELETE FROM monitorings WHERE id_meja = $1', [mejaUji]);
+    await q('DELETE FROM mejas WHERE id_meja = $1', [mejaUji]);
+  }
   await srv.stop();
 });
 
@@ -229,4 +241,151 @@ test('klien REST: scope data:baca saja; kunci perangkat tak bisa dipakai sebagai
   assert.equal((await request(base).post('/api/device/v1/sensor').set(hdr(baca.kunci)).send({ ph: 6 })).status, 403);
   assert.equal((await request(base).get('/api/device/v1/perintah').set(hdr(baca.kunci))).status, 403);
   assert.equal((await request(base).get('/api/v1/sensor/terakhir')).status, 403);
+});
+
+/* ── B3/B4: kejadian dosing, retry habis, jatah harian, LOCK otomatis ───────────────────────── */
+const dosisOto = (ml = 50, larutan = 'AB') => buatPerintah({ tipe: 'DOSIS', parameter: { penampung: mejaUji, larutan, ml }, sumber: 'otomasi' });
+const state = async () => (await q('SELECT * FROM penampung_states WHERE id_meja = $1', [mejaUji]))[0];
+const events = () => q('SELECT id, ronde_total, hasil, lock_terpicu, id_alert, pemicu FROM dosing_events WHERE id_meja = $1 ORDER BY id', [mejaUji]);
+const alertUji = () => q('SELECT type, severity, locked FROM alert_logs WHERE id > $1 AND id_meja = $2 ORDER BY id', [awalAlert, mejaUji]);
+const kosongkanAntrean = () => q("UPDATE perintah_aktuator SET status = 'batal' WHERE perangkat_kode = 'aktuator-01' AND status IN ('menunggu','dikirim')");
+const ditolak = async (p, status) => {
+  try { await p; } catch (e) { assert.ok(e instanceof PerintahDitolak, e.message); assert.equal(e.status, status, e.message); return e; }
+  assert.fail(`seharusnya ditolak ${status}`);
+};
+async function bersihkanUji() {
+  await kosongkanAntrean();
+  await q('DELETE FROM dosing_events WHERE id_meja = $1', [mejaUji]);
+  await q('DELETE FROM alert_logs WHERE id > $1 AND id_meja = $2', [awalAlert, mejaUji]);
+  await q('DELETE FROM penampung_states WHERE id_meja = $1', [mejaUji]);
+}
+
+test('B3: suntikan ulang dalam satu kejadian tidak memotong jatah 8 kejadian/hari', async () => {
+  await bersihkanUji();
+  for (let i = 0; i < 3; i++) await dosisOto(50);
+  const st = await state();
+  assert.equal(st.kejadian_dosis_hari, 1, 'dulu 3 (dihitung per suntikan)');
+  assert.equal(Number(st.volume_ab_hari_ml), 150, 'volume tetap dihitung semua suntikan');
+  const ev = await events();
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].ronde_total, 3);
+  assert.equal(ev[0].hasil, 'berjalan');
+  assert.equal(ev[0].pemicu, 'SISTEM');
+  // pH tidak membuka kejadian (jatah kejadian = sesi EC)
+  await dosisOto(5, 'PH_DOWN');
+  assert.equal((await state()).kejadian_dosis_hari, 1);
+});
+
+test('B3: kejadian tanpa ronde baru > 60 menit ditutup; dosis berikutnya membuka kejadian baru + peringatan dini ke-3', async () => {
+  await bersihkanUji();
+  await dosisOto(20);
+  await q("UPDATE dosing_events SET updated_at = now() - interval '61 minutes' WHERE id_meja = $1", [mejaUji]);
+  await dosisOto(20);
+  let ev = await events();
+  assert.deepEqual(ev.map((e) => e.hasil), ['timeout', 'berjalan']);
+  assert.equal((await state()).kejadian_dosis_hari, 2);
+  assert.equal((await alertUji()).length, 0, 'belum ada peringatan pada kejadian ke-2');
+  await q("UPDATE dosing_events SET updated_at = now() - interval '61 minutes' WHERE id_meja = $1", [mejaUji]);
+  await dosisOto(20);
+  assert.equal((await state()).kejadian_dosis_hari, 3);
+  assert.deepEqual(await alertUji(), [{ type: 'batas_dosis', severity: 'info', locked: false }]);
+  assert.equal((await state()).status_lock, false, 'peringatan dini BELUM mengunci');
+});
+
+test('B4: suntikan ke-6 dalam satu kejadian → retry habis → LOCK + alert kritis; dosis lain ditolak; admin membuka kunci', async () => {
+  await bersihkanUji();
+  for (let i = 0; i < 4; i++) await dosisOto(20);
+  await kosongkanAntrean();
+  const tunggu = await dosisOto(20);                       // suntikan ke-5 masih menunggu di antrean
+  const e = await ditolak(dosisOto(20), 423);
+  assert.match(e.message, /Retry habis/);
+  const st = await state();
+  assert.equal(st.status_lock, true);
+  assert.match(st.lock_alasan, /Retry EC habis/);
+  assert.deepEqual(await alertUji(), [{ type: 'retry_habis', severity: 'critical', locked: true }]);
+  const ev = await events();
+  assert.equal(ev[0].hasil, 'lock');
+  assert.equal(ev[0].lock_terpicu, true);
+  assert.ok(ev[0].id_alert);
+  assert.equal((await q('SELECT status FROM perintah_aktuator WHERE id = $1', [tunggu.id]))[0].status, 'batal', 'dosis yang masih menunggu dibatalkan');
+  assert.equal(Number(st.volume_ab_hari_ml), 100, 'suntikan yang ditolak tidak menambah volume');
+  // terkunci: dosis apa pun ditolak, juga pH
+  await ditolak(dosisOto(5, 'PH_UP'), 423);
+
+  // buka kunci: petani/demo tidak boleh, admin boleh, kedua kali 409
+  const petani = craftToken({ sub: 999, username: 'petani-uji', level: 'petani', demo: false }, { expiresIn: '5m' });
+  const buka = (t) => request(base).post(`/api/aktuator/penampung/${mejaUji}/buka-kunci`).set(bearer(t));
+  assert.equal((await buka(petani)).status, 403);
+  assert.equal((await request(base).post('/api/aktuator/penampung/abc/buka-kunci').set(bearer(admin))).status, 404);
+  assert.equal((await buka(admin)).status, 200);
+  assert.equal((await buka(admin)).status, 409);
+  const sesudah = await state();
+  assert.equal(sesudah.status_lock, false);
+  assert.equal(sesudah.kejadian_dosis_hari, 1, 'hitungan harian TIDAK direset oleh buka kunci');
+  assert.equal((await alertUji()).at(-1).type, 'reset');
+  await kosongkanAntrean();
+  await dosisOto(20);                                     // kejadian baru setelah dibuka
+  assert.equal((await state()).kejadian_dosis_hari, 2);
+});
+
+test('B4: jatah 8 kejadian habis → LOCK; volume harian habis → otomasi dikunci, pengguna cukup ditolak', async () => {
+  await bersihkanUji();
+  await dosisOto(10);
+  await q("UPDATE dosing_events SET hasil = 'sukses' WHERE id_meja = $1", [mejaUji]);
+  await q('UPDATE penampung_states SET kejadian_dosis_hari = 8 WHERE id_meja = $1', [mejaUji]);
+  const e = await ditolak(dosisOto(10), 409);
+  assert.match(e.message, /8 kejadian/);
+  assert.equal((await state()).status_lock, true);
+  assert.deepEqual((await alertUji()).map((a) => [a.type, a.locked]), [['batas_dosis', true]]);
+
+  await bersihkanUji();
+  await dosisOto(10);
+  await q('UPDATE penampung_states SET volume_ab_hari_ml = 450 WHERE id_meja = $1', [mejaUji]);
+  await ditolak(buatPerintah({ tipe: 'DOSIS', parameter: { penampung: mejaUji, larutan: 'AB', ml: 100 }, sumber: 'pengguna', userId: 1 }), 409);
+  assert.equal((await state()).status_lock, false, 'permintaan pengguna yang kebesaran tidak mengunci');
+  await ditolak(dosisOto(100), 409);
+  assert.equal((await state()).status_lock, true);
+  assert.match((await state()).lock_alasan, /volume AB/);
+});
+
+test('B3: suntikan yang dilaporkan GAGAL bukan ronde — kejadian kosong dihapus, jatah kejadian dikembalikan', async () => {
+  await bersihkanUji();
+  const p = await dosisOto(30);
+  await q("UPDATE perintah_aktuator SET status = 'dikirim', dikirim_pada = now() WHERE id = $1", [p.id]);
+  await laporHasil('aktuator-01', p.id, { status: 'gagal', hasil: { error: 'pompa macet' } });
+  const st = await state();
+  assert.equal(st.kejadian_dosis_hari, 0);
+  assert.equal(Number(st.volume_ab_hari_ml), 0);
+  assert.equal((await events()).length, 0);
+});
+
+test('B4 otomasi: 3 bacaan mustahil berturut-turut → LOCK sensor; 2 saja → tidak', async () => {
+  await bersihkanUji();
+  await q('INSERT INTO penampung_states (id_meja, target_ec_ppm, target_ph) VALUES ($1, 800, 6)', [mejaUji]);
+  const baca = (tds) => q('INSERT INTO monitorings (tds, ph, id_meja, created_at) VALUES ($1, 6, $2, now())', [tds, mejaUji]);
+  await baca(700); await baca(0); await baca(0);
+  const r1 = await siklus(mejaUji);
+  assert.equal((await state()).status_lock, false, r1.sebab);
+  await baca(0);
+  const r2 = await siklus(mejaUji);
+  assert.match(r2.sebab, /LOCK/);
+  const st = await state();
+  assert.equal(st.status_lock, true);
+  assert.match(st.lock_alasan, /3x bacaan invalid/);
+  assert.deepEqual((await alertUji()).map((a) => [a.type, a.severity, a.locked]), [['sensor', 'critical', true]]);
+  await q('DELETE FROM monitorings WHERE id_meja = $1', [mejaUji]);
+});
+
+test('B3 otomasi: bacaan kembali ke pita target → kejadian berjalan ditutup sukses', async () => {
+  await bersihkanUji();
+  await q('INSERT INTO penampung_states (id_meja, target_ec_ppm, target_ph) VALUES ($1, 800, 6)', [mejaUji]);
+  await dosisOto(20);
+  await kosongkanAntrean();
+  await q("UPDATE perintah_aktuator SET dibuat_pada = now() - interval '1 hour' WHERE (parameter->>'penampung')::bigint = $1", [mejaUji]);
+  await q('INSERT INTO monitorings (tds, ph, id_meja, created_at) VALUES (800, 6, $1, now())', [mejaUji]);
+  const r = await siklus(mejaUji);
+  assert.equal(r.sebab, 'dalam pita target');
+  assert.equal((await events())[0].hasil, 'sukses');
+  await q('DELETE FROM monitorings WHERE id_meja = $1', [mejaUji]);
+  await bersihkanUji();
 });
