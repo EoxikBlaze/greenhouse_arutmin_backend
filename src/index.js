@@ -156,10 +156,13 @@ const konfigurasi = require('./routes/konfigurasi');
 const ai = require('./routes/ai');
 const cctv = require('./routes/cctv');
 const auditLogs = require('./routes/audit');
+const publik = require('./routes/publik');
 const device = require('./routes/device');
 const aktuatorRoutes = require('./routes/aktuator');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
+// Publik (landing page): agregat aman, tanpa login — rate limit GET 'view' berlaku.
+app.use('/api/publik', publik);
 // Perangkat ESP32 (sensor & aktuator) + klien REST berkunci — kunci per-perangkat (src/kunci.js).
 app.use('/api/device/v1', device.perangkat);
 app.use('/api/v1', device.klien);

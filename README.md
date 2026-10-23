@@ -61,3 +61,34 @@ Kalau terlanjur restore manual, jalankan: `psql "$DATABASE_URL" -f scripts/fix-s
 
 
 > **Kredensial**: nilai password hanya ada di `backend-nodejs/.env` (kunci `ADMIN_PASSWORD`, `PETANI_PASSWORD`, `DEMO_PASSWORD`). Jangan pernah ditulis di dokumen atau repo.
+
+## Database
+
+```bash
+npm run migrate:status   # status migrasi
+npm run migrate          # jalankan migrasi yang belum
+npm run db:seed-fake     # data palsu untuk debugging (hapus: psql "$DATABASE_URL" -f database/hapus_fake.sql)
+```
+
+Peta tabel, konvensi, dan cara menambah migrasi: `../docs/DATABASE.md`.
+
+## Asisten AI — pengaman & diagnosa
+
+`POST /api/ai/chat` (admin & petani). Alurnya:
+
+1. **Pengaman masukan** (`src/aiGuard.js`) — normalisasi (Unicode/homoglif/leetspeak/karakter tak terlihat), deteksi injeksi ID+EN
+   (override, bocor prompt, pembajakan peran, delimiter palsu, rahasia, kode/SQL, eksfiltrasi, muatan base64/hex/rot13, teks acak),
+   gerbang topik, dan jeda otomatis (4 pelanggaran / 10 menit → 429 selama 5 menit). Pesan yang ditolak **tidak pernah menyentuh LLM**.
+2. **Jalur deterministik** (`src/aiDiagnosa.js`) — "diagnosa menyeluruh", tabel sensor/alert/penampung/tahap dijawab langsung dari DB
+   sebagai tabel terstruktur `{judul, kolom, baris}`; tanpa LLM.
+3. **Jalur LLM** — pesan pengguna dibungkus `<pesan_pengguna>`, riwayat & data DB disaring ulang, system prompt memuat canary rahasia;
+   keluaran disaring (canary/kutipan prompt/JWT/connection string/gambar/tautan dibuang) dan tabel Markdown diurai jadi tabel terstruktur.
+
+Respons: `{ jawaban, tabel[], sumber: 'ollama'|'heuristik'|'diagnosa'|'data'|'tolak', status?, model, fallback_karena }`.
+Tes: `node --test test/integration/ai-pengaman.test.js` (670+ variasi serangan acak dengan seed tetap).
+
+## Endpoint publik landing page
+`GET /api/publik/ringkasan` — tanpa login, hanya agregat aman (jumlah meja/lubang, rata-rata sensor 6 jam, tren 24 jam, total panen, status IoT). Di-cache 15 dtk, kena rate limit GET. Dipakai bagian "Data langsung" di landing page web.
+
+## Catatan setup database baru
+`npm run migrate` hanya menambah migrasi di atas skema dasar. Pada database kosong, muat dulu `database/vertonik.sql` (berisi tabel `audit_logs` dan lainnya), baru `npm run migrate` lalu `npm run db:seed-fake`. Memuat `schema.sql` saja membuat halaman Riwayat Audit error 500.

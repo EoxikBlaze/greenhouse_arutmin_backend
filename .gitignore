@@ -10,3 +10,6 @@ database/backup/
 .agents/
 .claude/
 skills-lock.json
+
+# Cadangan sementara sebelum edit (simpan di git, bukan di samping source)
+*.bak-*
