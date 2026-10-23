@@ -105,7 +105,7 @@ test('cctv: petani & demo tidak boleh menulis', async () => {
 
 test('cctv: validasi 422 (nama kosong, url bukan http, tipe salah, interval)', async () => {
   const res = await request(mati.base).post('/cctv').set(auth)
-    .send({ nama: '', tipe: 'rtsp', url: 'javascript:alert(1)', interval_detik: 999 });
+    .send({ nama: '', tipe: 'webrtc', url: 'javascript:alert(1)', interval_detik: 999 });
   assert.equal(res.status, 422, res.text);
   for (const f of ['nama', 'tipe', 'url', 'interval_detik']) assert.ok(res.body.errors[f], f);
 });
