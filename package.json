@@ -7,7 +7,10 @@
   "scripts": {
     "start": "node src/index.js",
     "start:https": "HTTPS=1 node src/index.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "migrate": "node scripts/migrate.js",
+    "migrate:status": "node scripts/migrate.js --status",
+    "db:seed-fake": "psql \"$DATABASE_URL\" -f database/seed_fake.sql"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
