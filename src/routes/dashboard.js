@@ -3,6 +3,7 @@
 const express = require('express');
 const { q, one } = require('../db');
 const cache = require('../cache');
+const { thresholdsMap } = require('./monitoring');
 
 const router = express.Router();
 
@@ -67,6 +68,8 @@ router.get('/', async (_req, res, next) => {
       water_control: wc,
       recent_alerts: alerts,
       recent_panen: recentPanen,
+      // batas aman sensor (tabel sensor_thresholds) — dulu web menulis target tetap di kode
+      ambang: await thresholdsMap(),
     };
     });
     res.json(payload);

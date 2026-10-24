@@ -52,11 +52,13 @@ router.use('/semai', ...guard, demoGuard('semai.store'), crudRouter({
 router.use('/peremajaan', ...guard, demoGuard('peremajaan.store'), crudRouter({
   table: 'peremajaans', pk: 'id_peremajaan', orderBy: 'id_peremajaan',
   columns: ['id_semai', 'id_meja', 'jumlah_masuk', 'benih_berhasil', 'benih_gagal', 'tgl_awal_peremajaan', 'tgl_akhir_peremajaan', 'keterangan'],
+  readColumns: ['status'], // ditulis hanya oleh POST /tanam/:tipe/:id/selesai
 }));
 
 router.use('/pendewasaan', ...guard, demoGuard('pendewasaan.store'), crudRouter({
   table: 'pendewasaans', pk: 'id_pendewasaan', orderBy: 'id_pendewasaan',
   columns: ['id_peremajaan', 'id_meja', 'jumlah_masuk', 'tanaman_berhasil', 'tanaman_gagal', 'tgl_awal_pendewasaan', 'tgl_akhir_pendewasaan', 'keterangan'],
+  readColumns: ['status'], // ditulis hanya oleh POST /tanam/:tipe/:id/selesai
 }));
 
 router.use('/panen', ...guard, demoGuard('panen.store'), crudRouter({

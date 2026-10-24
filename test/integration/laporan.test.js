@@ -117,7 +117,7 @@ test('GET /laporan/csv (admin) → 200 text/csv + baris header + BOM UTF-8', asy
   assert.match(res.headers['content-disposition'], /attachment; filename="laporan-.*\.csv"/);
   assert.ok(res.text.startsWith('\uFEFF'), 'CSV wajib ber-BOM UTF-8 (kompat Excel)');
   const baris = res.text.replace('\uFEFF', '').split('\n');
-  assert.equal(baris[0], 'PERIODE,SEMAI,REMAJA,DEWASA,PANEN (KG),RATA-RATA PH');
+  assert.equal(baris[0], 'PERIODE,SEMAI,REMAJA,DEWASA,PANEN (TANAMAN),RATA-RATA PH');
   assert.ok(baris.length >= 1, 'minimal baris header');
 });
 

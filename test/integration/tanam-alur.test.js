@@ -120,3 +120,17 @@ test('bug lama: "Selesaikan tahap" tanpa body untuk peremajaan dulu 500 → kini
   assert.equal((await post('/tanam/panen/1/selesai', { berhasil: 1 })).status, 422);
   assert.equal((await post('/tanam/pendewasaan/999999999/selesai', { berhasil: 1 })).status, 404);
 });
+
+test('web: daftar /peremajaan & /pendewasaan memuat kolom status (baca-saja); dashboard memuat ambang', async () => {
+  const admin = craftToken({ sub: 1, username: 'garap', level: 'admin', demo: false }, { expiresIn: '10m' });
+  const s = await mulai(3);
+  const r = await selesai('semai', s.id_semai, 3);
+  const daftar = await request(base).get('/peremajaan').set(bearer(admin));
+  assert.equal(daftar.status, 200);
+  assert.equal(daftar.body.find((x) => String(x.id_peremajaan) === String(r.body.lanjut.id)).status, 'proses');
+  // status tidak bisa ditulis lewat CRUD (hanya lewat /tanam/:tipe/:id/selesai)
+  const put = await request(base).put(`/peremajaan/${r.body.lanjut.id}`).set(bearer(admin)).send({ status: 'selesai' });
+  assert.notEqual((await q('SELECT status FROM peremajaans WHERE id_peremajaan = $1', [r.body.lanjut.id]))[0].status, 'selesai', `PUT ${put.status}`);
+  const dash = await request(base).get('/dashboard').set(bearer(admin));
+  assert.ok(dash.body.ambang && dash.body.ambang.ph && 'min' in dash.body.ambang.ph, JSON.stringify(dash.body.ambang));
+});

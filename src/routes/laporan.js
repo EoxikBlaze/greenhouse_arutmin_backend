@@ -52,7 +52,8 @@ router.get('/csv', async (req, res, next) => {
       return res.status(422).json({ message: 'Data tidak valid.', errors });
     }
     const rows = await matrix(dari, sampai);
-    const lines = ['PERIODE,SEMAI,REMAJA,DEWASA,PANEN (KG),RATA-RATA PH'];
+    // panen_kg (nama kolom API lama) berisi JUMLAH TANAMAN dipanen, bukan kilogram
+    const lines = ['PERIODE,SEMAI,REMAJA,DEWASA,PANEN (TANAMAN),RATA-RATA PH'];
     for (const r of rows) lines.push([r.periode, r.semai, r.remaja, r.dewasa, r.panen_kg, r.rata_ph].join(','));
     res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
     const nama = `laporan-${dari || 'awal'}_${sampai || 'kini'}.csv`;
