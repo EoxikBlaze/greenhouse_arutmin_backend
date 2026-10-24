@@ -159,6 +159,7 @@ const auditLogs = require('./routes/audit');
 const publik = require('./routes/publik');
 const device = require('./routes/device');
 const aktuatorRoutes = require('./routes/aktuator');
+const preset = require('./routes/preset');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
 // Publik (landing page): agregat aman, tanpa login — rate limit GET 'view' berlaku.
@@ -183,6 +184,8 @@ app.use('/tanam', ...semuaRole, tanam);
 app.use('/cctv', ...semuaRole, cctv);
 app.use('/profil', ...semuaRole, profil);
 app.use('/watercontrol', ...adminDemo, watercontrol);
+// Preset dosing & target penampung (guard admin/demo baca, admin tulis ada di dalam modul).
+app.use('/dosing', preset);
 app.use('/laporan', ...adminDemo, laporan);
 app.use('/user', ...adminDemo, user);
 // Riwayat audit — khusus admin. Guard dipasang DI SINI (bukan di dalam modul)
@@ -318,4 +321,4 @@ loadColumnLengths()
       : 'Batas panjang teks  : information_schema gagal dibaca — memakai fallback batas spec');
   })
   .catch(() => { /* loadColumnLengths sudah menangkap errornya sendiri */ })
-  .finally(() => { startServers(); require('./otomasi').mulai(); });
+  .finally(() => { startServers(); require('./otomasi').mulai(); require('./presetDosing').mulai(); });

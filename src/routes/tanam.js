@@ -6,6 +6,7 @@ const { demoGuard, demoExpiry, json } = require('../auth');
 const { idValid, notFound } = require('./_id');
 const { fkErrors, FK_TARGETS } = require('./_crud');
 const { isDateString } = require('./_validate');
+const { sinkronDiam } = require('../presetDosing');
 
 const router = express.Router();
 
@@ -152,6 +153,7 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
        RETURNING *`,
       [b.id_tanaman ?? null, idSiklus, b.id_meja ?? null, b.jumlah_benih ?? 0, b.tgl_awal_semai ?? null, b.keterangan ?? null, exp],
     );
+    sinkronDiam(); // target penampung otomatis ikut batch baru
     res.status(201).json({ status: true, message: 'Tanam baru dimulai.', data: row });
   } catch (e) { next(e); }
 });
@@ -232,6 +234,7 @@ router.post('/:tipe/:id/selesai', demoGuard('tanam.selesai'), async (req, res, n
       lanjut = { tipe: t.lanjut, id: p.id };
     }
     await client.query('COMMIT');
+    sinkronDiam(); // tahap berganti → preset target penampung ikut berganti
     const pesan = lanjut?.tipe === 'panen' ? `Panen dicatat: ${berhasil} berhasil, ${gagal} gagal.`
       : lanjut ? `${berhasil} tanaman pindah ke ${t.lanjut}${gagal ? ` (${gagal} gagal)` : ''}.`
         : `Semua ${jumlah} tanaman gagal — batch ditutup.`;
