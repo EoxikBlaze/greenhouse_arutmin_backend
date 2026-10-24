@@ -205,3 +205,19 @@ test("JWT_SECRET kosong / 'dev-secret-ganti' → proses MENOLAK start (fail-fast
   assert.notEqual(r2.status, 0, "JWT_SECRET='dev-secret-ganti' harus ditolak");
   assert.match(r2.stderr, /JWT_SECRET tidak diatur/);
 });
+
+// Kata sandi minimal 8 karakter di SEMUA jalur (buat user, edit user, ganti sandi profil).
+// Dulu edit user (PUT) menerima sandi 1 karakter. Semua kasus ditolak sebelum menulis → net-zero.
+test('kata sandi < 8 karakter ditolak 422 di POST /user, PUT /user/:id, dan POST /profil/password', async () => {
+  const buat = await request(base).post('/user').set(auth)
+    .send({ username: 'uji-sandi-pendek', email: 'uji-sandi@pendek.id', password: 'abc1234', level: 'petani' });
+  assert.equal(buat.status, 422, JSON.stringify(buat.body));
+  assert.match(buat.body.errors.password[0], /min 8/);
+  const ubah = await request(base).put('/user/1').set(auth).send({ password: 'a' });
+  assert.equal(ubah.status, 422, JSON.stringify(ubah.body));
+  assert.match(ubah.body.errors.password[0], /min 8/);
+  const profil = await request(base).post('/profil/password').set(auth)
+    .send({ password_lama: 'apa-saja', password: 'abc1234', password_confirmation: 'abc1234' });
+  assert.equal(profil.status, 422, JSON.stringify(profil.body));
+  assert.ok(profil.body.errors.password, JSON.stringify(profil.body));
+});

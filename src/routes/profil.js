@@ -81,7 +81,7 @@ router.post('/password', async (req, res, next) => {
     if (req.user.demo) return json(res, 403, { message: 'Mode demo tidak boleh mengganti password.' });
     const { password_lama: lama, password: baru, password_confirmation: ulang } = req.body || {};
     const errors = {};
-    if (!baru || String(baru).length < 6) errors.password = ['Password baru min 6 karakter.'];
+    if (!baru || String(baru).length < 8) errors.password = ['Password baru min 8 karakter.'];
     if (baru !== ulang) errors.password_confirmation = ['Konfirmasi password tidak cocok.'];
     if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
 

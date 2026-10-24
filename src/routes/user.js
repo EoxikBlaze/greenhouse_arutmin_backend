@@ -73,7 +73,7 @@ router.post('/', async (req, res, next) => {
     // B4 — username 3..50 + tanpa NUL (dulu cuma min-3 → 60 karakter → 22001 → 500).
     const un = usernameError(username);
     if (un) errors.username = un;
-    if (!password || String(password).length < 6) errors.password = ['Password min 6 karakter.'];
+    if (!password || String(password).length < 8) errors.password = ['Password min 8 karakter.'];
     if (!LEVELS.includes(level)) errors.level = ['Level harus admin/user/petani.'];
     // G10 — email wajib + format (dulu tanpa cek → 23502 → 500; objek lolos 201).
     const em = emailError(email);
@@ -134,6 +134,8 @@ router.put('/:id', async (req, res, next) => {
       const em = emailError(email);
       if (em) errors.email = em;
     }
+    // sandi baru lewat edit wajib sama ketatnya dengan saat membuat user (dulu 1 karakter pun diterima)
+    if (password && String(password).length < 8) errors.password = ['Password min 8 karakter.'];
     if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
     const sets = [];
     const values = [];
