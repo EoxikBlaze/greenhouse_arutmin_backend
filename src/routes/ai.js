@@ -161,7 +161,7 @@ async function ambilTahap(filter) {
     WHERE ($1::bigint IS NULL OR s.id_tanaman = $1) AND ($2::bigint IS NULL OR s.id_meja = $2)
     ORDER BY s.id_semai DESC LIMIT 1`, P);
   const peremajaan = await one(`
-    SELECT 'peremajaan'::text AS tahap, p.id_peremajaan AS id, NULL::text AS status, p.tgl_awal_peremajaan AS mulai,
+    SELECT 'peremajaan'::text AS tahap, p.id_peremajaan AS id, p.status::text AS status, p.tgl_awal_peremajaan AS mulai,
            p.tgl_akhir_peremajaan AS selesai, s.id_tanaman, p.id_meja, t.nama_tanaman
     FROM peremajaans p
     LEFT JOIN semais s ON s.id_semai = p.id_semai
@@ -169,7 +169,7 @@ async function ambilTahap(filter) {
     WHERE ($1::bigint IS NULL OR s.id_tanaman = $1) AND ($2::bigint IS NULL OR p.id_meja = $2)
     ORDER BY p.id_peremajaan DESC LIMIT 1`, P);
   const pendewasaan = await one(`
-    SELECT 'pendewasaan'::text AS tahap, pd.id_pendewasaan AS id, NULL::text AS status, pd.tgl_awal_pendewasaan AS mulai,
+    SELECT 'pendewasaan'::text AS tahap, pd.id_pendewasaan AS id, pd.status::text AS status, pd.tgl_awal_pendewasaan AS mulai,
            pd.tgl_akhir_pendewasaan AS selesai, s.id_tanaman, pd.id_meja, t.nama_tanaman
     FROM pendewasaans pd
     LEFT JOIN peremajaans p ON p.id_peremajaan = pd.id_peremajaan
@@ -220,7 +220,7 @@ function evaluasiTahap(rows, durasi) {
     const mulai = r.mulai ? new Date(r.mulai) : null;
     const selesai = r.selesai ? new Date(r.selesai) : null;
     const dur = durasi[nama] ?? null;
-    const ditutup = String(r.status || '').toLowerCase() === 'selesai';
+    const ditutup = ['selesai', 'gagal'].includes(String(r.status || '').toLowerCase());
     let status = 'berjalan';
     if (ditutup) status = 'selesai';
     else if (mulai && now < mulai.getTime()) status = 'belum_mulai';

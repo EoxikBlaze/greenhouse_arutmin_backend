@@ -1,7 +1,7 @@
 'use strict';
 /** Tanam Saya — daftar tanam aktif, mulai tanam, selesai per tahap, hapus. */
 const express = require('express');
-const { q, one } = require('../db');
+const { pool, q, one } = require('../db');
 const { demoGuard, demoExpiry, json } = require('../auth');
 const { idValid, notFound } = require('./_id');
 const { fkErrors, FK_TARGETS } = require('./_crud');
@@ -59,29 +59,74 @@ async function mulaiErrors(b) {
 // dicek di depan query supaya tidak pernah menyentuh DB (dulu → 500 SQLSTATE 22003).
 // Definisi bersama (BIGINT_MAX / idValid / notFound) kini ada di ./_id.
 
+/* ── Alur petani: hanya MEMILIH tanaman/meja, mengetik jumlah, dan MENGISI JUMLAH BERHASIL ──
+ * Tanggal, durasi tahap, hari ke-berapa, jumlah gagal, dan tahap berikutnya dihitung server:
+ *   semai ─(berhasil)→ peremajaan ─(berhasil)→ pendewasaan ─(panen: berhasil/gagal)→ panens
+ * Durasi tiap tahap dari tabel sikluses (nama_siklus Semai/Peremajaan/Pendewasaan per tanaman). */
+const TAHAP = {
+  semai: {
+    table: 'semais', pk: 'id_semai', awal: 'tgl_awal_semai', akhir: 'tgl_akhir_semai', jumlah: 'jumlah_benih',
+    ok: 'benih_berhasil', gagal: 'benih_gagal', lanjut: 'peremajaan',
+  },
+  peremajaan: {
+    table: 'peremajaans', pk: 'id_peremajaan', awal: 'tgl_awal_peremajaan', akhir: 'tgl_akhir_peremajaan', jumlah: 'jumlah_masuk',
+    ok: 'benih_berhasil', gagal: 'benih_gagal', lanjut: 'pendewasaan',
+  },
+  pendewasaan: {
+    table: 'pendewasaans', pk: 'id_pendewasaan', awal: 'tgl_awal_pendewasaan', akhir: 'tgl_akhir_pendewasaan', jumlah: 'jumlah_masuk',
+    ok: 'tanaman_berhasil', gagal: 'tanaman_gagal', lanjut: 'panen',
+  },
+};
+
+// durasi (hari) tahap $tipe untuk tanaman t.id_tanaman; NULL bila siklusnya belum diisi admin
+const DURASI = (tipe) => `(SELECT k.waktu_siklus FROM sikluses k
+   WHERE k.id_tanaman = t.id_tanaman AND lower(k.nama_siklus) = '${tipe}' ORDER BY k.id_siklus LIMIT 1)`;
+
 router.get('/', async (_req, res, next) => {
   try {
     const [semai, peremajaan, pendewasaan] = await Promise.all([
       q(`SELECT s.id_semai AS id, 'semai' AS tipe, s.status, s.tgl_awal_semai AS mulai,
-                t.nama_tanaman AS varietas, m.meja, s.jumlah_benih
+                t.nama_tanaman AS varietas, m.meja, s.id_meja, s.jumlah_benih, s.jumlah_benih AS jumlah,
+                ${DURASI('semai')} AS durasi_hari
          FROM semais s LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
          LEFT JOIN mejas m ON m.id_meja = s.id_meja
-         WHERE s.status IS DISTINCT FROM 'selesai' ORDER BY s.id_semai DESC`),
-      q(`SELECT p.id_peremajaan AS id, 'peremajaan' AS tipe, 'aktif' AS status, p.tgl_awal_peremajaan AS mulai,
-                t.nama_tanaman AS varietas, m.meja, p.jumlah_masuk
+         WHERE s.status = 'proses' ORDER BY s.id_semai DESC`),
+      q(`SELECT p.id_peremajaan AS id, 'peremajaan' AS tipe, p.status, p.tgl_awal_peremajaan AS mulai,
+                t.nama_tanaman AS varietas, m.meja, p.id_meja, p.jumlah_masuk, p.jumlah_masuk AS jumlah,
+                ${DURASI('peremajaan')} AS durasi_hari
          FROM peremajaans p LEFT JOIN semais s ON s.id_semai = p.id_semai
          LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
          LEFT JOIN mejas m ON m.id_meja = p.id_meja
-         ORDER BY p.id_peremajaan DESC`),
-      q(`SELECT d.id_pendewasaan AS id, 'pendewasaan' AS tipe, 'aktif' AS status, d.tgl_awal_pendewasaan AS mulai,
-                t.nama_tanaman AS varietas, m.meja, d.jumlah_masuk
+         WHERE p.status = 'proses' ORDER BY p.id_peremajaan DESC`),
+      q(`SELECT d.id_pendewasaan AS id, 'pendewasaan' AS tipe, d.status, d.tgl_awal_pendewasaan AS mulai,
+                t.nama_tanaman AS varietas, m.meja, d.id_meja, d.jumlah_masuk, d.jumlah_masuk AS jumlah,
+                ${DURASI('pendewasaan')} AS durasi_hari
          FROM pendewasaans d LEFT JOIN peremajaans p ON p.id_peremajaan = d.id_peremajaan
          LEFT JOIN semais s ON s.id_semai = p.id_semai
          LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
          LEFT JOIN mejas m ON m.id_meja = d.id_meja
-         ORDER BY d.id_pendewasaan DESC`),
+         WHERE d.status = 'proses' ORDER BY d.id_pendewasaan DESC`),
     ]);
-    res.json({ page: 'tanam', list: [...semai, ...peremajaan, ...pendewasaan] });
+    const hariIni = await one('SELECT current_date AS d');
+    const list = [...semai, ...peremajaan, ...pendewasaan].map((r) => {
+      const hari = Math.max(1, Math.round((new Date(hariIni.d) - new Date(r.mulai)) / 86_400_000) + 1);
+      const durasi = r.durasi_hari == null ? null : Number(r.durasi_hari);
+      return { ...r, durasi_hari: durasi, hari_ke: hari, siap: durasi != null && hari >= durasi, tahap_berikut: TAHAP[r.tipe].lanjut };
+    });
+    res.json({ page: 'tanam', list });
+  } catch (e) { next(e); }
+});
+
+/** Pilihan untuk form "Mulai tanam" — petani tidak punya akses ke /tanaman & /meja (khusus admin). */
+router.get('/pilihan', async (_req, res, next) => {
+  try {
+    const [tanaman, meja] = await Promise.all([
+      q(`SELECT t.id_tanaman AS id, t.nama_tanaman AS nama, t.id_meja,
+                ${DURASI('semai')} AS semai, ${DURASI('peremajaan')} AS peremajaan, ${DURASI('pendewasaan')} AS pendewasaan
+           FROM tanamen t ORDER BY t.nama_tanaman`),
+      q('SELECT id_meja AS id, meja AS nama FROM mejas ORDER BY meja'),
+    ]);
+    res.json({ tanaman, meja });
   } catch (e) { next(e); }
 });
 
@@ -93,6 +138,10 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
     const errors = await mulaiErrors(b);
     if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
     const exp = demoExpiry(req.user);
+    // siklus Semai tanaman ini diisi otomatis bila klien tidak mengirim id_siklus
+    const idSiklus = b.id_siklus ?? (b.id_tanaman == null ? null : (await one(
+      "SELECT id_siklus FROM sikluses WHERE id_tanaman = $1 AND lower(nama_siklus) = 'semai' ORDER BY id_siklus LIMIT 1",
+      [b.id_tanaman]))?.id_siklus ?? null);
     const row = await one(
       // G10 — tgl_akhir_semai NOT NULL tanpa default: dahulu kolom ini TIDAK ikut
       // INSERT → 23502 → 500 → fitur Mulai Tanam MATI TOTAL (seluruh payload lolos
@@ -101,41 +150,98 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
       `INSERT INTO semais (id_tanaman, id_siklus, id_meja, jumlah_benih, tgl_awal_semai, tgl_akhir_semai, status, keterangan, benih_berhasil, benih_gagal, expires_at, created_at, updated_at)
        VALUES ($1,$2,$3,$4, coalesce($5::date, now()::date), coalesce($5::date, now()::date), 'proses', $6, 0, 0, $7, now(), now())
        RETURNING *`,
-      [b.id_tanaman ?? null, b.id_siklus ?? null, b.id_meja ?? null, b.jumlah_benih ?? 0, b.tgl_awal_semai ?? null, b.keterangan ?? null, exp],
+      [b.id_tanaman ?? null, idSiklus, b.id_meja ?? null, b.jumlah_benih ?? 0, b.tgl_awal_semai ?? null, b.keterangan ?? null, exp],
     );
     res.status(201).json({ status: true, message: 'Tanam baru dimulai.', data: row });
   } catch (e) { next(e); }
 });
 
-// Selesai satu tahap → tutup tanggal akhir + status selesai
+/** Bilangan bulat ≥ 0 dari angka / teks angka; selain itu null. */
+const bulat = (v) => {
+  const n = typeof v === 'number' ? v : (/^\d+$/.test(String(v ?? '').trim()) ? Number(String(v).trim()) : NaN);
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+};
+
+/**
+ * Selesaikan tahap.
+ * - Body { berhasil } (aplikasi HP): petani hanya mengisi jumlah yang berhasil. Server menghitung
+ *   gagal = jumlah masuk − berhasil, menutup tahap hari ini, lalu OTOMATIS membuat tahap berikutnya
+ *   berisi tanaman yang berhasil (pendewasaan → catatan panen). Berhasil 0 → status 'gagal'.
+ * - Tanpa body (perilaku lama web): hanya menandai selesai, tanpa tahap berikutnya.
+ */
 router.post('/:tipe/:id/selesai', demoGuard('tanam.selesai'), async (req, res, next) => {
+  const t = TAHAP[req.params.tipe];
+  if (!t) return json(res, 422, { message: 'Tahap tidak dikenal.' });
+  // V2 — urutan TETAP: tipe dulu (kontrak lama 422), baru id (404 identik).
+  if (!idValid(req)) return notFound(res);
+  const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+
+  if (b.berhasil === undefined || b.berhasil === null) {
+    try {
+      // G10 — semai: tgl_akhir berisi penanda = tgl_awal sejak INSERT /mulai → tutup dgn hari ini.
+      const row = await one(
+        `UPDATE ${t.table} SET status = 'selesai', updated_at = now(),
+                ${t.akhir} = CASE WHEN ${t.akhir} IS NULL OR ${t.akhir} <= ${t.awal} THEN GREATEST(now()::date, ${t.awal}) ELSE ${t.akhir} END
+          WHERE ${t.pk} = $1 RETURNING *`, [req.params.id]);
+      if (!row) return notFound(res);
+      return res.json({ status: true, message: `Tahap ${req.params.tipe} diselesaikan.`, data: row });
+    } catch (e) { return next(e); }
+  }
+
+  const berhasil = bulat(b.berhasil);
+  if (berhasil == null) {
+    return json(res, 422, { message: 'Data tidak valid.', errors: { berhasil: ['Jumlah berhasil harus bilangan bulat ≥ 0.'] } });
+  }
+  const keterangan = typeof b.keterangan === 'string' && b.keterangan.trim() ? b.keterangan.trim().slice(0, 500) : null;
+  const client = await pool.connect();
   try {
-    const map = {
-      semai: { table: 'semais', pk: 'id_semai', tgl: 'tgl_akhir_semai' },
-      peremajaan: { table: 'peremajaans', pk: 'id_peremajaan', tgl: 'tgl_akhir_peremajaan' },
-      pendewasaan: { table: 'pendewasaans', pk: 'id_pendewasaan', tgl: 'tgl_akhir_pendewasaan' },
-      panen: { table: 'panens', pk: 'id_panen', tgl: null },
-    };
-    const t = map[req.params.tipe];
-    if (!t) return json(res, 422, { message: 'Tahap tidak dikenal.' });
-    // V2 — urutan TETAP: tipe dulu (kontrak lama 422), baru id (404 identik).
-    if (!idValid(req)) return notFound(res);
-    const sets = ["status = 'selesai'", 'updated_at = now()'];
-    // G10 — coalesce lama tak pernah menutup batch baru (tgl_akhir sudah terisi
-    // penanda = tgl_awal saat INSERT /mulai). CASE: null ATAU == tgl_awal →
-    // tutup dgn hari ini; sudah diisi asli (> awal / tabel tanpa awal) → biarkan
-    // (baris 'selesai' existing tak pernah tertimpa).
-    if (t.tgl) {
-      const awal = t.table === 'semais' ? ' tgl_awal_semai' : '';
-      sets.splice(1, 0, awal
-        ? `${t.tgl} = CASE WHEN ${t.tgl} IS NULL OR ${t.tgl} = tgl_awal_semai THEN now()::date ELSE ${t.tgl} END`
-        : `${t.tgl} = coalesce(${t.tgl}, now()::date)`);
+    await client.query('BEGIN');
+    const lama = (await client.query(`SELECT * FROM ${t.table} WHERE ${t.pk} = $1 FOR UPDATE`, [req.params.id])).rows[0];
+    if (!lama) { await client.query('ROLLBACK'); return notFound(res); }
+    if (lama.status !== 'proses') {
+      await client.query('ROLLBACK');
+      return json(res, 409, { message: 'Tahap ini sudah diselesaikan sebelumnya.' });
     }
-    const row = await one(
-      `UPDATE ${t.table} SET ${sets.join(', ')} WHERE ${t.pk} = $1 RETURNING *`, [req.params.id]);
-    if (!row) return notFound(res);
-    res.json({ status: true, message: `Tahap ${req.params.tipe} diselesaikan.`, data: row });
-  } catch (e) { next(e); }
+    // data lama bisa tanpa jumlah masuk → anggap jumlah = berhasil (gagal 0)
+    const jumlah = lama[t.jumlah] == null ? berhasil : Number(lama[t.jumlah]);
+    if (berhasil > jumlah) {
+      await client.query('ROLLBACK');
+      return json(res, 422, { message: 'Data tidak valid.', errors: { berhasil: [`Jumlah berhasil tidak boleh lebih dari ${jumlah}.`] } });
+    }
+    const gagal = jumlah - berhasil;
+    const row = (await client.query(
+      `UPDATE ${t.table} SET ${t.ok} = $2, ${t.gagal} = $3, status = $4, ${t.akhir} = GREATEST(now()::date, ${t.awal}),
+              keterangan = COALESCE($5, keterangan), updated_at = now()
+        WHERE ${t.pk} = $1 RETURNING *`,
+      [req.params.id, berhasil, gagal, berhasil > 0 ? 'selesai' : 'gagal', keterangan])).rows[0];
+
+    const exp = demoExpiry(req.user);
+    let lanjut = null;
+    if (t.lanjut === 'panen') {
+      const p = (await client.query(
+        `INSERT INTO panens (id_pendewasaan, panen_berhasil, panen_gagal, tgl_panen, keterangan, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, now()::date, $4, $5, now(), now()) RETURNING id_panen`,
+        [req.params.id, berhasil, gagal, keterangan, exp])).rows[0];
+      lanjut = { tipe: 'panen', id: p.id_panen };
+    } else if (berhasil > 0) {
+      const n = TAHAP[t.lanjut];
+      const p = (await client.query(
+        `INSERT INTO ${n.table} (${t.pk}, id_meja, jumlah_masuk, ${n.ok}, ${n.gagal}, ${n.awal}, ${n.akhir}, status, expires_at, created_at, updated_at)
+         VALUES ($1, $2, $3, 0, 0, now()::date, now()::date, 'proses', $4, now(), now()) RETURNING ${n.pk} AS id`,
+        [req.params.id, lama.id_meja, berhasil, exp])).rows[0];
+      lanjut = { tipe: t.lanjut, id: p.id };
+    }
+    await client.query('COMMIT');
+    const pesan = lanjut?.tipe === 'panen' ? `Panen dicatat: ${berhasil} berhasil, ${gagal} gagal.`
+      : lanjut ? `${berhasil} tanaman pindah ke ${t.lanjut}${gagal ? ` (${gagal} gagal)` : ''}.`
+        : `Semua ${jumlah} tanaman gagal — batch ditutup.`;
+    res.json({ status: true, message: pesan, data: row, berhasil, gagal, lanjut });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(e);
+  } finally {
+    client.release();
+  }
 });
 
 // Hapus batch semai (konfirmasi di client)

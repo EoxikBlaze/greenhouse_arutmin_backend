@@ -30,9 +30,9 @@ router.get('/', async (_req, res, next) => {
       one('SELECT coalesce(sum(panen_berhasil),0)::int AS n FROM panens'),
     ]);
     const [semaiAktif, peremajaanAktif, pendewasaanAktif] = await Promise.all([
-      one("SELECT count(*)::int AS n FROM semais WHERE status IS DISTINCT FROM 'selesai'"),
-      one('SELECT count(*)::int AS n FROM peremajaans'),
-      one('SELECT count(*)::int AS n FROM pendewasaans'),
+      one("SELECT count(*)::int AS n FROM semais WHERE status = 'proses'"),
+      one("SELECT count(*)::int AS n FROM peremajaans WHERE status = 'proses'"),
+      one("SELECT count(*)::int AS n FROM pendewasaans WHERE status = 'proses'"),
     ]);
 
     let iotStatus = { online: false, seconds_ago: null, diff_text: 'Belum pernah ada data', last_seen: null };
