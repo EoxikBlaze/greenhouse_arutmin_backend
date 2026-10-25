@@ -249,10 +249,63 @@ function deteksiNiat(pesanTernormalisasi) {
   if (/\b(?:tabel|daftar|rekap|status)\b.{0,25}\b(?:tahap|tanam\w*|siklus)/.test(s)) return 'tahap';
   if (/\b(?:tabel|rekap|riwayat|history)\b.{0,25}\b(?:sensor|bacaan|ph|tds|monitoring)|\bsensor\b.{0,15}\b(?:tabel|riwayat)/.test(s)) return 'sensor';
   if (/\btabel\b/.test(s)) return 'sensor';
+  // cara menaikkan/menurunkan pH/TDS — jawaban SOP tetap. Uji 25 Okt 2026: model 1,5B menyarankan
+  // "penyedap rasa" & "agar-agar" untuk menurunkan pH.
+  const besaran = (x) => (x === 'ph' ? 'ph' : 'tds');
+  let m = s.match(/\b(?:menurunkan|turunkan|nurunin|diturunkan|mengurangi|kurangi)\b.{0,20}?\b(ph|tds|ppm|ec|nutrisi)\b/)
+    || s.match(/\b(ph|tds|ppm)\b.{0,20}\b(?:terlalu )?(?:tinggi|basa|pekat)\b.{0,25}\b(?:bagaimana|gimana|cara|harus)\b/);
+  if (m) return `${besaran(m[1])}_turun`;
+  m = s.match(/\b(?:menaikkan|menaikan|naikkan|naikan|naikin|dinaikkan)\b.{0,20}?\b(ph|tds|ppm|ec|nutrisi)\b/)
+    || s.match(/\b(ph|tds|ppm)\b.{0,20}\b(?:terlalu )?(?:rendah|asam|encer)\b.{0,25}\b(?:bagaimana|gimana|cara|harus)\b/);
+  if (m) return `${besaran(m[1])}_naik`;
+  // target/preset nutrisi per tanaman — angka dari tabel target_nutrisi, bukan tebakan model
+  if (/\b(?:ideal|target|preset|anjuran|dianjurkan|disarankan|cocok|seharusnya|sebaiknya|rekomendasi)\b.{0,30}\b(?:ph|tds|ppm|ec|nutrisi)\b|\b(?:ph|tds|ppm|ec|nutrisi)\b.{0,30}\b(?:ideal|target|preset|anjuran|dianjurkan|disarankan|cocok|seharusnya|sebaiknya|yang (?:baik|bagus|tepat))\b/.test(s)) return 'preset';
   return null;
 }
 
-async function jawabNiat(niat, data) {
+/** Langkah tetap (SOP) — sama dengan arahan cekAngkaPengguna di routes/ai.js. */
+const SOP = {
+  ph_turun: 'Cara menurunkan pH larutan:\n• Tambahkan pH Down khusus hidroponik sedikit saja (dosis kecil sesuai label), ke penampung saat pompa sirkulasi menyala.\n• Tunggu pencampuran ±15 menit, lalu baca ulang pH.\n• Ulangi bertahap sampai masuk rentang target; jangan menurunkan lebih dari ±0,5 sekaligus.\n• Jangan memakai cuka, penyedap, atau bahan dapur lain — kadar asamnya tidak terukur dan bisa merusak akar.',
+  ph_naik: 'Cara menaikkan pH larutan:\n• Tambahkan pH Up khusus hidroponik sedikit saja (dosis kecil sesuai label), ke penampung saat pompa sirkulasi menyala.\n• Tunggu pencampuran ±15 menit, lalu baca ulang pH.\n• Ulangi bertahap sampai masuk rentang target; jangan menaikkan lebih dari ±0,5 sekaligus.\n• Jangan memakai soda kue, kapur, atau bahan dapur lain — kadarnya tidak terukur.',
+  tds_turun: 'Cara menurunkan TDS (larutan terlalu pekat):\n• Hentikan penambahan nutrisi AB.\n• Tambahkan air baku bersih sedikit demi sedikit (mis. 10% volume penampung), tunggu ±15 menit, lalu baca ulang TDS.\n• Ulangi sampai masuk rentang target, lalu cek pH lagi karena ikut bergeser.\n• Bila TDS tetap tinggi padahal level air aman, periksa/kalibrasi sensor TDS.',
+  tds_naik: 'Cara menaikkan TDS (nutrisi kurang):\n• Tambahkan nutrisi A dan B dengan takaran SAMA, masing-masing dituang terpisah — jangan mencampur pekatan A dan B langsung.\n• Tambahkan bertahap (±65% dari kekurangan per ronde), tunggu ±15 menit, lalu baca ulang TDS.\n• Setelah TDS masuk rentang target, cek pH karena biasanya ikut turun.',
+};
+
+/** Angka desimal gaya Indonesia (6,5) untuk kalimat jawaban. */
+const koma = (v, d) => fmt(v, d).replace('.', ',');
+
+/** Rentang target dari ambang sensor_thresholds untuk ditempel di jawaban SOP. */
+function rentangAmbang(niat, ambang) {
+  const a = ambang && ambang[niat.startsWith('ph') ? 'ph' : 'tds'];
+  if (!a || a.min == null || a.max == null) return '';
+  return niat.startsWith('ph')
+    ? `\nAmbang aman pH saat ini: ${koma(a.min, 1)}–${koma(a.max, 1)}.`
+    : `\nAmbang aman TDS saat ini: ${fmt(a.min, 0)}–${fmt(a.max, 0)} ppm. Target per tanaman: tanyakan "TDS ideal selada" (atau tanaman lain).`;
+}
+
+const TAHAP_URUT = { semai: 0, peremajaan: 1, pendewasaan: 2 };
+
+/** Preset target_nutrisi aktif; disaring ke tanaman yang disebut di pesan bila ada. */
+async function tabelPreset(pesan) {
+  const rows = await q(`
+    SELECT tn.tahap, tn.ec_min_ppm, tn.ec_max_ppm, tn.ph_min, tn.ph_max, t.nama_tanaman
+    FROM target_nutrisi tn LEFT JOIN tanamen t ON t.id_tanaman = tn.id_tanaman
+    WHERE tn.status = 'aktif'`);
+  const nama = (r) => r.nama_tanaman || 'Semua tanaman';
+  const s = String(pesan || '').toLowerCase();
+  const disebut = rows.filter((r) => r.nama_tanaman && s.includes(r.nama_tanaman.toLowerCase()));
+  const pilih = (disebut.length ? disebut : rows)
+    .sort((a, b) => nama(a).localeCompare(nama(b)) || (TAHAP_URUT[a.tahap] ?? 9) - (TAHAP_URUT[b.tahap] ?? 9));
+  const rentang = (lo, hi, d) => (lo == null && hi == null ? '-' : `${koma(lo, d)}–${koma(hi, d)}`);
+  return {
+    tanaman: [...new Set(disebut.map(nama))],
+    tabel: tabel('Preset nutrisi aktif', ['Tanaman', 'Tahap', 'TDS (ppm)', 'pH'],
+      pilih.slice(0, 30).map((r) => [nama(r), r.tahap, rentang(r.ec_min_ppm, r.ec_max_ppm, 0), rentang(r.ph_min, r.ph_max, 1)])),
+    kosong: pilih.length === 0,
+  };
+}
+
+async function jawabNiat(niat, data, pesan = '') {
   if (niat === 'diagnosa') {
     const d = await diagnosaMenyeluruh(data);
     return { jawaban: d.ringkasan + (d.saran.length ? `\nTindakan yang disarankan:\n${d.saran.map((x) => `• ${x}`).join('\n')}` : ''), tabel: d.tabel, status: d.status };
@@ -264,6 +317,15 @@ async function jawabNiat(niat, data) {
   if (niat === 'penampung') {
     const p = await tabelPenampung();
     return { jawaban: p.temuan.length ? p.temuan.join('. ') + '.' : 'Semua penampung dalam kondisi normal.', tabel: [p.tabel], status: p.status };
+  }
+  if (SOP[niat]) return { jawaban: SOP[niat] + rentangAmbang(niat, data && data.ambang), tabel: [] };
+  if (niat === 'preset') {
+    const p = await tabelPreset(pesan);
+    if (p.kosong) return { jawaban: 'Belum ada preset nutrisi aktif. Admin dapat mengisinya di halaman Dosing → Preset nutrisi.', tabel: [] };
+    return {
+      jawaban: `Target nutrisi dari preset aktif${p.tanaman.length ? ` untuk ${p.tanaman.join(', ')}` : ''} (ppm memakai faktor 500). Penampung bermode Otomatis memakai titik tengah rentang ini.`,
+      tabel: [p.tabel],
+    };
   }
   if (niat === 'tahap') {
     return { jawaban: (data.tahap || []).length ? 'Tahap tanam terbaru per tahap.' : 'Belum ada data tanam.', tabel: (data.tahap || []).length ? [tabelTahap(data.tahap)] : [], status: OK };

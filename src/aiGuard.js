@@ -307,11 +307,24 @@ function bersihkanData(nilai, kedalaman = 0) {
   return nilai;
 }
 
-/** Riwayat dari klien tidak tepercaya: saring ulang, buang giliran 'ai' yang mencurigakan. */
+/**
+ * Riwayat dari klien tidak tepercaya: saring ulang, buang giliran 'ai' yang mencurigakan.
+ * Pertanyaan pengguna yang ditolak (luar topik / injeksi) dibuang BERSAMA jawaban sesudahnya —
+ * uji 25 Okt 2026: "Siapa presiden Amerika?" yang tertinggal di riwayat membuat model menyebut
+ * presiden lagi pada pertanyaan pH berikutnya, lalu jawabannya ikut ditolak pemeriksa keluaran.
+ */
 function saringRiwayat(riwayat) {
   const out = [];
+  let buangJawaban = false;
   for (const r of riwayat || []) {
     const teks = netralkan(r.teks).slice(0, 600);
+    if (r.peran === 'user') {
+      buangJawaban = !teks || deteksi(teks).filter((k) => !TANPA_STRIKE.has(k)).length > 0 || luarTopik(teks);
+      if (buangJawaban) continue;
+    } else if (buangJawaban) {
+      buangJawaban = false;
+      continue;
+    }
     if (!teks) continue;
     if (deteksi(teks).filter((k) => !TANPA_STRIKE.has(k)).length) continue;
     if (r.peran === 'assistant' && (teks.includes(CANARY) || /<\/?(?:pesan_pengguna|data)>/.test(r.teks))) continue;
@@ -342,6 +355,10 @@ function saringKeluaran(teks, panjangMaks = 1500) {
     .replace(/\[([^\]]+)\]\((?:https?:|javascript:|data:)[^)]*\)/gi, '$1')  // tautan → teks saja
     .replace(/https?:\/\/\S+/gi, '[tautan dihapus]')
     .replace(/<\/?[a-z][^>]*>/gi, '')                                      // HTML
+    // Markdown ringan → teks biasa (web & Flutter menampilkan teks apa adanya: "**Langkah**" tampil mentah)
+    .replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, '$1$2')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^(\s*)[-*]\s+/gm, '$1• ')
     .replace(/\n{3,}/g, '\n\n');
   return { teks: t.slice(0, panjangMaks).trim(), bocor: false };
 }
