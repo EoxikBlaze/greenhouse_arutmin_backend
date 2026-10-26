@@ -26,11 +26,12 @@ const kodePerangkat = (req) => req.kunci?.perangkat_kode || null;
 async function tandaiTerlihat(kode, ip, ekstra = {}) {
   if (!kode) return;
   await q(
-    `UPDATE perangkat SET terakhir_terlihat = now(), ip_terakhir = $2,
+    `UPDATE perangkat SET terakhir_terlihat = now(),
+            ip_terakhir = COALESCE($2, ip_terakhir),
             versi_firmware = COALESCE($3, versi_firmware), rssi = COALESCE($4, rssi),
             uptime_detik = COALESCE($5, uptime_detik), estop_aktif = COALESCE($6, estop_aktif)
       WHERE kode = $1`,
-    [kode, String(ip || '').slice(0, 45), ekstra.firmware ?? null, ekstra.rssi ?? null, ekstra.uptime ?? null, ekstra.estop ?? null]);
+    [kode, ip ? String(ip).slice(0, 45) : null, ekstra.firmware ?? null, ekstra.rssi ?? null, ekstra.uptime ?? null, ekstra.estop ?? null]);
 }
 
 const sensorGuard = requireKunci('sensor:tulis');
@@ -52,18 +53,29 @@ async function penampungBacaan(v) {
   return { idMeja: n };
 }
 
+/**
+ * Validasi + simpan satu bacaan sensor — dipakai rute HTTP di bawah dan jembatan MQTT
+ * (src/mqttJembatan.js) supaya kedua jalur menolak data yang sama.
+ * @returns {Promise<{kode: 400|422, errors?: object} | null>} null = tersimpan
+ */
+async function simpanBacaan(data, kode, ip) {
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !Object.keys(data).length) return { kode: 400 };
+  const pen = await penampungBacaan(data.id_meja);
+  const errs = { ...mon.sensorErrors(data), ...mon.panjangSensorErrors(data), ...(pen.errors || {}) };
+  if (Object.keys(errs).length) return { kode: 422, errors: errs };
+  await mon.saveSensorRows(data, { idMeja: pen.idMeja });
+  await tandaiTerlihat(kode, ip, {
+    firmware: typeof data.firmware === 'string' ? data.firmware.slice(0, 40) : null,
+    rssi: Number.isFinite(Number(data.rssi)) ? Math.round(Number(data.rssi)) : null,
+  });
+  return null;
+}
+
 perangkat.post('/sensor', sensorGuard, async (req, res, next) => {
   try {
-    const data = req.body && typeof req.body === 'object' ? req.body : {};
-    if (!Object.keys(data).length) return res.status(400).json({ status: false, message: 'Payload kosong.' });
-    const pen = await penampungBacaan(data.id_meja);
-    const errs = { ...mon.sensorErrors(data), ...mon.panjangSensorErrors(data), ...(pen.errors || {}) };
-    if (Object.keys(errs).length) return res.status(422).json({ status: false, message: 'Data sensor tidak valid.', errors: errs });
-    await mon.saveSensorRows(data, { idMeja: pen.idMeja });
-    await tandaiTerlihat(kodePerangkat(req), req.ip, {
-      firmware: typeof data.firmware === 'string' ? data.firmware.slice(0, 40) : null,
-      rssi: Number.isFinite(Number(data.rssi)) ? Math.round(Number(data.rssi)) : null,
-    });
+    const gagal = await simpanBacaan(req.body, kodePerangkat(req), req.ip);
+    if (gagal?.kode === 400) return res.status(400).json({ status: false, message: 'Payload kosong.' });
+    if (gagal) return res.status(422).json({ status: false, message: 'Data sensor tidak valid.', errors: gagal.errors });
     res.json({ status: 'ok', server_time: new Date().toISOString(), interval_detik: 5 });
   } catch (e) { next(e); }
 });
@@ -140,4 +152,4 @@ klien.get('/perangkat', bacaGuard, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-module.exports = { perangkat, klien };
+module.exports = { perangkat, klien, simpanBacaan, tandaiTerlihat };

@@ -26,4 +26,8 @@ module.exports = {
    * Default aman: model ringan 1,5B & Ollama di mesin yang sama (lihat docs/AI_LOKAL_PI.md). */
   aiModel: process.env.AI_MODEL || 'qwen2.5:1.5b',
   aiOllamaUrl: String(process.env.AI_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, ''),
+  /* Broker MQTT lokal untuk 2 ESP32 (src/mqttJembatan.js). Kosong = jembatan MQTT mati, HTTP tetap jalan. */
+  mqttUrl: process.env.MQTT_URL || '',
+  mqttUser: process.env.MQTT_USER || '',
+  mqttPass: process.env.MQTT_PASS || '',
 };

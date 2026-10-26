@@ -321,4 +321,9 @@ loadColumnLengths()
       : 'Batas panjang teks  : information_schema gagal dibaca — memakai fallback batas spec');
   })
   .catch(() => { /* loadColumnLengths sudah menangkap errornya sendiri */ })
-  .finally(() => { startServers(); require('./otomasi').mulai(); require('./presetDosing').mulai(); });
+  .finally(() => {
+    startServers(); require('./otomasi').mulai(); require('./presetDosing').mulai();
+    if (config.mqttUrl) {
+      require('./mqttJembatan').mulai({ url: config.mqttUrl, username: config.mqttUser || undefined, password: config.mqttPass || undefined });
+    }
+  });
