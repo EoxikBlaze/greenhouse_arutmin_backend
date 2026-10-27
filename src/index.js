@@ -160,6 +160,7 @@ const publik = require('./routes/publik');
 const device = require('./routes/device');
 const aktuatorRoutes = require('./routes/aktuator');
 const preset = require('./routes/preset');
+const kalibrasi = require('./routes/kalibrasi');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
 // Publik (landing page): agregat aman, tanpa login — rate limit GET 'view' berlaku.
@@ -186,6 +187,8 @@ app.use('/profil', ...semuaRole, profil);
 app.use('/watercontrol', ...adminDemo, watercontrol);
 // Preset dosing & target penampung (guard admin/demo baca, admin tulis ada di dalam modul).
 app.use('/dosing', preset);
+// Kalibrasi alat IoT (jadwal, riwayat, konstanta firmware) — guard di dalam modul.
+app.use('/kalibrasi', kalibrasi);
 app.use('/laporan', ...adminDemo, laporan);
 app.use('/user', ...adminDemo, user);
 // Riwayat audit — khusus admin. Guard dipasang DI SINI (bukan di dalam modul)

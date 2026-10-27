@@ -77,6 +77,7 @@ const PATH_KE_TABEL = {
   'mapping-channel': 'mapping_channel_esp32',
   'target-nutrisi': 'target_nutrisi',
   'penampung-states': 'penampung_states',
+  kalibrasi: 'kalibrasi_sensor',
 };
 
 /** Potong teks panjang agar jsonb tetap ringkas. */
