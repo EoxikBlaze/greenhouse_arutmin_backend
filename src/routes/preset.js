@@ -8,6 +8,8 @@
  *   GET    /dosing/target              per meja: batch berjalan, preset terpilih, target   admin, demo
  *   PUT    /dosing/target/:id_meja     { mode: 'otomatis' | 'manual', target_ec_ppm?, target_ph? }   admin
  *   POST   /dosing/sinkron             hitung ulang target semua penampung bermode otomatis           admin
+ *   GET    /dosing/naik-harian         per tanaman: ppm awal, target akhir, lama hari, kenaikan/hari   admin, petani, demo
+ *   PUT    /dosing/naik-harian/:id_tanaman  { ppm_awal, ppm_target, hari_capai } (semua null = matikan)  admin, petani
  * Logika pemilihan preset ada di src/presetDosing.js.
  */
 const express = require('express');
@@ -16,6 +18,57 @@ const { requireAuth, requireRole, json } = require('../auth');
 const { TAHAP, sinkronTarget, sinkronDiam, ringkasTarget } = require('../presetDosing');
 
 const router = express.Router();
+
+/* ── NAIK HARIAN per jenis tanaman — petani juga boleh mengatur (dipasang SEBELUM guard admin/demo) ── */
+const KOLOM_NAIK = 'id_tanaman, nama_tanaman, ppm_awal, ppm_target, hari_capai';
+const barisNaik = (r) => ({
+  ...r,
+  per_hari: r.hari_capai ? Math.round(((Number(r.ppm_target) - Number(r.ppm_awal)) / Number(r.hari_capai)) * 10) / 10 : null,
+});
+
+router.get('/naik-harian', requireAuth, requireRole('all'), async (_req, res, next) => {
+  try {
+    const [rows, amb] = await Promise.all([
+      q(`SELECT ${KOLOM_NAIK} FROM tanamen ORDER BY nama_tanaman`),
+      one("SELECT min, max FROM sensor_thresholds WHERE sensor = 'tds'"),
+    ]);
+    res.json({ data: rows.map(barisNaik), ambang_tds: amb ? { min: Number(amb.min), max: Number(amb.max) } : null, batas: BATAS.ec });
+  } catch (e) { next(e); }
+});
+
+router.put('/naik-harian/:id_tanaman', requireAuth, async (req, res, next) => {
+  try {
+    const { level, demo } = req.user || {};
+    if (demo || !['admin', 'petani'].includes(level)) return json(res, 403, { message: 'Hanya admin atau petani yang boleh mengubah target nutrisi.' });
+    const id = req.params.id_tanaman;
+    const lama = idOk(id) ? await one(`SELECT ${KOLOM_NAIK} FROM tanamen WHERE id_tanaman = $1`, [id]) : null;
+    if (!lama) return json(res, 404, { message: 'Tanaman tidak ditemukan.' });
+    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    const awal = ambilAngka(b.ppm_awal); const target = ambilAngka(b.ppm_target); const hari = ambilAngka(b.hari_capai);
+    const kosong = [awal, target, hari].every((v) => v == null);
+    const err = {};
+    if (!kosong) {
+      const [lo, hi] = BATAS.ec;
+      if (awal == null || !Number.isFinite(awal) || awal < lo || awal > hi) err.ppm_awal = [`ppm awal harus ${lo}–${hi}.`];
+      if (target == null || !Number.isFinite(target) || target < lo || target > hi) err.ppm_target = [`Target akhir harus ${lo}–${hi} ppm.`];
+      if (hari == null || !Number.isInteger(hari) || hari < 1 || hari > 365) err.hari_capai = ['Lama hari harus bilangan bulat 1–365.'];
+      if (!err.ppm_awal && !err.ppm_target && awal > target) err.ppm_target = ['Target akhir tidak boleh lebih kecil dari ppm awal.'];
+    }
+    if (Object.keys(err).length) return json(res, 422, { message: 'Data tidak valid.', errors: err });
+    const row = await one(
+      `UPDATE tanamen SET ppm_awal = $2, ppm_target = $3, hari_capai = $4 WHERE id_tanaman = $1 RETURNING ${KOLOM_NAIK}`,
+      [id, kosong ? null : awal, kosong ? null : target, kosong ? null : hari]);
+    req.audit = { aksi: 'update', tabel: 'tanamen', row_id: String(id), before: lama, after: row };
+    await sinkronTarget();   // target penampung yang menanam tanaman ini langsung ikut
+    res.json({
+      status: true,
+      message: kosong ? `Naik harian ${row.nama_tanaman} dimatikan — kembali memakai preset per tahap.`
+        : `Target ${row.nama_tanaman} disimpan: ${awal} → ${target} ppm dalam ${hari} hari.`,
+      data: barisNaik(row),
+    });
+  } catch (e) { next(e); }
+});
+
 router.use(requireAuth, requireRole(['admin', 'demo']));
 
 /** Tulis hanya admin sungguhan (bukan akun demo). */
