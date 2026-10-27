@@ -56,14 +56,14 @@ function nilaiStatus(ambang, key, v) {
 async function sensorPerMeja(ambang) {
   const rows = await q(`
     SELECT j.id_meja, j.meja, r."waterTemp", r.ph, r.tds, r."airTemp", r.humidity, r.created_at,
-           EXTRACT(EPOCH FROM (LOCALTIMESTAMP - r.created_at)) AS umur
+           EXTRACT(EPOCH FROM (LOCALTIMESTAMP - greatest(r.created_at, coalesce(r.updated_at, r.created_at)))) AS umur
     FROM mejas j
     LEFT JOIN LATERAL (
       SELECT * FROM monitorings m WHERE m.id_meja = j.id_meja ORDER BY m.created_at DESC LIMIT 1
     ) r ON true
     ORDER BY j.id_meja LIMIT 20`);
   const glob = await one(`
-    SELECT *, EXTRACT(EPOCH FROM (LOCALTIMESTAMP - created_at)) AS umur
+    SELECT *, EXTRACT(EPOCH FROM (LOCALTIMESTAMP - greatest(created_at, coalesce(updated_at, created_at)))) AS umur
     FROM monitorings ORDER BY created_at DESC LIMIT 1`);
   const baris = [];
   const temuan = [];

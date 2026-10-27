@@ -22,7 +22,7 @@ router.get('/ringkasan', async (_req, res, next) => {
         one(`SELECT avg(ph) AS ph, avg(tds) AS tds, avg("waterTemp") AS suhu_air, avg("airTemp") AS suhu_udara,
                     avg(humidity) AS kelembapan, count(*)::int AS jumlah
              FROM monitorings WHERE created_at >= now() - interval '6 hours'`),
-        one('SELECT created_at FROM monitorings ORDER BY created_at DESC LIMIT 1'),
+        one('SELECT greatest(created_at, coalesce(updated_at, created_at)) AS created_at FROM monitorings ORDER BY created_at DESC LIMIT 1'),
         one("SELECT count(*)::int AS n FROM v_alert_terbuka").catch(() => ({ n: null })),
       ]);
       const tren = await q(`

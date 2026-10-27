@@ -38,12 +38,14 @@ router.get('/', async (_req, res, next) => {
 
     let iotStatus = { online: false, seconds_ago: null, diff_text: 'Belum pernah ada data', last_seen: null };
     if (latest?.created_at) {
-      const secondsAgo = Math.round((Date.now() - new Date(latest.created_at).getTime()) / 1000);
+      // updated_at = terakhir dikonfirmasi sensor (bacaan identik tidak menambah baris)
+      const dilihat = latest.updated_at || latest.created_at;
+      const secondsAgo = Math.round((Date.now() - new Date(dilihat).getTime()) / 1000);
       iotStatus = {
         online: secondsAgo <= 120,
         seconds_ago: secondsAgo,
         diff_text: `${secondsAgo} detik yang lalu`,
-        last_seen: latest.created_at,
+        last_seen: dilihat,
       };
     }
 

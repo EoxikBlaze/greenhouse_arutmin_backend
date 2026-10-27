@@ -15,7 +15,7 @@
  * (nilai target menunggu kesepakatan tim — bila NULL, otomasi tidak berbuat apa-apa).
  */
 const { q, one } = require('./db');
-const { bacaKonfig, buatPerintah, PerintahDitolak, kunciPenampung, selesaikanKejadian } = require('./aktuator');
+const { bacaKonfig, buatPerintah, PerintahDitolak, kunciPenampung, selesaikanKejadian, PERANGKAT_AKTUATOR } = require('./aktuator');
 
 const SENSOR_BASI_DETIK = 120;
 
@@ -83,17 +83,18 @@ function putuskan(sensor, target, cfg, penampung) {
  */
 async function bacaanTerakhir(penampung) {
   const m = await one(
-    'SELECT ph, tds, "waterTemp", created_at FROM monitorings WHERE id_meja = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
+    'SELECT ph, tds, "waterTemp", created_at, updated_at FROM monitorings WHERE id_meja = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
     [penampung]);
   if (!m) return null;
   return {
     ph: m.ph, tds: m.tds, waterTemp: m.waterTemp,
-    umurDetik: Math.round((Date.now() - new Date(m.created_at).getTime()) / 1000),
+    // updated_at = terakhir dikonfirmasi sensor: bacaan identik tidak menambah baris tetapi menyegarkan waktu ini
+    umurDetik: Math.round((Date.now() - new Date(m.updated_at || m.created_at).getTime()) / 1000),
   };
 }
 
 /** Satu siklus: baca data → putuskan → antre lewat pagar. Mengembalikan ringkasan (untuk uji/log). */
-async function siklus(penampung) {
+async function siklus(penampung, { perangkat = PERANGKAT_AKTUATOR } = {}) {
   const target = await one('SELECT target_ec_ppm, target_ph, status_lock FROM penampung_states WHERE id_meja = $1', [penampung]);
   if (!target) return { aksi: null, sebab: 'penampung belum punya state/target' };
   if (target.status_lock) return { aksi: null, sebab: 'penampung terkunci' };
@@ -111,7 +112,7 @@ async function siklus(penampung) {
 
   const aktif = await one(
     `SELECT 1 AS x FROM perintah_aktuator
-      WHERE perangkat_kode = 'aktuator-01' AND status IN ('menunggu','dikirim') AND tipe IN ('DOSIS','BILAS','SAMPLING','ISI_AIR') LIMIT 1`);
+      WHERE perangkat_kode = $1 AND status IN ('menunggu','dikirim') AND tipe IN ('DOSIS','BILAS','SAMPLING','ISI_AIR') LIMIT 1`, [perangkat]);
   if (aktif) return { aksi: null, sebab: 'masih ada perintah berjalan' };
 
   const cfg = await bacaKonfig();
@@ -130,7 +131,7 @@ async function siklus(penampung) {
   if (!aksi && sebab === 'dalam pita target') await selesaikanKejadian(penampung); // kejadian berjalan berhasil
   if (!aksi) return { aksi: null, sebab };
   try {
-    const p = await buatPerintah({ ...aksi, sumber: 'otomasi', ttlDetik: 120 });
+    const p = await buatPerintah({ ...aksi, sumber: 'otomasi', ttlDetik: 120, perangkat });
     return { aksi, perintah: p.id };
   } catch (e) {
     if (e instanceof PerintahDitolak) return { aksi: null, sebab: `ditolak pagar: ${e.message}` };

@@ -50,7 +50,7 @@ async function latestSensorPayload() {
     const latest = await one('SELECT * FROM monitorings ORDER BY created_at DESC LIMIT 1');
     const wc = await one('SELECT * FROM water_controls ORDER BY id LIMIT 1');
     const secondsAgo = latest?.created_at
-      ? Math.round((Date.now() - new Date(latest.created_at).getTime()) / 1000)
+      ? Math.round((Date.now() - new Date(latest.updated_at || latest.created_at).getTime()) / 1000)
       : null;
     return {
       is_online: secondsAgo != null && secondsAgo <= 120,
@@ -75,7 +75,7 @@ async function saveSensorRows(data, { idMeja = null } = {}) {
   // created_at hanya presisi detik → `id DESC` memecah seri bacaan dalam detik yang sama.
   const rows = await q(`
     WITH last AS (
-      SELECT "waterTemp", ph, tds, "airTemp", humidity
+      SELECT id, "waterTemp", ph, tds, "airTemp", humidity
       FROM monitorings WHERE id_meja IS NOT DISTINCT FROM $7::bigint ORDER BY created_at DESC, id DESC LIMIT 1
     ), ins AS (
       INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at)
@@ -86,6 +86,13 @@ async function saveSensorRows(data, { idMeja = null } = {}) {
           tds IS NOT DISTINCT FROM $3 AND "airTemp" IS NOT DISTINCT FROM $4 AND
           humidity IS NOT DISTINCT FROM $5
       )
+      RETURNING id
+    ), sentuh AS (
+      -- bacaan identik tidak menambah baris, tetapi sensor jelas masih hidup: tandai bacaan terakhir
+      -- "dikonfirmasi lagi sekarang" (updated_at). Tanpa ini bacaan yang stabil >120 dtk tampak basi:
+      -- status "Alat terhubung" mati & otomasi dosing berhenti padahal sensor mengirim tiap 5 dtk.
+      UPDATE monitorings SET updated_at = now()
+       WHERE id = (SELECT id FROM last) AND NOT EXISTS (SELECT 1 FROM ins)
       RETURNING id
     )
     UPDATE water_controls SET
