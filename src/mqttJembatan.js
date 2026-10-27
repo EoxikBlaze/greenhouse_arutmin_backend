@@ -29,11 +29,11 @@ const ONLINE_MS = 90_000;        // aktuator dianggap online bila status terakhi
 const CACHE_MS = 30_000;
 
 /** Perangkat + apakah masih punya kunci aktif; di-cache 30 dtk agar tiap bacaan tak query ulang. */
-function buatPemeriksaPerangkat() {
+function buatPemeriksaPerangkat(cacheMs = CACHE_MS) {
   const cache = new Map();
   return async (kode) => {
     const c = cache.get(kode);
-    if (c && Date.now() - c.t < CACHE_MS) return c.v;
+    if (c && Date.now() - c.t < cacheMs) return c.v;
     const v = await one(
       `SELECT p.kode, p.peran, COALESCE(p.aktif, true) AS aktif,
               EXISTS (SELECT 1 FROM api_keys k WHERE k.perangkat_kode = p.kode AND k.aktif AND k.dicabut_pada IS NULL
@@ -55,11 +55,11 @@ function bacaJson(buf) {
 
 /**
  * Mulai jembatan. → { client, berhenti(), online: Map } (online dipakai tes).
- * @param {{url:string, username?:string, password?:string, log?:Console}} opsi
+ * @param {{url:string, username?:string, password?:string, log?:Console, cacheMs?:number}} opsi (cacheMs: masa cache pemeriksaan perangkat/kunci, bawaan 30 dtk)
  */
-function mulai({ url, username, password, log = console } = {}) {
+function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = {}) {
   if (!url) return null;
-  const periksa = buatPemeriksaPerangkat();
+  const periksa = buatPemeriksaPerangkat(cacheMs);
   const online = new Map();      // kode aktuator → waktu status online terakhir
   let sibukKirim = false;
 

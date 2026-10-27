@@ -23,8 +23,21 @@ const galat = (res, e) => (e instanceof PerintahDitolak
 /** Perangkat pemilik kunci (kunci klien tanpa perangkat → null). */
 const kodePerangkat = (req) => req.kunci?.perangkat_kode || null;
 
-async function tandaiTerlihat(kode, ip, ekstra = {}) {
+/** Nilai status perangkat dipotong/diklem sesuai kolom `perangkat` (varchar(32), smallint, integer):
+ *  dulu firmware >32 huruf atau rssi/uptime ekstrem → error DB (500 di HTTP, status tak terperbarui di MQTT). */
+function bersihkanStatus(ekstra = {}) {
+  const bulat = (v, min, max) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Math.min(max, Math.max(min, Math.round(Number(v)))) : null);
+  return {
+    firmware: typeof ekstra.firmware === 'string' && ekstra.firmware ? ekstra.firmware.slice(0, 32) : null,
+    rssi: bulat(ekstra.rssi, -32768, 32767),
+    uptime: bulat(ekstra.uptime, 0, 2147483647),
+    estop: typeof ekstra.estop === 'boolean' ? ekstra.estop : null,
+  };
+}
+
+async function tandaiTerlihat(kode, ip, mentah = {}) {
   if (!kode) return;
+  const ekstra = bersihkanStatus(mentah);
   await q(
     `UPDATE perangkat SET terakhir_terlihat = now(),
             ip_terakhir = COALESCE($2, ip_terakhir),
@@ -152,4 +165,4 @@ klien.get('/perangkat', bacaGuard, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-module.exports = { perangkat, klien, simpanBacaan, tandaiTerlihat };
+module.exports = { perangkat, klien, simpanBacaan, tandaiTerlihat, bersihkanStatus };
