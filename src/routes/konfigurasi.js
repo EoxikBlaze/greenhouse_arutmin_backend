@@ -44,6 +44,7 @@ const { q, one } = require('../db');
 const { requireAuth, requireRole, demoGuard } = require('../auth');
 const { idValidValue, notFound, queryParam } = require('./_id');
 const { validateBody } = require('./_validate');
+const { tafsir, ATURAN } = require('../parameter');
 
 const router = express.Router();
 
@@ -214,6 +215,12 @@ function ubah(s) {
         const efektif = { ...lama, ...Object.fromEntries(fields.map((c) => [c, body[c]])) };
         const errors = {};
         if (s.cekRentang) rentangErrors(efektif, errors);
+        // parameter keselamatan: nilai wajib angka sah (NULL/kosong/negatif/di luar rentang tipe ditolak) —
+        // pembaca lama memakai Number(): NULL → 0 diam-diam
+        if ((s.table === 'konfigurasi_dosis' || s.table === 'timing_operasi') && fields.includes('nilai')) {
+          const t = tafsir(body.nilai, ATURAN[s.table][req.params.id]);
+          if (t.status !== 'SAH') errors.nilai = [`Nilai tidak sah: ${t.alasan}.`];
+        }
         if (s.cekFkTanaman && fields.includes('id_tanaman')) {
           const ada = await one('SELECT 1 AS ada FROM tanamen WHERE id_tanaman = $1', [body.id_tanaman]);
           if (!ada) errors.id_tanaman = ['id_tanaman tidak terdaftar.'];

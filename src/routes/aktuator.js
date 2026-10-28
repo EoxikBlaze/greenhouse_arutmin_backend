@@ -53,6 +53,13 @@ router.get('/perintah', pengelolaBaca, async (req, res, next) => {
 router.post('/perintah', adminSungguhan, async (req, res, next) => {
   try {
     const b = req.body && typeof req.body === 'object' ? req.body : {};
+    // Fase 3B.2: dosis nutrisi/pH hanya lewat alur persetujuan petani (Tahap 3C). Sampai ada, ditolak.
+    if (String(b.tipe || '').toUpperCase() === 'DOSIS') {
+      return json(res, 423, {
+        message: 'Dosis tidak bisa diminta langsung. Dosing hanya lewat alur persetujuan petani, yang belum aktif.',
+        kode: 'butuh_alur_persetujuan',
+      });
+    }
     const row = await A.buatPerintah({
       tipe: String(b.tipe || '').toUpperCase(), parameter: b.parameter,
       sumber: 'pengguna', userId: Number(req.user.sub) || null, alasan: b.alasan, ttlDetik: b.ttl_detik,

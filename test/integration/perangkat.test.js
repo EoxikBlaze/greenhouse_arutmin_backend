@@ -10,11 +10,20 @@ const request = require('supertest');
 const { startServer, adminToken, craftToken, bearer } = require('./_server');
 const { q } = require('../../src/db');
 const { validasiPerintah, PerintahDitolak, buatPerintah, laporHasil } = require('../../src/aktuator');
-const { siklus } = require('../../src/otomasi');
 
 let srv; let base; let admin; let meja; let snapState; let mejaUji; let awalEvent; let awalAlert;
 const idKunci = [];
 const hdr = (k) => ({ 'X-API-KEY': k });
+/** 3B.2: DOSIS tidak lagi bisa diminta lewat HTTP; pagar diuji lewat primitif buatPerintah (jalur alur persetujuan 3C). */
+async function dosis(parameter, alasan) {
+  const idAdmin = Number((await q("SELECT id FROM users WHERE level = 'admin' AND NOT is_demo ORDER BY id LIMIT 1"))[0].id);
+  try {
+    return { status: 201, body: { perintah: await buatPerintah({ tipe: 'DOSIS', parameter, sumber: 'pengguna', userId: idAdmin, alasan }) } };
+  } catch (e) {
+    if (e instanceof PerintahDitolak) return { status: e.status, body: { message: e.message } };
+    throw e;
+  }
+}
 const CFG = { maks_ml_per_suntikan: 214, maks_ml_ph_per_suntikan: 10, maks_ml_bilas_per_perintah: 500 };
 
 async function buatKunci(body) {
@@ -154,15 +163,18 @@ test('aktuator: dosis lolos pagar, terkirim sekali, hasil dilaporkan; pagar hari
   const demo = craftToken({ sub: 2, username: 'demo', level: 'admin', demo: true }, { expiresIn: '5m' });
   assert.equal((await request(base).post('/api/aktuator/perintah').set(bearer(demo)).send({ tipe: 'STOP' })).status, 403);
   assert.equal((await request(base).post('/api/aktuator/perintah').send({ tipe: 'STOP' })).status, 401);
-  assert.equal((await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'AB', ml: 999 } })).status, 422);
-  assert.equal((await buat({ tipe: 'DOSIS', parameter: { penampung: 999999, larutan: 'AB', ml: 10 } })).status, 404);
+  assert.equal((await dosis({ penampung: meja, larutan: 'AB', ml: 999 })).status, 422);
+  assert.equal((await dosis({ penampung: 999999, larutan: 'AB', ml: 10 })).status, 404);
   assert.equal((await buat({ tipe: 'RM_RF', parameter: {} })).status, 422);
+  const lewatHttp = await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'AB', ml: 10 } });
+  assert.equal(lewatHttp.status, 423, 'DOSIS lewat HTTP ditolak sampai alur persetujuan ada');
+  assert.equal(lewatHttp.body.kode, 'butuh_alur_persetujuan');
 
-  const a = await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'AB', ml: 200 }, alasan: 'uji' });
+  const a = await dosis({ penampung: meja, larutan: 'AB', ml: 200 }, 'uji');
   assert.equal(a.status, 201, JSON.stringify(a.body));
-  const b = await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'AB', ml: 200 } });
+  const b = await dosis({ penampung: meja, larutan: 'AB', ml: 200 });
   assert.equal(b.status, 201);
-  const c = await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'AB', ml: 150 } }); // 550 > 500
+  const c = await dosis({ penampung: meja, larutan: 'AB', ml: 150 }); // 550 > 500
   assert.equal(c.status, 409);
   assert.match(c.body.message, /AB harian/);
 
@@ -181,8 +193,8 @@ test('aktuator: dosis lolos pagar, terkirim sekali, hasil dilaporkan; pagar hari
   assert.equal((await request(base).post('/api/device/v1/perintah/abc/hasil').set(hdr(akt.kunci)).send({ status: 'selesai' })).status, 404);
   assert.equal((await request(base).post(`/api/device/v1/perintah/${idB}/hasil`).set(hdr(akt.kunci)).send({ status: 'mantap' })).status, 422);
   // dosis GAGAL mengembalikan jatah harian (200 mL) → 150 mL kini boleh
-  assert.equal((await request(base).post(`/api/device/v1/perintah/${idB}/hasil`).set(hdr(akt.kunci)).send({ status: 'gagal', hasil: { error: 'pompa macet' } })).status, 200);
-  assert.equal((await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'AB', ml: 150 } })).status, 201);
+  assert.equal((await request(base).post(`/api/device/v1/perintah/${idB}/hasil`).set(hdr(akt.kunci)).send({ status: 'gagal', hasil: { error: 'pompa macet', ml_nyata: 0 } })).status, 200);
+  assert.equal((await dosis({ penampung: meja, larutan: 'AB', ml: 150 })).status, 201);
 
   // perintah kedaluwarsa tidak terkirim
   const kd = await buat({ tipe: 'SAMPLING', parameter: { penampung: meja }, ttl_detik: 10 });
@@ -208,7 +220,7 @@ test('E-STOP: menolak perintah berisiko, STOP_DARURAT didahulukan, reset hanya a
 
   const est = await request(base).post('/api/aktuator/estop').set(bearer(admin));
   assert.equal(est.status, 201);
-  assert.equal((await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'PH_UP', ml: 5 } })).status, 423);
+  assert.equal((await dosis({ penampung: meja, larutan: 'PH_UP', ml: 5 })).status, 423);
   assert.equal((await buat({ tipe: 'STOP', parameter: {} })).status, 201); // STOP tetap boleh
 
   const ambil = await request(base).get('/api/device/v1/perintah').set(hdr(akt.kunci));
@@ -222,7 +234,7 @@ test('E-STOP: menolak perintah berisiko, STOP_DARURAT didahulukan, reset hanya a
   assert.equal(st.body.estop, true);
 
   assert.equal((await request(base).post('/api/aktuator/estop/reset').set(bearer(admin))).status, 200);
-  assert.equal((await buat({ tipe: 'DOSIS', parameter: { penampung: meja, larutan: 'PH_UP', ml: 5 } })).status, 201);
+  assert.equal((await dosis({ penampung: meja, larutan: 'PH_UP', ml: 5 })).status, 201);
 });
 
 /* ── klien REST ───────────────────────────────────────────────────── */
@@ -352,40 +364,10 @@ test('B3: suntikan yang dilaporkan GAGAL bukan ronde — kejadian kosong dihapus
   await bersihkanUji();
   const p = await dosisOto(30);
   await q("UPDATE perintah_aktuator SET status = 'dikirim', dikirim_pada = now() WHERE id = $1", [p.id]);
-  await laporHasil('aktuator-01', p.id, { status: 'gagal', hasil: { error: 'pompa macet' } });
+  await laporHasil('aktuator-01', p.id, { status: 'gagal', hasil: { error: 'pompa macet', ml_nyata: 0 } });
   const st = await state();
   assert.equal(st.kejadian_dosis_hari, 0);
   assert.equal(Number(st.volume_ab_hari_ml), 0);
   assert.equal((await events()).length, 0);
 });
 
-test('B4 otomasi: 3 bacaan mustahil berturut-turut → LOCK sensor; 2 saja → tidak', async () => {
-  await bersihkanUji();
-  await q('INSERT INTO penampung_states (id_meja, target_ec_ppm, target_ph) VALUES ($1, 800, 6)', [mejaUji]);
-  const baca = (tds) => q('INSERT INTO monitorings (tds, ph, id_meja, created_at) VALUES ($1, 6, $2, now())', [tds, mejaUji]);
-  await baca(700); await baca(0); await baca(0);
-  const r1 = await siklus(mejaUji);
-  assert.equal((await state()).status_lock, false, r1.sebab);
-  await baca(0);
-  const r2 = await siklus(mejaUji);
-  assert.match(r2.sebab, /LOCK/);
-  const st = await state();
-  assert.equal(st.status_lock, true);
-  assert.match(st.lock_alasan, /3x bacaan invalid/);
-  assert.deepEqual((await alertUji()).map((a) => [a.type, a.severity, a.locked]), [['sensor', 'critical', true]]);
-  await q('DELETE FROM monitorings WHERE id_meja = $1', [mejaUji]);
-});
-
-test('B3 otomasi: bacaan kembali ke pita target → kejadian berjalan ditutup sukses', async () => {
-  await bersihkanUji();
-  await q('INSERT INTO penampung_states (id_meja, target_ec_ppm, target_ph) VALUES ($1, 800, 6)', [mejaUji]);
-  await dosisOto(20);
-  await kosongkanAntrean();
-  await q("UPDATE perintah_aktuator SET dibuat_pada = now() - interval '1 hour' WHERE (parameter->>'penampung')::bigint = $1", [mejaUji]);
-  await q('INSERT INTO monitorings (tds, ph, id_meja, created_at) VALUES (800, 6, $1, now())', [mejaUji]);
-  const r = await siklus(mejaUji);
-  assert.equal(r.sebab, 'dalam pita target');
-  assert.equal((await events())[0].hasil, 'sukses');
-  await q('DELETE FROM monitorings WHERE id_meja = $1', [mejaUji]);
-  await bersihkanUji();
-});

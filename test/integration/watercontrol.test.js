@@ -80,32 +80,26 @@ test('GET /watercontrol (admin) → 200 {page:"watercontrol", wc:{…}} (wc iden
   assert.deepEqual(res.body.wc, sebelum, 'wc harus identik dgn /watercontrol/status yang dibaca berurutan');
 });
 
-test('POST /watercontrol/setMode mode DI LUAR enum → 422 terstruktur kontrak (bukan 500, tidak menulis)', async () => {
+// 3B.2: kontrol tulis Water Control dinonaktifkan (perangkat v0.2 tidak menerima/mengonfirmasi) → 503, tanpa tulis
+test('POST /watercontrol/setMode mode DI LUAR enum → 503 kontrol_air_nonaktif (tidak menulis)', async () => {
   const res = await kirimDitolak('setMode mode di luar enum',
     () => request(base).post('/watercontrol/setMode').set(auth).send({ mode: 'XYZ' }));
-  // Status AKTUAL kode saat ini = 422 (sudah divalidasi). Bila kembali 500 →
-  // itulah target G9b/G10 (validasi hilang); pesan gagal menyebutkannya eksplisit.
-  assert.equal(res.status, 422,
-    `mode di luar enum harus 422 kontrak; aktual ${res.status} — bila 500: target G9b/G10 (validasi setMode hilang) — body: ${res.text}`);
-  assert.deepEqual(res.body, {
-    message: 'Data tidak valid.',
-    errors: { mode: ['Mode harus AUTO atau MANUAL.'] },
-  });
+  assert.equal(res.status, 503, `body: ${res.text}`);
+  assert.equal(res.body.kode, 'kontrol_air_nonaktif');
 });
 
-test('POST /watercontrol/setMode mode kosong / tanpa body → 422 kontrak sama, tanpa tulis', async () => {
-  const kosong = await kirimDitolak('setMode mode kosong',
-    () => request(base).post('/watercontrol/setMode').set(auth).send({ mode: '' }));
-  assert.equal(kosong.status, 422, `body: ${kosong.text}`);
-  assert.equal(kosong.body.errors.mode[0], 'Mode harus AUTO atau MANUAL.');
-
-  const tanpaBody = await kirimDitolak('setMode tanpa body',
-    () => request(base).post('/watercontrol/setMode').set(auth).send());
-  assert.equal(tanpaBody.status, 422, `body: ${tanpaBody.text}`);
-  assert.deepEqual(tanpaBody.body, {
-    message: 'Data tidak valid.',
-    errors: { mode: ['Mode harus AUTO atau MANUAL.'] },
-  });
+test('POST /watercontrol/setMode|fill|stop (isi apa pun) → 503 kontrol_air_nonaktif, tanpa tulis', async () => {
+  for (const [ket, kirim] of [
+    ['setMode kosong', () => request(base).post('/watercontrol/setMode').set(auth).send({ mode: '' })],
+    ['setMode AUTO sah', () => request(base).post('/watercontrol/setMode').set(auth).send({ mode: 'AUTO' })],
+    ['fill', () => request(base).post('/watercontrol/fill').set(auth).send()],
+    ['stop', () => request(base).post('/watercontrol/stop').set(auth).send()],
+  ]) {
+    const r = await kirimDitolak(ket, kirim);
+    assert.equal(r.status, 503, `${ket}: ${r.text}`);
+    assert.equal(r.body.kode, 'kontrol_air_nonaktif');
+    assert.notEqual(r.body.status, true, 'tidak boleh mengaku berhasil');
+  }
 });
 
 test('POST /watercontrol/setMode (token petani) → 403 PetaniGuard, tanpa tulis', async () => {

@@ -8,6 +8,14 @@
  * dan latch E-STOP. Firmware ESP32 WAJIB punya batas sendiri juga (pertahanan berlapis).
  */
 const { pool, q, one } = require('./db');
+const { tidakTerisi } = require('./parameter');
+
+/** Batas konfigurasi_dosis yang dipakai pagar per jenis perintah — wajib terisi & sah. */
+const BATAS_WAJIB = {
+  AB: ['maks_ml_per_suntikan', 'maks_volume_ab_hari_ml', 'maks_suntikan_per_kejadian', 'maks_kejadian_per_hari', 'peringatan_dini_kejadian'],
+  PH: ['maks_ml_ph_per_suntikan', 'maks_volume_ph_hari_ml'],
+  BILAS: ['maks_ml_bilas_per_perintah'],
+};
 
 const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT'];
 const LARUTAN = ['AB', 'PH_UP', 'PH_DOWN'];
@@ -79,13 +87,6 @@ async function bukaKunci(idMeja, oleh) {
   return true;
 }
 
-/** Tutup kejadian berjalan sebagai sukses (otomasi: bacaan sudah kembali ke pita target). */
-async function selesaikanKejadian(idMeja) {
-  await q(
-    `UPDATE dosing_events SET hasil = 'sukses', selesai_pada = now(), updated_at = now()
-      WHERE id_meja = $1 AND hasil = 'berjalan'`, [idMeja]);
-}
-
 /** Peta konfigurasi_dosis → {param: number}. */
 async function bacaKonfig(runner = q) {
   const rows = await runner('SELECT param, nilai FROM konfigurasi_dosis', []);
@@ -139,6 +140,12 @@ function validasiPerintah(tipe, p, cfg) {
     const aksi = String(body.aksi || 'MULAI').toUpperCase();
     if (!['MULAI', 'STOP'].includes(aksi)) err.aksi = ['aksi harus MULAI atau STOP.'];
     else out.aksi = aksi;
+    // nomor katup di perangkat (≠ id_meja server); dipakai firmware v0.3, opsional demi kontrak lama
+    if (body.katup !== undefined) {
+      const k = angka(body.katup);
+      if (!Number.isInteger(k) || k < 1 || k > 64) err.katup = ['katup harus bilangan bulat 1–64.'];
+      else out.katup = k;
+    }
   }
   if (Object.keys(err).length) throw new PerintahDitolak(422, 'Data tidak valid.', err);
   return out;
@@ -152,13 +159,20 @@ const berisiko = (tipe, param) => tipe === 'DOSIS' || tipe === 'BILAS' || tipe =
  * Antre perintah. Atomik (transaksi) — pagar, penghitung harian, dan INSERT satu kesatuan.
  * @returns {Promise<object>} baris perintah_aktuator
  */
-async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = null, alasan = null, ttlDetik = 120, perangkat = PERANGKAT_AKTUATOR }) {
+async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = null, alasan = null, ttlDetik = 120, perangkat = PERANGKAT_AKTUATOR, idempotencyKey = null }) {
   const ttl = Math.min(600, Math.max(10, Number(ttlDetik) || 120));
   const client = await pool.connect();
   let released = false;
   try {
     await client.query('BEGIN');
     const cfg = await bacaKonfig((t, pr) => client.query(t, pr));
+    const wajib = tipe === 'DOSIS' ? BATAS_WAJIB[parameter?.larutan === 'AB' ? 'AB' : 'PH'] : tipe === 'BILAS' ? BATAS_WAJIB.BILAS : [];
+    if (wajib.length) {
+      const kosong = await tidakTerisi({ konfigurasi_dosis: wajib }, (t, pr) => client.query(t, pr));
+      if (kosong.length) {
+        throw new PerintahDitolak(409, `Batas keselamatan belum terisi/tidak sah: ${kosong.map((k) => `${k.param} (${k.status})`).join(', ')}. Perintah ditolak.`);
+      }
+    }
     const param = validasiPerintah(tipe, parameter, cfg);
 
     const dev = (await client.query('SELECT kode, peran FROM perangkat WHERE kode = $1', [perangkat])).rows[0];
@@ -258,10 +272,10 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
     }
 
     const row = (await client.query(
-      `INSERT INTO perintah_aktuator (perangkat_kode, tipe, parameter, sumber, dibuat_oleh, alasan, kedaluwarsa_pada)
-       VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' seconds')::interval)
+      `INSERT INTO perintah_aktuator (perangkat_kode, tipe, parameter, sumber, dibuat_oleh, alasan, kedaluwarsa_pada, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' seconds')::interval, $8)
        RETURNING id, perangkat_kode, tipe, parameter, status, sumber, alasan, kedaluwarsa_pada, dibuat_pada`,
-      [perangkat, tipe, param, sumber, userId, alasan ? String(alasan).slice(0, 200) : null, String(ttl)])).rows[0];
+      [perangkat, tipe, param, sumber, userId, alasan ? String(alasan).slice(0, 200) : null, String(ttl), idempotencyKey])).rows[0];
     await client.query('COMMIT');
     return row;
   } catch (e) {
@@ -279,14 +293,23 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
   }
 }
 
-/** Bersihkan antrean: menunggu kedaluwarsa → 'kedaluwarsa'; dikirim >90 dtk tanpa hasil → 'gagal'. */
+/**
+ * Bersihkan antrean: menunggu kedaluwarsa → 'kedaluwarsa'; dikirim >90 dtk tanpa hasil → 'gagal'.
+ * DOSIS yang timeout: volume tidak diketahui → jatah tidak dikembalikan + penampung dikunci.
+ */
 async function rapikanAntrean(perangkat) {
   await q(
     `UPDATE perintah_aktuator SET status = 'kedaluwarsa', selesai_pada = now()
       WHERE perangkat_kode = $1 AND status = 'menunggu' AND kedaluwarsa_pada <= now()`, [perangkat]);
-  await q(
+  const timeout = await q(
     `UPDATE perintah_aktuator SET status = 'gagal', selesai_pada = now(), hasil = '{"error":"timeout_tanpa_laporan"}'
-      WHERE perangkat_kode = $1 AND status = 'dikirim' AND dikirim_pada <= now() - interval '90 seconds'`, [perangkat]);
+      WHERE perangkat_kode = $1 AND status = 'dikirim' AND dikirim_pada <= now() - interval '90 seconds'
+      RETURNING id, tipe, parameter`, [perangkat]);
+  for (const p of timeout.filter((x) => x.tipe === 'DOSIS')) {
+    await kunciPenampung(Number(p.parameter.penampung), {
+      alasan: 'Dosis tanpa laporan hasil (timeout)', type: 'volume_tidak_pasti', value: `perintah ${p.id}: ${p.parameter.larutan} ${p.parameter.ml} mL`,
+    }).catch((e) => console.error('[aktuator] gagal mengunci penampung setelah timeout:', e.message));
+  }
 }
 
 /** Ambil perintah menunggu untuk perangkat (atomik, tiap perintah hanya terkirim sekali). */
@@ -305,6 +328,19 @@ async function ambilPerintah(perangkat, maks = 5) {
 }
 
 /** Laporan hasil dari perangkat. Hanya perintah miliknya & berstatus 'dikirim'. */
+/**
+ * Kategori volume dosis (Fase 3B.4) — empat hal yang TIDAK boleh disamakan:
+ *   DIPERINTAHKAN (parameter.ml) · ESTIMASI (ml_nyata dari waktu × laju firmware, belum terkalibrasi) ·
+ *   UKUR (sumber_volume 'ukur', mis. flow meter) · TIDAK_DIKETAHUI (ml_nyata tidak ada/tidak sah) ·
+ *   TIDAK_JALAN (ml_nyata = 0 tepat: perintah ditolak/dihentikan sebelum output nyala).
+ */
+function kategoriVolume(hasil, mlDiperintahkan) {
+  const nyata = hasil?.ml_nyata;
+  if (!(typeof nyata === 'number' && Number.isFinite(nyata) && nyata >= 0)) return { kategori: 'TIDAK_DIKETAHUI', ml: null, diperintahkan: mlDiperintahkan };
+  if (nyata === 0) return { kategori: 'TIDAK_JALAN', ml: 0, diperintahkan: mlDiperintahkan };
+  return { kategori: hasil.sumber_volume === 'ukur' ? 'UKUR' : 'ESTIMASI', ml: Math.min(nyata, mlDiperintahkan), diperintahkan: mlDiperintahkan };
+}
+
 async function laporHasil(perangkat, id, { status, hasil }) {
   if (!['selesai', 'gagal'].includes(status)) throw new PerintahDitolak(422, 'Data tidak valid.', { status: ['status harus selesai atau gagal.'] });
   const aman = hasil && typeof hasil === 'object' && !Array.isArray(hasil) && JSON.stringify(hasil).length <= 2000 ? hasil : null;
@@ -314,17 +350,36 @@ async function laporHasil(perangkat, id, { status, hasil }) {
       RETURNING id, tipe, parameter, status, hasil`,
     [id, perangkat, status, aman]);
   if (!row) throw new PerintahDitolak(404, 'Perintah tidak ditemukan atau sudah dilaporkan.');
-  // dosis yang GAGAL dilaporkan tidak menghabiskan jatah harian: kembalikan reservasi
+  // Dosis GAGAL: jatah harian dikembalikan HANYA bila terbukti tidak/kurang keluar — TIDAK_JALAN (penuh) atau UKUR
+  // (sisa terukur). ESTIMASI (waktu × laju contoh firmware) dianggap keluar seluruhnya. TIDAK_DIKETAHUI → tanpa
+  // pengembalian + penampung dikunci (cegah dosis ulang yang bisa overdosis) sampai admin memeriksa.
+  if (row.tipe === 'DOSIS') {
+    const vol = kategoriVolume(aman, Number(row.parameter.ml));
+    await q("UPDATE perintah_aktuator SET hasil = coalesce(hasil, '{}'::jsonb) || jsonb_build_object('volume_server', $2::jsonb) WHERE id = $1", [row.id, vol]);
+    row.hasil = { ...(row.hasil || {}), volume_server: vol };
+  }
   if (status === 'gagal' && row.tipe === 'DOSIS') {
-    const { penampung, larutan, ml } = row.parameter;
+    const { penampung, larutan } = row.parameter;
+    const vol = row.hasil.volume_server;
+    if (vol.kategori === 'TIDAK_DIKETAHUI') {
+      await kunciPenampung(Number(penampung), {
+        alasan: 'Volume dosis gagal tidak diketahui', type: 'volume_tidak_pasti', value: `perintah ${row.id}: ${larutan} ${row.parameter.ml} mL, ml_nyata tidak dilaporkan`,
+      });
+      return row;
+    }
+    // ESTIMASI (waktu × laju contoh) bukan bukti: dianggap keluar seluruhnya → tidak ada pengembalian (aman dari overdosis)
+    if (vol.kategori === 'ESTIMASI') return row;
+    const keluar = vol.ml;
+    const ml = Math.round((Number(row.parameter.ml) - keluar) * 10) / 10;
     const kol = larutan === 'AB' ? 'volume_ab_hari_ml' : 'volume_ph_hari_ml';
     await q(`UPDATE penampung_states SET ${kol} = GREATEST(0, ${kol} - $2), updated_at = now() WHERE id_meja = $1`, [penampung, ml]);
     if (larutan === 'AB') {
-      // suntikan gagal bukan ronde; kejadian yang jadi kosong tidak memotong jatah harian
+      // suntikan yang tidak mengeluarkan apa pun bukan ronde; kejadian yang jadi kosong tidak memotong jatah harian.
+      // Suntikan yang sebagian keluar TETAP dihitung ronde — hanya volumenya dikoreksi.
       const ev = await one(
-        `UPDATE dosing_events SET ronde_total = GREATEST(0, ronde_total - 1), volume_total_ml = GREATEST(0, volume_total_ml - $2), updated_at = now()
+        `UPDATE dosing_events SET ronde_total = GREATEST(0, ronde_total - $3), volume_total_ml = GREATEST(0, volume_total_ml - $2), updated_at = now()
           WHERE id = (SELECT id FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' ORDER BY id DESC LIMIT 1)
-          RETURNING id, ronde_total`, [penampung, ml]);
+          RETURNING id, ronde_total`, [penampung, ml, keluar > 0 ? 0 : 1]);
       if (ev && ev.ronde_total === 0) {
         await q('DELETE FROM dosing_events WHERE id = $1', [ev.id]);
         await q('UPDATE penampung_states SET kejadian_dosis_hari = GREATEST(0, kejadian_dosis_hari - 1), updated_at = now() WHERE id_meja = $1', [penampung]);
@@ -343,6 +398,6 @@ async function statusEstop() {
 
 module.exports = {
   TIPE, LARUTAN, PERANGKAT_AKTUATOR, PerintahDitolak,
-  bacaKonfig, validasiPerintah, buatPerintah, ambilPerintah, laporHasil, rapikanAntrean, resetEstop, statusEstop,
-  kunciPenampung, bukaKunci, selesaikanKejadian, KEJADIAN_BASI_MENIT,
+  bacaKonfig, validasiPerintah, buatPerintah, ambilPerintah, laporHasil, kategoriVolume, rapikanAntrean, resetEstop, statusEstop,
+  kunciPenampung, bukaKunci, KEJADIAN_BASI_MENIT,
 };

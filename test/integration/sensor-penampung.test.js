@@ -8,7 +8,6 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { startServer, adminToken, bearer } = require('./_server');
 const { q } = require('../../src/db');
-const { bacaanTerakhir } = require('../../src/otomasi');
 
 let srv; let base; let kunci; let idKunci; let mejaA; let mejaB;
 const TANDA = 77.77; // humidity penanda baris uji (mudah dibersihkan)
@@ -66,19 +65,3 @@ test('B2 ingest: anti-duplikat per penampung — payload sama ke dua meja tetap 
   assert.equal((await barisUji()).length, sebelum + 2);
 });
 
-test('B2 otomasi: bacaanTerakhir hanya membaca penampungnya sendiri', async () => {
-  const kosong = Number((await q("INSERT INTO mejas (meja, jumlah_lubang, created_at, updated_at) VALUES ('uji-penampung-C', 1, now(), now()) RETURNING id_meja"))[0].id_meja);
-  try {
-    await kirim({ tds: 810, ph: 6.0, id_meja: mejaA });
-    await kirim({ tds: 20, ph: 6.0, id_meja: mejaB }); // lebih baru, meja lain (mis. probe lepas)
-    await kirim({ tds: 30, ph: 6.0 });                 // lebih baru lagi, tanpa penampung
-
-    const a = await bacaanTerakhir(mejaA);
-    assert.equal(Number(a.tds), 810, 'penampung A tidak boleh memakai bacaan meja B / tanpa id_meja');
-    assert.ok(a.umurDetik >= 0 && a.umurDetik < 60);
-    assert.equal(Number((await bacaanTerakhir(mejaB)).tds), 20);
-    assert.equal(await bacaanTerakhir(kosong), null, 'penampung tanpa bacaan → null, bukan bacaan meja lain');
-  } finally {
-    await q('DELETE FROM mejas WHERE id_meja = $1', [kosong]);
-  }
-});

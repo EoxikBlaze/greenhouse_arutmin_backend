@@ -134,7 +134,7 @@ test('S5: pesan ganda — hasil "gagal" yang dikirim dua kali mengembalikan jata
   akt.on('message', (_t, b) => ack.push(JSON.parse(b)));
   await akt.subscribeAsync(`garap/${A}/ack`, { qos: 1 });
   await akt.publishAsync(`garap/${A}/status`, JSON.stringify({ online: true }));
-  const gagal = JSON.stringify({ id: Number(d1.id), status: 'gagal', hasil: { alasan: 'pompa_macet' } });
+  const gagal = JSON.stringify({ id: Number(d1.id), status: 'gagal', hasil: { alasan: 'pompa_macet', ml_nyata: 0 } });
   for (let i = 0; i < 3; i += 1) await akt.publishAsync(`garap/${A}/hasil`, gagal);     // ack hilang → firmware mengulang
   assert.ok(await sampai(() => ack.length >= 3));
   assert.equal(Number((await one('SELECT volume_ab_hari_ml AS v FROM penampung_states WHERE id_meja = $1', [meja])).v), 100,

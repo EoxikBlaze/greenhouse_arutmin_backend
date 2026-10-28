@@ -78,7 +78,7 @@ function adminSungguhan(req, res, next) {
 }
 const idOk = (s) => /^[0-9]{1,18}$/.test(String(s));
 const STATUS = ['aktif', 'menunggu_konfirmasi', 'kadaluarsa'];
-// rentang wajar sama dengan sanity check otomasi (src/otomasi.js SANITY)
+// rentang wajar sama dengan batas kewajaran sensor (src/sanitySensor.js SANITY)
 const BATAS = { ec: [50, 2500], ph: [3, 9] };
 
 /** Angka dari body: undefined = tidak dikirim, null = dikosongkan, NaN = bukan angka. */
