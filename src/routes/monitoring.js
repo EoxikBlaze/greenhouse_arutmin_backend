@@ -10,7 +10,7 @@
  *   POST /api/notif-hardware              (X-API-KEY)
  */
 const express = require('express');
-const { q, one } = require('../db');
+const { pool, q, one } = require('../db');
 const cache = require('../cache');
 const { requireApiKey, requireAuth, json } = require('../auth');
 const { queryParam } = require('./_id');
@@ -69,11 +69,44 @@ async function latestSensorPayload() {
  * @param {{idMeja?: number|null}} [opsi] penampung asal bacaan — HANYA dari pemanggil yang sudah
  *   memvalidasinya (rute perangkat); body mentah tidak pernah dibaca untuk kolom ini.
  */
+/** Antrean per penampung di proses ini: kiriman menunggu TANPA memegang koneksi pool. */
+const antrean = new Map();
+function berurutan(kunci, fn) {
+  const jalan = (antrean.get(kunci) || Promise.resolve()).catch(() => {}).then(fn);
+  antrean.set(kunci, jalan);
+  jalan.catch(() => {}).finally(() => { if (antrean.get(kunci) === jalan) antrean.delete(kunci); });
+  return jalan;
+}
+
 async function saveSensorRows(data, { idMeja = null } = {}) {
+  // Kirim bersamaan untuk penampung yang sama dulu menggandakan baris (snapshot CTE sama → NOT EXISTS lolos
+  // di semua permintaan; terukur 4–20 baris dari 20 kiriman identik). Diurutkan PER PENAMPUNG: antrean di
+  // proses (tidak menghabiskan pool saat banjir) + kunci advisory di transaksi (aman bila >1 proses).
+  // Penampung lain tidak saling menunggu.
+  return berurutan(idMeja == null ? 'tanpa-meja' : String(idMeja), () => simpanTerkunci(data, idMeja));
+}
+
+async function simpanTerkunci(data, idMeja) {
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('garap.monitorings'), $1::int)", [idMeja == null ? -1 : Number(idMeja) % 2147483647]);
+    const command = await simpanBaris(c, data, idMeja);
+    await c.query('COMMIT');
+    return command;
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
+}
+
+async function simpanBaris(c, data, idMeja) {
   // SATU round-trip CTE: anti-duplikat (per penampung) + simpan sensor + state katup + angkat
   // command pending lalu reset ke AUTO (kontrak Laravel dipertahankan).
   // created_at hanya presisi detik → `id DESC` memecah seri bacaan dalam detik yang sama.
-  const rows = await q(`
+  const { rows } = await c.query(`
     WITH last AS (
       SELECT id, "waterTemp", ph, tds, "airTemp", humidity
       FROM monitorings WHERE id_meja IS NOT DISTINCT FROM $7::bigint ORDER BY created_at DESC, id DESC LIMIT 1
@@ -91,7 +124,11 @@ async function saveSensorRows(data, { idMeja = null } = {}) {
       -- bacaan identik tidak menambah baris, tetapi sensor jelas masih hidup: tandai bacaan terakhir
       -- "dikonfirmasi lagi sekarang" (updated_at). Tanpa ini bacaan yang stabil >120 dtk tampak basi:
       -- status "Alat terhubung" mati & otomasi dosing berhenti padahal sensor mengirim tiap 5 dtk.
-      UPDATE monitorings SET updated_at = now()
+      -- n_konfirmasi/celah_maks_detik: bukti pengamatan untuk evaluasi kestabilan (NULL = baris lama, tidak diketahui)
+      UPDATE monitorings SET updated_at = now(),
+             n_konfirmasi = n_konfirmasi + 1,
+             celah_maks_detik = CASE WHEN celah_maks_detik IS NULL THEN NULL
+               ELSE GREATEST(celah_maks_detik, floor(extract(epoch FROM now() - coalesce(updated_at, created_at)))::int) END
        WHERE id = (SELECT id FROM last) AND NOT EXISTS (SELECT 1 FROM ins)
       RETURNING id
     )
