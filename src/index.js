@@ -171,6 +171,14 @@ app.use('/api/v1', device.klien);
 // Kendali aktuator + manajemen API key — JWT admin (bukan demo) untuk menulis.
 app.use('/api/aktuator', aktuatorRoutes.router);
 app.use('/api/kunci', aktuatorRoutes.kunci);
+// Siklus budidaya (Fase 3B) — tulis admin saja, tanpa aktuator. Dipasang sebelum /api monitoring.
+const siklusBudidaya = require('./routes/siklusBudidaya');
+app.use('/api/siklus', siklusBudidaya.siklus);
+app.use('/api/konfirmasi', siklusBudidaya.konfirmasi);
+app.use('/api/lot', siklusBudidaya.lot);
+app.use('/api/penugasan', siklusBudidaya.penugasan);
+app.use('/api/preset', siklusBudidaya.preset);
+app.use('/api/parameter', require('./routes/parameter'));
 app.use('/api', monitoring.api);                       // ESP32 (guard X-API-KEY per route)
 // Asisten keputusan budidaya (AI lokal Ollama) — guard auth+role ada di dlm modul:
 // Bearer JWT wajib, role admin/petani, demo 403, Ollama mati → fallback heuristik.
@@ -325,7 +333,9 @@ loadColumnLengths()
   })
   .catch(() => { /* loadColumnLengths sudah menangkap errornya sendiri */ })
   .finally(() => {
-    startServers(); require('./otomasi').mulai(); require('./presetDosing').mulai();
+    startServers(); require('./presetDosing').mulai();
+    // penjadwal konfirmasi siklus budidaya: default MATI (SIKLUS_PENJADWAL=1), tanpa aktuator
+    require('./siklusBudidaya').mulaiPenjadwal().catch((e) => console.error('[SIKLUS] gagal mulai:', e.message));
     if (config.mqttUrl) {
       require('./mqttJembatan').mulai({ url: config.mqttUrl, username: config.mqttUser || undefined, password: config.mqttPass || undefined });
     }
