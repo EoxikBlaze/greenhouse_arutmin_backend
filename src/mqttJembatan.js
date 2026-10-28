@@ -144,7 +144,7 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
   }
 
   client.on('connect', () => {
-    log.log(`[mqtt] tersambung ke ${url}`);
+    log.log(`[mqtt] tersambung ke ${String(url).replace(/\/\/[^/@]*@/, "//***@")}`); // sandi di MQTT_URL tidak boleh masuk log
     client.subscribe([`${PREFIX}/+/data`, `${PREFIX}/+/status`, `${PREFIX}/+/hasil`], { qos: 1 });
     detak();
   });
