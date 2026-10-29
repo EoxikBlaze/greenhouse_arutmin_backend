@@ -72,10 +72,11 @@ async function tx(fn) {
   }
 }
 
-async function cariIdem(key, hash) {
-  const r = (await q('SELECT id_siklus, permintaan_hash FROM siklus_transisi WHERE idempotency_key = $1', [key]))[0];
+/** Replay hanya untuk PEMILIK kunci (aktor yang sama) dan isi yang sama; pengguna lain → 422 dengan pesan yang sama. */
+async function cariIdem(key, hash, idAktor) {
+  const r = (await q('SELECT id_siklus, permintaan_hash, aktor_user_id FROM siklus_transisi WHERE idempotency_key = $1', [key]))[0];
   if (!r) return null;
-  if (r.permintaan_hash !== hash) {
+  if (r.permintaan_hash !== hash || r.aktor_user_id == null || Number(r.aktor_user_id) !== Number(idAktor)) {
     throw new SiklusGalat(422, 'Idempotency-Key sudah dipakai untuk permintaan lain.', { kode: 'idempotency_bentrok' });
   }
   return { id_siklus: Number(r.id_siklus), replay: true };
@@ -90,8 +91,8 @@ const PESAN_UNIK = {
  * Bungkus operasi tulis: replay idempotensi → transaksi → (balapan kunci sama) replay.
  * fn(client) wajib mengembalikan { id_siklus }.
  */
-async function operasi(idem, hash, fn) {
-  const ada = await cariIdem(idem, hash);
+async function operasi(idem, hash, idAktor, fn) {
+  const ada = await cariIdem(idem, hash, idAktor);
   if (ada) return ada;
   try {
     return await tx(fn);
@@ -99,7 +100,7 @@ async function operasi(idem, hash, fn) {
     // permintaan kembar yang menunggu kunci baris: setelah yang pertama commit, ia ditolak (409/23505) —
     // bila kunci idempotensinya kini tercatat, itu replay, bukan konflik
     if (e.code === '23505' || e instanceof SiklusGalat) {
-      const r = await cariIdem(idem, hash);
+      const r = await cariIdem(idem, hash, idAktor);
       if (r) return r;
     }
     if (e.code === '23505' && PESAN_UNIK[e.constraint]) {
@@ -226,7 +227,7 @@ async function buatSiklus(body, aktor, idem) {
   if (Object.keys(errors).length) throw new SiklusGalat(422, 'Data tidak valid.', { errors });
 
   const hash = hashPermintaan('buat', null, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     await wajibDitugaskan(c, aktor.user, [idMeja]);
     const fk = {};
     if (!(await c.query('SELECT 1 FROM tanamen WHERE id_tanaman = $1', [idTanaman])).rows[0]) fk.id_tanaman = ['Tanaman tidak terdaftar.'];
@@ -270,7 +271,7 @@ async function transisiManual(id, body, aktor, idem) {
   if (b.ke === 'CANCELLED' && alasan.length < 5) throw new SiklusGalat(422, 'Data tidak valid.', { errors: { alasan: ['Alasan pembatalan minimal 5 karakter.'] } });
   if (alasan.length > 500) throw new SiklusGalat(422, 'Data tidak valid.', { errors: { alasan: ['Alasan maksimal 500 karakter.'] } });
   const hash = hashPermintaan('transisi', id, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const s = await kunciSiklus(c, id);
     wajibBolehLanjut(s);
     await wajibDitugaskan(c, aktor.user, [s.id_meja_semai]);
@@ -354,7 +355,7 @@ async function wajibTandonDalamPita(c, s) {
 async function mintaKonfirmasi(id, aktor, idem) {
   if (!adalahAdmin(aktor.user)) throw new AksesDitolak('Hanya admin yang boleh meminta konfirmasi manual.', { kode: 'akses_ditolak' });
   const hash = hashPermintaan('minta-konfirmasi', id, {});
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const s = await kunciSiklus(c, id);
     wajibBolehLanjut(s);
     if (s.status !== 'SEEDING') throw new SiklusGalat(409, `Konfirmasi peremajaan hanya untuk siklus SEEDING.`, { kode: 'transisi_tidak_sah', status_sekarang: s.status });
@@ -379,7 +380,7 @@ async function jawabKonfirmasi(idPermintaan, body, aktor, idem) {
   const awal = (await q('SELECT id_siklus FROM permintaan_konfirmasi WHERE id = $1', [idPermintaan]))[0];
   if (!awal) throw new SiklusGalat(404, 'Data tidak ditemukan.', { errors: {} });
   const hash = hashPermintaan('jawab', idPermintaan, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const s = await kunciSiklus(c, awal.id_siklus); // urutan kunci: siklus → permintaan (sama dengan penjadwal)
     wajibBolehLanjut(s);
     await wajibDitugaskan(c, aktor.user, [s.id_meja_semai]);
@@ -434,7 +435,7 @@ async function konfirmasiBenih(id, body, aktor, idem) {
   if (ok > 0 && !tujuan) errors.id_meja_tujuan = ['id_meja_tujuan wajib bila ada bibit berhasil.'];
   if (Object.keys(errors).length) throw new SiklusGalat(422, 'Data tidak valid.', { errors });
   const hash = hashPermintaan('benih', id, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const s = await kunciSiklus(c, id);
     wajibBolehLanjut(s);
     await wajibDitugaskan(c, aktor.user, ok > 0 ? [s.id_meja_semai, tujuan] : [s.id_meja_semai]);
@@ -481,7 +482,7 @@ async function selesaikanLot(idLot, body, aktor, idem) {
   const awal = (await q('SELECT id_siklus FROM siklus_lot WHERE id = $1', [idLot]))[0];
   if (!awal) throw new SiklusGalat(404, 'Data tidak ditemukan.', { errors: {} });
   const hash = hashPermintaan('lot-selesai', idLot, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const s = await kunciSiklus(c, awal.id_siklus);
     wajibBolehLanjut(s);
     if (s.status !== 'GROWTH') throw new SiklusGalat(409, 'Lot hanya bisa diselesaikan saat siklus GROWTH.', { kode: 'transisi_tidak_sah', status_sekarang: s.status });

@@ -73,10 +73,13 @@ async function tx(fn) {
   }
 }
 
-async function cariIdem(key, hash) {
-  const r = (await q('SELECT id_kejadian, permintaan_hash FROM dosing_transisi WHERE idempotency_key = $1', [key]))[0];
+/** Replay hanya untuk PEMILIK kunci (aktor yang sama) dan isi yang sama; selain itu 422 dengan pesan yang sama (tanpa membocorkan keberadaan kunci). */
+async function cariIdem(key, hash, idAktor) {
+  const r = (await q('SELECT id_kejadian, permintaan_hash, aktor_user_id FROM dosing_transisi WHERE idempotency_key = $1', [key]))[0];
   if (!r) return null;
-  if (r.permintaan_hash !== hash) throw new DosingGalat(422, 'Idempotency-Key sudah dipakai untuk permintaan lain.', { kode: 'idempotency_bentrok' });
+  if (r.permintaan_hash !== hash || r.aktor_user_id == null || Number(r.aktor_user_id) !== Number(idAktor)) {
+    throw new DosingGalat(422, 'Idempotency-Key sudah dipakai untuk permintaan lain.', { kode: 'idempotency_bentrok' });
+  }
   return { id_kejadian: Number(r.id_kejadian), replay: true };
 }
 
@@ -85,15 +88,15 @@ async function cariIdem(key, hash) {
  * fn(c) mengembalikan { id_kejadian, galat?, kunci? }: perubahan status di-commit DULU, lalu kunci penampung
  * diterapkan dan galat dilempar (mis. persetujuan kedaluwarsa → EXPIRED tersimpan, balasan 410).
  */
-async function operasi(idem, hash, fn) {
-  const ada = await cariIdem(idem, hash);
+async function operasi(idem, hash, idAktor, fn) {
+  const ada = await cariIdem(idem, hash, idAktor);
   if (ada) return ada;
   let r;
   try {
     r = await tx(fn);
   } catch (e) {
     if (e.code === '23505' || e instanceof DosingGalat) {
-      const ulang = await cariIdem(idem, hash);
+      const ulang = await cariIdem(idem, hash, idAktor);
       if (ulang) return ulang;
     }
     if (e.code === '23505' && e.constraint === 'dosing_events_aktif_unik') {
@@ -183,18 +186,18 @@ async function ajukan(body, aktor, idem) {
   const b = obj(body);
   const errors = {};
   const idS = b.id_siklus_budidaya;
-  if (!Number.isInteger(idS) || idS < 1) errors.id_siklus_budidaya = ['id_siklus_budidaya wajib bilangan bulat ≥ 1.'];
+  if (!Number.isSafeInteger(idS) || idS < 1) errors.id_siklus_budidaya = ['id_siklus_budidaya wajib bilangan bulat ≥ 1.'];
   const alasan = teks(b.alasan, 'alasan', {}, errors);
   if (Object.keys(errors).length) throw tidakSah(errors);
   const hash = hashPermintaan('dosing.ajukan', null, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const s = (await c.query('SELECT id, status, perlu_tinjau, id_meja_semai FROM siklus_budidaya WHERE id = $1 FOR SHARE', [idS])).rows[0];
     if (!s) throw tidakSah({ id_siklus_budidaya: ['Siklus budidaya tidak ditemukan.'] });
+    await wajibDitugaskan(c, aktor.user, [s.id_meja_semai]); // otorisasi lebih dulu: status siklus tidak bocor lewat 409
     if (s.perlu_tinjau) throw new DosingGalat(409, 'Siklus hasil migrasi ini perlu ditinjau dulu.', { kode: 'perlu_tinjau' });
     if (!SIKLUS_BOLEH.has(s.status) || s.id_meja_semai == null) {
       throw new DosingGalat(409, `Siklus budidaya berstatus ${s.status}; dosing tidak bisa diajukan.`, { kode: 'siklus_tidak_aktif', status_sekarang: s.status });
     }
-    await wajibDitugaskan(c, aktor.user, [s.id_meja_semai]);
     const { maks_masa_persetujuan_menit: menit } = await wajibSiap({ konfigurasi_dosis: ['maks_masa_persetujuan_menit'] }, runner(c));
     await c.query('INSERT INTO penampung_states (id_meja) VALUES ($1) ON CONFLICT (id_meja) DO NOTHING', [s.id_meja_semai]);
     const st = (await c.query('SELECT status_lock, lock_alasan FROM penampung_states WHERE id_meja = $1 FOR UPDATE', [s.id_meja_semai])).rows[0];
@@ -237,12 +240,12 @@ async function setujui(id, body, aktor, idem) {
   const alasan = teks(b.alasan, 'alasan', {}, errors);
   if (Object.keys(errors).length) throw tidakSah(errors);
   const hash = hashPermintaan('dosing.setujui', id, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const { ev, st, p } = await kunci(c, id);
+    await wajibDitugaskan(c, aktor.user, [ev.id_meja]); // otorisasi lebih dulu: pengguna tak berhak tidak belajar status siklus dari 409
     if (ev.status !== 'WAITING_APPROVAL' || p) {
       throw new DosingGalat(409, `Siklus dosing berstatus ${ev.status}; hanya WAITING_APPROVAL yang bisa disetujui.`, { kode: 'transisi_tidak_sah', status_sekarang: ev.status });
     }
-    await wajibDitugaskan(c, aktor.user, [ev.id_meja]);
     if (ev.lewat) {
       await ubah(c, ev, 'EXPIRED', SISTEM, { alasan: 'permintaan tidak dijawab sebelum batas' });
       return { id_kejadian: Number(ev.id), galat: new DosingGalat(410, 'Permintaan dosing sudah kedaluwarsa.', { kode: 'kedaluwarsa' }) };
@@ -284,12 +287,12 @@ async function tolak(id, body, aktor, idem) {
   const alasan = teks(b.alasan, 'alasan', {}, errors);
   if (Object.keys(errors).length) throw tidakSah(errors);
   const hash = hashPermintaan('dosing.tolak', id, b);
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const { ev, p } = await kunci(c, id);
+    await wajibDitugaskan(c, aktor.user, [ev.id_meja]);
     if (ev.status !== 'WAITING_APPROVAL' || p) {
       throw new DosingGalat(409, `Siklus dosing berstatus ${ev.status}; hanya WAITING_APPROVAL yang bisa ditolak.`, { kode: 'transisi_tidak_sah', status_sekarang: ev.status });
     }
-    await wajibDitugaskan(c, aktor.user, [ev.id_meja]);
     await c.query(
       `INSERT INTO persetujuan_dosing (id_kejadian, keputusan, oleh, alasan, idempotency_key) VALUES ($1, 'TOLAK', $2, $3, $4)`,
       [ev.id, aktor.user.sub, alasan, idem]);
@@ -306,7 +309,7 @@ async function cabut(id, body, aktor, idem) {
   if (Object.keys(errors).length) throw tidakSah(errors);
   const hash = hashPermintaan('dosing.cabut', id, b);
   let stop = false;
-  const r = await operasi(idem, hash, async (c) => {
+  const r = await operasi(idem, hash, aktor.user.sub, async (c) => {
     const { ev, p } = await kunci(c, id);
     await wajibDitugaskan(c, aktor.user, [ev.id_meja]);
     if (p?.keputusan === 'SETUJU' && !p.dicabut_pada) {
@@ -334,12 +337,12 @@ async function cabut(id, body, aktor, idem) {
  */
 async function jalankan(id, aktor, idem) {
   const hash = hashPermintaan('dosing.jalankan', id, {});
-  return operasi(idem, hash, async (c) => {
+  return operasi(idem, hash, aktor.user.sub, async (c) => {
     const { ev, st, p } = await kunci(c, id);
+    await wajibDitugaskan(c, aktor.user, [ev.id_meja]);
     if (ev.status !== 'APPROVED' || p?.keputusan !== 'SETUJU' || p.dicabut_pada) {
       throw new DosingGalat(409, `Siklus dosing berstatus ${ev.status}; hanya APPROVED yang bisa dijalankan.`, { kode: 'transisi_tidak_sah', status_sekarang: ev.status });
     }
-    await wajibDitugaskan(c, aktor.user, [ev.id_meja]);
     if (p.lewat) {
       await ubah(c, ev, 'EXPIRED', SISTEM, { alasan: 'masa berlaku persetujuan habis' });
       return { id_kejadian: Number(ev.id), galat: new DosingGalat(410, 'Persetujuan dosing sudah kedaluwarsa.', { kode: 'kedaluwarsa' }) };
@@ -485,7 +488,10 @@ async function detail(id) {
   const ev = (await q('SELECT * FROM dosing_events WHERE id = $1 AND status IS NOT NULL', [id]))[0];
   if (!ev) return null;
   const [persetujuan, percobaan, transisi] = await Promise.all([
-    q('SELECT * FROM persetujuan_dosing WHERE id_kejadian = $1', [id]),
+    // kolom eksplisit: idempotency_key (rahasia pemilik permintaan) tidak ikut dikembalikan
+    q(`SELECT id, id_kejadian, keputusan, oleh, pada, target_ec_ppm, target_ph, pompa_diizinkan, maks_ml_per_percobaan, maks_ml_total,
+              maks_percobaan, berlaku_sampai, kondisi_henti, alasan, dicabut_pada, dicabut_oleh, alasan_cabut
+         FROM persetujuan_dosing WHERE id_kejadian = $1`, [id]),
     q('SELECT * FROM dosing_rounds WHERE id_kejadian = $1 ORDER BY ronde_ke, id', [id]),
     q('SELECT id, dari, ke, aktor_tipe, aktor_user_id, alasan, data, terjadi_pada FROM dosing_transisi WHERE id_kejadian = $1 ORDER BY id', [id]),
   ]);
