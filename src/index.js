@@ -179,6 +179,7 @@ app.use('/api/lot', siklusBudidaya.lot);
 app.use('/api/penugasan', siklusBudidaya.penugasan);
 app.use('/api/preset', siklusBudidaya.preset);
 app.use('/api/parameter', require('./routes/parameter'));
+app.use('/api/dosing', require('./routes/dosing'));      // alur persetujuan dosing (3C); eksekusi diblokir
 app.use('/api', monitoring.api);                       // ESP32 (guard X-API-KEY per route)
 // Asisten keputusan budidaya (AI lokal Ollama) — guard auth+role ada di dlm modul:
 // Bearer JWT wajib, role admin/petani, demo 403, Ollama mati → fallback heuristik.

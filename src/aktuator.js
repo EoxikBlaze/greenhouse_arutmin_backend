@@ -58,9 +58,20 @@ async function kunciPenampung(idMeja, { alasan, type, value }) {
       `INSERT INTO alert_logs (type, value, id_meja, severity, locked, created_at, updated_at)
        VALUES ($1, $2, $3, 'critical', true, now(), now()) RETURNING id`,
       [type, String(value).slice(0, 100), idMeja])).rows[0];
+    // kejadian lama (status NULL) → lock; alur persetujuan (3C): belum ada dosis (WAITING/APPROVED) → CANCELLED,
+    // sedang berjalan → FAULT. Transisi alur baru dicatat di dosing_transisi.
     await client.query(
-      `UPDATE dosing_events SET hasil = 'lock', lock_terpicu = true, id_alert = $2, selesai_pada = now(), updated_at = now()
-        WHERE id_meja = $1 AND hasil = 'berjalan'`, [idMeja, alert.id]);
+      `WITH o AS (SELECT id, status FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' FOR UPDATE),
+            u AS (UPDATE dosing_events d SET
+                    status = CASE WHEN o.status IN ('WAITING_APPROVAL', 'APPROVED') THEN 'CANCELLED' WHEN o.status IS NOT NULL THEN 'FAULT' END,
+                    hasil = CASE WHEN o.status IN ('WAITING_APPROVAL', 'APPROVED') THEN 'dibatalkan' ELSE 'lock' END,
+                    lock_terpicu = o.status IS NULL OR o.status NOT IN ('WAITING_APPROVAL', 'APPROVED'),
+                    alasan_akhir = CASE WHEN o.status IS NULL THEN d.alasan_akhir ELSE $3 END,
+                    id_alert = $2, selesai_pada = now(), updated_at = now()
+                  FROM o WHERE d.id = o.id RETURNING d.id, o.status AS dari, d.status AS ke)
+       INSERT INTO dosing_transisi (id_kejadian, dari, ke, aktor_tipe, alasan)
+       SELECT id, dari, ke, 'system', $3 FROM u WHERE dari IS NOT NULL`,
+      [idMeja, alert.id, `penampung dikunci: ${String(alasan).slice(0, 100)}`]);
     await client.query(
       `UPDATE perintah_aktuator SET status = 'batal', selesai_pada = now()
         WHERE status = 'menunggu' AND tipe = 'DOSIS' AND (parameter->>'penampung')::bigint = $1`, [idMeja]);
@@ -217,10 +228,10 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
         // B3 — KEJADIAN: 1 sesi perbaikan = sampai 5 suntikan; hanya kejadian BARU yang memotong jatah 8/hari.
         await client.query(
           `UPDATE dosing_events SET hasil = 'timeout', selesai_pada = now(), updated_at = now()
-            WHERE id_meja = $1 AND hasil = 'berjalan'
+            WHERE id_meja = $1 AND hasil = 'berjalan' AND status IS NULL
               AND (hari < ${HARI_WITA} OR updated_at < now() - interval '${KEJADIAN_BASI_MENIT} minutes')`, [param.penampung]);
         let ev = (await client.query(
-          "SELECT id, ronde_total FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' ORDER BY id DESC LIMIT 1 FOR UPDATE",
+          "SELECT id, ronde_total FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' AND status IS NULL ORDER BY id DESC LIMIT 1 FOR UPDATE",
           [param.penampung])).rows[0];
         const maksSuntik = cfg.maks_suntikan_per_kejadian ?? 5;
         const maksKej = cfg.maks_kejadian_per_hari ?? 8;
@@ -378,7 +389,7 @@ async function laporHasil(perangkat, id, { status, hasil }) {
       // Suntikan yang sebagian keluar TETAP dihitung ronde — hanya volumenya dikoreksi.
       const ev = await one(
         `UPDATE dosing_events SET ronde_total = GREATEST(0, ronde_total - $3), volume_total_ml = GREATEST(0, volume_total_ml - $2), updated_at = now()
-          WHERE id = (SELECT id FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' ORDER BY id DESC LIMIT 1)
+          WHERE id = (SELECT id FROM dosing_events WHERE id_meja = $1 AND hasil = 'berjalan' AND status IS NULL ORDER BY id DESC LIMIT 1)
           RETURNING id, ronde_total`, [penampung, ml, keluar > 0 ? 0 : 1]);
       if (ev && ev.ronde_total === 0) {
         await q('DELETE FROM dosing_events WHERE id = $1', [ev.id]);

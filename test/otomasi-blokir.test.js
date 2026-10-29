@@ -18,11 +18,15 @@ test('3B.3: pengendali dosing lama (otomasi.js) sudah dihapus; tidak ada yang me
   }
 });
 
-test('3B.3: pemanggil buatPerintah di luar aktuator.js hanya rute admin (menolak DOSIS) dan kontrolAir (ISI_AIR saja)', () => {
+test('3B.3/3C: pemanggil buatPerintah di luar aktuator.js hanya rute admin (menolak DOSIS), kontrolAir (ISI_AIR saja), dosingSiklus (STOP saja)', () => {
   const pemanggil = semua().filter((f) => !f.endsWith(`${path.sep}aktuator.js`) || f.includes(`routes${path.sep}`))
     .filter((f) => /buatPerintah\(/.test(fs.readFileSync(f, 'utf8')))
     .map((f) => path.relative(SRC, f)).sort();
-  assert.deepEqual(pemanggil, ['kontrolAir.js', path.join('routes', 'aktuator.js')].sort());
+  assert.deepEqual(pemanggil, ['dosingSiklus.js', 'kontrolAir.js', path.join('routes', 'aktuator.js')].sort());
+  // alur persetujuan (3C): eksekusi diblokir — satu-satunya perintah adalah STOP saat siklus RUNNING dicabut
+  const dos = fs.readFileSync(path.join(SRC, 'dosingSiklus.js'), 'utf8');
+  assert.equal((dos.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'STOP'", 'dosingSiklus hanya STOP');
+  assert.equal((dos.match(/buatPerintah\(/g) || []).length, 1);
   const air = fs.readFileSync(path.join(SRC, 'kontrolAir.js'), 'utf8');
   assert.equal((air.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'ISI_AIR'", 'kontrolAir hanya ISI_AIR');
   // kontrolAir belum dipasang ke rute mana pun (Water Control tetap nonaktif)

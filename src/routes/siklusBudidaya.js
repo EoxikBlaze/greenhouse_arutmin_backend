@@ -314,4 +314,4 @@ preset.post('/:id/versi/:v/aktifkan', ...khususAdmin, async (req, res, next) => 
   } finally { c.release(); }
 });
 
-module.exports = { siklus, konfirmasi, lot, penugasan: tugas, preset };
+module.exports = { siklus, konfirmasi, lot, penugasan: tugas, preset, bantu: { baca, tulis, kunciIdem, kirimGalat, aktorDari, tidakDitemukan } };

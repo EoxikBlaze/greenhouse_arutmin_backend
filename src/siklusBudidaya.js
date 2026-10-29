@@ -284,6 +284,8 @@ async function transisiManual(id, body, aktor, idem) {
     } else {
       await ubahStatus(c, s, 'CANCELLED', aktor, { alasan, idem, hash, set: { hasil: 'DIBATALKAN' } });
       await c.query("UPDATE permintaan_konfirmasi SET status = 'CANCELLED' WHERE id_siklus = $1 AND status = 'PENDING'", [s.id]);
+      // siklus dosing aktif ikut dibatalkan (dimuat saat dipakai: dosingSiklus memuat modul ini)
+      await require('./dosingSiklus').batalkanUntukSiklus(c, s.id, aktor, alasan);
     }
     return { id_siklus: Number(s.id) };
   });
@@ -572,12 +574,15 @@ async function kestabilan(id) {
 }
 
 /**
- * Satu putaran: (1) kedaluwarsa, (2) konfirmasi H+4 jatuh tempo, (3) tandon stabil → minta konfirmasi
+ * Satu putaran: (0) siklus dosing kedaluwarsa, (1) kedaluwarsa, (2) konfirmasi H+4 jatuh tempo, (3) tandon stabil → minta konfirmasi
  * tandon (HANYA bila semua parameter kestabilan SIAP), (4) pengingat.
  * Tiap butir di transaksinya sendiri; aman dijalankan bersamaan (kunci baris + cek ulang + indeks unik).
  */
 async function jalankanPenjadwal() {
   const hasil = { kedaluwarsa: 0, diminta: 0, pengingat: 0, dilewati: [], galat: [] };
+  try {
+    hasil.dosing_kedaluwarsa = await require('./dosingSiklus').kedaluwarsakan();
+  } catch (e) { hasil.galat.push({ dosing: true, pesan: e.message }); }
 
   for (const r of await q("SELECT id, id_siklus FROM permintaan_konfirmasi WHERE status = 'PENDING' AND kedaluwarsa_pada <= now() ORDER BY id")) {
     try {
@@ -687,7 +692,7 @@ async function mulaiPenjadwal() {
   console.log(`Penjadwal siklus   : AKTIF (tiap ${detik} dtk)`);
   timer = setInterval(() => {
     jalankanPenjadwal().then((r) => {
-      if (r.kedaluwarsa || r.diminta || r.pengingat || r.galat.length) console.log('[SIKLUS]', JSON.stringify(r));
+      if (r.kedaluwarsa || r.dosing_kedaluwarsa || r.diminta || r.pengingat || r.galat.length) console.log('[SIKLUS]', JSON.stringify(r));
     }).catch((e) => console.error('[SIKLUS] galat:', e.message));
   }, detik * 1000);
   if (timer.unref) timer.unref();
