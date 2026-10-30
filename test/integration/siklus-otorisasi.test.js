@@ -126,6 +126,10 @@ const cabut = (id) => request(base).post(`/api/penugasan/${id}/cabut`).set(beare
 test('3B.1 penugasan: hanya admin yang menugaskan/mencabut; tercatat audit; petani melihat miliknya', { skip: lewati }, async () => {
   const id = await tugaskan('a', 0);
   assert.equal((await request(base).post('/api/penugasan').set(bearer(admin)).send({ id_user: uid.a, id_meja: meja[0] })).body.kode, 'sudah_ditugaskan');
+  for (const body of [{ id_user: 1e20, id_meja: meja[0] }, { id_user: uid.a, id_meja: 1e20 }]) {
+    const ekstrem = await request(base).post('/api/penugasan').set(bearer(admin)).send(body);
+    assert.equal(ekstrem.status, 422, JSON.stringify(ekstrem.body));
+  }
   assert.equal((await request(base).post('/api/penugasan').set(bearer(admin)).send({ id_user: idAdmin, id_meja: meja[0] })).status, 422, 'hanya akun petani');
   assert.equal((await request(base).post('/api/penugasan').set(bearer(tok.a)).send({ id_user: uid.a, id_meja: meja[1] })).status, 403);
   assert.equal((await request(base).post('/api/penugasan').set(bearer(demo)).send({ id_user: uid.a, id_meja: meja[1] })).status, 403);

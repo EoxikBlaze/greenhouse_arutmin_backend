@@ -14,9 +14,10 @@ const request = require('supertest');
 const { startServer, stopChild, craftToken, bearer } = require('./_server');
 const { pool, q } = require('../../src/db');
 const gerbang = require('../../src/gerbangDosis');
+const aktuator = require('../../src/aktuator');
+const dosing = require('../../src/dosingSiklus');
 
-const namaDb = new URL(process.env.DATABASE_URL || 'postgres://x/none').pathname.slice(1);
-const lewati = namaDb.startsWith('garap_uji') ? false : `hanya untuk DB uji garap_uji* (sekarang: ${namaDb || 'dari .env'})`;
+const { lewati } = require('./_isolasi'); // nama garap_uji* DAN host loopback
 
 let srv; let base; let admin; let idAdmin; let tanaman; let paramAwal; let dosisAwal; let estopAwal;
 const tok = {}; const uid = {}; const meja = []; const siklus = []; const stopIds = [];
@@ -271,6 +272,23 @@ test('cabut RUNNING → CANCELLED + tepat satu STOP (bukan DOSIS)', { skip: lewa
   stopIds.push(r.body.stop.id_perintah);
   const p = await q('SELECT tipe, status FROM perintah_aktuator WHERE id = $1', [r.body.stop.id_perintah]);
   assert.deepEqual([p[0].tipe, p[0].status], ['STOP', 'menunggu']);
+  assert.equal(await dosisCount(), dosisAwal);
+});
+
+test('galat internal saat antre STOP tidak bocor ke respons cabut', { skip: lewati }, async () => {
+  const id = await fixtureDosing(meja[7], 'RUNNING');
+  const asli = aktuator.buatPerintah;
+  aktuator.buatPerintah = async () => { throw new Error('rahasia internal uji'); };
+  let r;
+  try {
+    r = await dosing.cabut(id, { alasan: 'uji redaksi gagal STOP' }, {
+      tipe: 'user', user: { sub: uid.a, username: 'uji-3d-a', level: 'petani', demo: false },
+    }, kunci());
+  }
+  finally { aktuator.buatPerintah = asli; }
+  assert.deepEqual(r.stop, { galat: 'perintah_stop_gagal' });
+  assert.equal(JSON.stringify(r).includes('rahasia internal uji'), false);
+  assert.equal(await status(id), 'CANCELLED');
   assert.equal(await dosisCount(), dosisAwal);
 });
 

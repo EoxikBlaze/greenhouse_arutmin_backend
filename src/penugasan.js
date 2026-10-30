@@ -56,8 +56,8 @@ class PenugasanGalat extends Error {
 
 async function tugaskan({ id_user: idUser, id_meja: idMeja }, admin) {
   const errors = {};
-  if (!Number.isInteger(idUser) || idUser < 1) errors.id_user = ['id_user wajib bilangan bulat ≥ 1.'];
-  if (!Number.isInteger(idMeja) || idMeja < 1) errors.id_meja = ['id_meja wajib bilangan bulat ≥ 1.'];
+  if (!Number.isSafeInteger(idUser) || idUser < 1) errors.id_user = ['id_user wajib bilangan bulat ≥ 1.'];
+  if (!Number.isSafeInteger(idMeja) || idMeja < 1) errors.id_meja = ['id_meja wajib bilangan bulat ≥ 1.'];
   if (Object.keys(errors).length) throw new PenugasanGalat(422, 'Data tidak valid.', { errors });
   const c = await pool.connect();
   try {

@@ -92,7 +92,7 @@ async function validasiPreset(b, lama) {
 
   if (b.id_tanaman !== undefined) {
     const id = ambilAngka(b.id_tanaman);
-    if (id !== null && (!Number.isInteger(id) || !(await one('SELECT 1 AS x FROM tanamen WHERE id_tanaman = $1', [id])))) {
+    if (id !== null && (!Number.isSafeInteger(id) || !(await one('SELECT 1 AS x FROM tanamen WHERE id_tanaman = $1', [id])))) {
       err.id_tanaman = ['Tanaman tidak terdaftar.'];
     } else pakai('id_tanaman', id);
   }

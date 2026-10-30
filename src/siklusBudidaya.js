@@ -693,7 +693,7 @@ async function mulaiPenjadwal() {
   console.log(`Penjadwal siklus   : AKTIF (tiap ${detik} dtk)`);
   timer = setInterval(() => {
     jalankanPenjadwal().then((r) => {
-      if (r.kedaluwarsa || r.dosing_kedaluwarsa || r.diminta || r.pengingat || r.galat.length) console.log('[SIKLUS]', JSON.stringify(r));
+      if (r.kedaluwarsa || r.dosing_kedaluwarsa?.berhasil || r.dosing_kedaluwarsa?.gagal || r.diminta || r.pengingat || r.galat.length) console.log('[SIKLUS]', JSON.stringify(r));
     }).catch((e) => console.error('[SIKLUS] galat:', e.message));
   }, detik * 1000);
   if (timer.unref) timer.unref();

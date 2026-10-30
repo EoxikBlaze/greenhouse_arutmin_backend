@@ -42,7 +42,8 @@ class AktuatorV03 {
   detak({ ts, estop = false, online = true }, nowMs) {
     this.nowMs = nowMs;
     if (!online) { this.berhenti('server_offline'); return; }
-    this.offset = ts - nowMs / 1000;
+    // jam hanya disinkronkan oleh ts epoch yang sah; ts hilang/tak sah → jam_belum_sinkron (bukan NaN yang lolos pemeriksaan exp)
+    if (typeof ts === 'number' && Number.isFinite(ts)) this.offset = ts - nowMs / 1000;
     this.detakMs = nowMs;
     if (estop) { this.estop = true; this.berhenti('estop_server'); }
   }

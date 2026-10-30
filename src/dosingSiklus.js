@@ -323,7 +323,7 @@ async function cabut(id, body, aktor, idem) {
     // STOP menghentikan output; firmware juga mematikan pompa sendiri saat durasi habis
     r.stop = await aktuator.buatPerintah({ tipe: 'STOP', parameter: {}, sumber: 'pengguna', userId: aktor.user.sub, alasan: `cabut dosing #${r.id_kejadian}` })
       .then((x) => ({ id_perintah: Number(x.id) }))
-      .catch((e) => ({ galat: e.message }));
+      .catch(() => ({ galat: 'perintah_stop_gagal' }));
   }
   return r;
 }
@@ -429,24 +429,31 @@ async function terapkanEvaluasi(idKejadian, idPercobaan, evaluasi) {
 
 /* ── penjadwal & pembatalan dari siklus budidaya ─────────────────────── */
 
-/** WAITING_APPROVAL lewat batas jawab / APPROVED lewat masa persetujuan → EXPIRED. Idempoten. */
+/** WAITING_APPROVAL / APPROVED lewat batas → EXPIRED; tiap item terisolasi. Idempoten. */
 async function kedaluwarsakan() {
   const rows = await q(
     `SELECT d.id FROM dosing_events d LEFT JOIN persetujuan_dosing p ON p.id_kejadian = d.id
       WHERE (d.status = 'WAITING_APPROVAL' AND d.berlaku_sampai <= now()) OR (d.status = 'APPROVED' AND p.berlaku_sampai <= now())
       ORDER BY d.id`);
-  let n = 0;
+  const hasil = { berhasil: 0, gagal: 0, galat: [] };
   for (const r of rows) {
-    await tx(async (c) => {
-      const { ev, p } = await kunci(c, r.id);
-      const lewat = (ev.status === 'WAITING_APPROVAL' && ev.lewat) || (ev.status === 'APPROVED' && p?.lewat);
-      if (!lewat) return;
-      await ubah(c, ev, 'EXPIRED', SISTEM, { alasan: ev.status === 'APPROVED' ? 'masa berlaku persetujuan habis' : 'permintaan tidak dijawab sebelum batas' });
-      await notif(c, { severity: 'warning', judul: 'Dosing kedaluwarsa', isi: `Siklus dosing #${ev.id} kedaluwarsa tanpa eksekusi.`, id: Number(ev.id), dedup: `dosing-kedaluwarsa:${ev.id}` });
-      n += 1;
-    });
+    try {
+      const kedaluwarsa = await tx(async (c) => {
+        const { ev, p } = await kunci(c, r.id);
+        const lewat = (ev.status === 'WAITING_APPROVAL' && ev.lewat) || (ev.status === 'APPROVED' && p?.lewat);
+        if (!lewat) return false;
+        await ubah(c, ev, 'EXPIRED', SISTEM, { alasan: ev.status === 'APPROVED' ? 'masa berlaku persetujuan habis' : 'permintaan tidak dijawab sebelum batas' });
+        await notif(c, { severity: 'warning', judul: 'Dosing kedaluwarsa', isi: `Siklus dosing #${ev.id} kedaluwarsa tanpa eksekusi.`, id: Number(ev.id), dedup: `dosing-kedaluwarsa:${ev.id}` });
+        return true;
+      });
+      if (kedaluwarsa) hasil.berhasil += 1;
+    } catch {
+      // Hasil transaksi yang gagal tidak dihitung sukses; putaran berikutnya boleh mencoba lagi.
+      hasil.gagal += 1;
+      hasil.galat.push({ id: Number(r.id), kode: 'pemrosesan_kedaluwarsa_gagal' });
+    }
   }
-  return n;
+  return hasil;
 }
 
 /**

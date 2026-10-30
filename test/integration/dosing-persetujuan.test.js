@@ -35,16 +35,32 @@ async function siklusBaru(idMeja, st = 'TANK_PREPARATION') {
 }
 
 /** Siklus dosing langsung di DB (untuk status yang tidak bisa dicapai lewat API selama eksekusi diblokir). */
-async function fixtureDosing(idMeja, st, { berlakuJam = 1, maksPercobaan = 4, total = 500 } = {}) {
+async function fixtureDosing(idMeja, st, { berlakuJam = 1, maksPercobaan = 4, total = 500, idSiklus = null } = {}) {
   const id = Number((await q(
-    `INSERT INTO dosing_events (id_meja, hari, pemicu, aktor_tipe, dipicu_oleh, status, mode, berlaku_sampai)
-     VALUES ($1, (now() AT TIME ZONE 'Asia/Makassar')::date, 'USER_MANUAL', 'user', $2, $3, 'MANUAL', now() + interval '1 hour') RETURNING id`,
-    [idMeja, idAdmin, st]))[0].id);
+    `INSERT INTO dosing_events (id_meja, hari, pemicu, aktor_tipe, dipicu_oleh, status, mode, berlaku_sampai, id_siklus_budidaya)
+     VALUES ($1, (now() AT TIME ZONE 'Asia/Makassar')::date, 'USER_MANUAL', 'user', $2, $3, 'MANUAL', now() + interval '1 hour', $4) RETURNING id`,
+    [idMeja, idAdmin, st, idSiklus]))[0].id);
   await q(
     `INSERT INTO persetujuan_dosing (id_kejadian, keputusan, oleh, pada, pompa_diizinkan, maks_ml_per_percobaan, maks_ml_total, maks_percobaan, berlaku_sampai, idempotency_key)
      VALUES ($1, 'SETUJU', $2, now() - interval '3 hours', '{AB}', 20, $3, $4, now() + make_interval(secs => $5::float8 * 3600), $6)`,
     [id, idAdmin, total, maksPercobaan, berlakuJam, kunci()]);
   return id;
+}
+
+async function pasangInjeksiKedaluwarsa(ids) {
+  await q('DROP TRIGGER IF EXISTS garap_uji_gagal_expire ON dosing_transisi');
+  await q('DROP FUNCTION IF EXISTS garap_uji_gagal_expire()');
+  await q('DROP TABLE IF EXISTS garap_uji_gagal_expire');
+  await q('CREATE TABLE garap_uji_gagal_expire (id bigint PRIMARY KEY)');
+  await q('CREATE FUNCTION garap_uji_gagal_expire() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF EXISTS (SELECT 1 FROM garap_uji_gagal_expire WHERE id = NEW.id_kejadian) THEN RAISE EXCEPTION \'injeksi uji terisolasi\'; END IF; RETURN NEW; END $$');
+  await q('CREATE TRIGGER garap_uji_gagal_expire BEFORE INSERT ON dosing_transisi FOR EACH ROW EXECUTE FUNCTION garap_uji_gagal_expire()');
+  if (ids.length) await q('INSERT INTO garap_uji_gagal_expire (id) SELECT unnest($1::bigint[])', [ids]);
+}
+
+async function lepasInjeksiKedaluwarsa() {
+  await q('DROP TRIGGER IF EXISTS garap_uji_gagal_expire ON dosing_transisi');
+  await q('DROP FUNCTION IF EXISTS garap_uji_gagal_expire()');
+  await q('DROP TABLE IF EXISTS garap_uji_gagal_expire');
 }
 
 before(async () => {
@@ -72,6 +88,7 @@ before(async () => {
 after(async () => {
   if (lewati) { await pool.end(); return; }
   try {
+    await lepasInjeksiKedaluwarsa();
     const ev = (await q('SELECT id FROM dosing_events WHERE id_meja = ANY($1)', [meja])).map((r) => Number(r.id));
     const c = await pool.connect();
     try {
@@ -203,12 +220,90 @@ test('tolak: WAITING_APPROVAL → REJECTED; kedaluwarsa → 410 + EXPIRED tersim
   assert.equal(await status(b.body.data.id), 'EXPIRED');
 });
 
-test('penjadwal: APPROVED dengan persetujuan lewat masa berlaku → EXPIRED (idempoten)', { skip: lewati }, async () => {
-  const id = await fixtureDosing(meja[1], 'APPROVED', { berlakuJam: -1 });
-  assert.ok(await dosing.kedaluwarsakan() >= 1);
-  assert.equal(await status(id), 'EXPIRED');
-  assert.equal(await dosing.kedaluwarsakan(), 0);
-  assert.equal((await q("SELECT count(*)::int n FROM dosing_transisi WHERE id_kejadian = $1 AND ke = 'EXPIRED'", [id]))[0].n, 1);
+test('kedaluwarsakan: tiga item berhasil dan pemanggilan ulang idempoten', { skip: lewati }, async () => {
+  const ids = await Promise.all([1, 2, 3].map((i) => fixtureDosing(meja[i], 'APPROVED', { berlakuJam: -1 })));
+  const serentak = await Promise.all([dosing.kedaluwarsakan(), dosing.kedaluwarsakan()]);
+  assert.equal(serentak.reduce((n, r) => n + r.berhasil, 0), 3);
+  assert.equal(serentak.reduce((n, r) => n + r.gagal, 0), 0);
+  assert.deepEqual(await Promise.all(ids.map(status)), ['EXPIRED', 'EXPIRED', 'EXPIRED']);
+  assert.deepEqual(await dosing.kedaluwarsakan(), { berhasil: 0, gagal: 0, galat: [] });
+  assert.equal((await q("SELECT count(*)::int n FROM dosing_transisi WHERE id_kejadian = ANY($1) AND ke = 'EXPIRED'", [ids]))[0].n, 3);
+  assert.equal((await q("SELECT count(*)::int n FROM audit_logs WHERE tabel = 'dosing_events' AND row_id = ANY($1) AND aksi = 'transition'", [ids.map(String)]))[0].n, 3);
+});
+
+test('kedaluwarsakan: kegagalan item pertama tidak menghentikan item berikutnya', { skip: lewati }, async () => {
+  const ids = await Promise.all([1, 2, 3].map((i) => fixtureDosing(meja[i], 'APPROVED', { berlakuJam: -1 })));
+  await pasangInjeksiKedaluwarsa([ids[0]]);
+  const hasil = await dosing.kedaluwarsakan();
+  assert.deepEqual(hasil, { berhasil: 2, gagal: 1, galat: [{ id: ids[0], kode: 'pemrosesan_kedaluwarsa_gagal' }] });
+  assert.deepEqual(await Promise.all(ids.map(status)), ['APPROVED', 'EXPIRED', 'EXPIRED']);
+  await lepasInjeksiKedaluwarsa();
+  assert.deepEqual(await dosing.kedaluwarsakan(), { berhasil: 1, gagal: 0, galat: [] });
+  assert.deepEqual(await Promise.all(ids.map(status)), ['EXPIRED', 'EXPIRED', 'EXPIRED']);
+  assert.equal((await q("SELECT count(*)::int n FROM dosing_transisi WHERE id_kejadian = ANY($1) AND ke = 'EXPIRED'", [ids]))[0].n, 3);
+});
+
+test('kedaluwarsakan: kegagalan item tengah tidak menghentikan item sesudahnya', { skip: lewati }, async () => {
+  const ids = await Promise.all([1, 2, 3].map((i) => fixtureDosing(meja[i], 'APPROVED', { berlakuJam: -1 })));
+  await pasangInjeksiKedaluwarsa([ids[1]]);
+  const hasil = await dosing.kedaluwarsakan();
+  assert.deepEqual(hasil, { berhasil: 2, gagal: 1, galat: [{ id: ids[1], kode: 'pemrosesan_kedaluwarsa_gagal' }] });
+  assert.deepEqual(await Promise.all(ids.map(status)), ['EXPIRED', 'APPROVED', 'EXPIRED']);
+  await lepasInjeksiKedaluwarsa();
+  assert.deepEqual(await dosing.kedaluwarsakan(), { berhasil: 1, gagal: 0, galat: [] });
+  assert.deepEqual(await Promise.all(ids.map(status)), ['EXPIRED', 'EXPIRED', 'EXPIRED']);
+});
+
+test('kedaluwarsakan: semua item gagal dilaporkan, kandidat non-kedaluwarsa dan terminal dilewati', { skip: lewati }, async () => {
+  const ids = await Promise.all([1, 2, 3].map((i) => fixtureDosing(meja[i], 'APPROVED', { berlakuJam: -1 })));
+  const terminal = await fixtureDosing(meja[4], 'CANCELLED', { berlakuJam: -1 });
+  await q("UPDATE persetujuan_dosing SET dicabut_pada = now(), dicabut_oleh = $2, alasan_cabut = 'uji terminal' WHERE id_kejadian = $1", [terminal, idAdmin]);
+  const future = await fixtureDosing(meja[5], 'WAITING_APPROVAL', { berlakuJam: -1 });
+  await pasangInjeksiKedaluwarsa(ids);
+  const hasil = await dosing.kedaluwarsakan();
+  assert.deepEqual(hasil, { berhasil: 0, gagal: 3, galat: [...ids].sort((a, b) => a - b).map((id) => ({ id, kode: 'pemrosesan_kedaluwarsa_gagal' })) });
+  assert.deepEqual(await Promise.all([...ids, terminal, future].map(status)), ['APPROVED', 'APPROVED', 'APPROVED', 'CANCELLED', 'WAITING_APPROVAL']);
+  assert.equal((await q("SELECT count(*)::int n FROM perintah_aktuator WHERE tipe = 'DOSIS'"))[0].n, dosisAwal);
+  await lepasInjeksiKedaluwarsa();
+  assert.deepEqual(await dosing.kedaluwarsakan(), { berhasil: 3, gagal: 0, galat: [] });
+  assert.deepEqual(await dosing.kedaluwarsakan(), { berhasil: 0, gagal: 0, galat: [] });
+  assert.deepEqual(await Promise.all([...ids, terminal, future].map(status)), ['EXPIRED', 'EXPIRED', 'EXPIRED', 'CANCELLED', 'WAITING_APPROVAL']);
+  await kunciPenampung(meja[5], { alasan: 'bersihkan fixture uji', type: 'uji', value: 'F9' });
+  await bukaKunci(meja[5], 'bersihkan fixture uji');
+});
+
+test('kedaluwarsakan: pengajuan baru tetap ditolak saat penjadwal mati; setelah putaran manual diterima', { skip: lewati }, async () => {
+  const s = await siklusBaru(meja[1]);
+  await q('INSERT INTO penugasan_penampung (id_user, id_meja, dibuat_oleh) VALUES ($1, $2, $3)', [uid.a, meja[1], idAdmin]);
+  await fixtureDosing(meja[1], 'APPROVED', { berlakuJam: -1, idSiklus: s });
+  const sebelumnya = process.env.SIKLUS_PENJADWAL;
+  process.env.SIKLUS_PENJADWAL = '0';
+  try {
+    assert.equal(await require('../../src/siklusBudidaya').mulaiPenjadwal(), false);
+    const ditolak = await post('/api/dosing/siklus', { id_siklus_budidaya: s }, tok.a);
+    assert.equal(ditolak.status, 409, JSON.stringify(ditolak.body));
+    assert.equal(ditolak.body.kode, 'dosing_aktif_ada');
+    assert.equal(await status(Number((await q('SELECT id FROM dosing_events WHERE id_siklus_budidaya = $1', [s]))[0].id)), 'APPROVED');
+    assert.deepEqual(await dosing.kedaluwarsakan(), { berhasil: 1, gagal: 0, galat: [] });
+    const diterima = await post('/api/dosing/siklus', { id_siklus_budidaya: s }, tok.a);
+    assert.equal(diterima.status, 201, JSON.stringify(diterima.body));
+    await post(`/api/dosing/siklus/${diterima.body.data.id}/cabut`, { alasan: 'bersihkan fixture uji' }, tok.a);
+
+    const sBersamaan = await siklusBaru(meja[6]);
+    await q('INSERT INTO penugasan_penampung (id_user, id_meja, dibuat_oleh) VALUES ($1, $2, $3)', [uid.a, meja[6], idAdmin]);
+    const hasilSerentak = await Promise.all([
+      post('/api/dosing/siklus', { id_siklus_budidaya: sBersamaan }, tok.a),
+      post('/api/dosing/siklus', { id_siklus_budidaya: sBersamaan }, tok.a),
+    ]);
+    assert.deepEqual(hasilSerentak.map((r) => r.status).sort(), [201, 409]);
+    assert.equal(hasilSerentak.find((r) => r.status === 409).body.kode, 'dosing_aktif_ada');
+    assert.equal((await q("SELECT count(*)::int n FROM dosing_events WHERE id_meja = $1 AND status = ANY($2::text[])", [meja[6], ['WAITING_APPROVAL', 'APPROVED', 'RUNNING', 'MIXING', 'VERIFYING']]))[0].n, 1);
+    const dibuat = hasilSerentak.find((r) => r.status === 201);
+    await post(`/api/dosing/siklus/${dibuat.body.data.id}/cabut`, { alasan: 'bersihkan fixture uji' }, tok.a);
+  } finally {
+    if (sebelumnya === undefined) delete process.env.SIKLUS_PENJADWAL;
+    else process.env.SIKLUS_PENJADWAL = sebelumnya;
+  }
 });
 
 test('jalankan + 3 bacaan mustahil → FAULT, penampung LOCK, notifikasi kritis', { skip: lewati }, async () => {
@@ -285,7 +380,8 @@ test('evaluasi: OK → SUCCESS, KELEBIHAN → FAULT, cakupan habis → EXHAUSTED
 
 test('batal siklus budidaya → siklus dosing WAITING ikut CANCELLED', { skip: lewati }, async () => {
   await bukaKunci(meja[1], 'uji').catch(() => {});
-  const s = await siklusBaru(meja[1]);
+  await bukaKunci(meja[7], 'uji').catch(() => {});
+  const s = await siklusBaru(meja[7]);
   const a = await post('/api/dosing/siklus', { id_siklus_budidaya: s });
   assert.equal(a.status, 201, JSON.stringify(a.body));
   const r = await post(`/api/siklus/${s}/transisi`, { ke: 'CANCELLED', alasan: 'uji batal 3C' });
