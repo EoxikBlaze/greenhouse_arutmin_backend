@@ -18,6 +18,9 @@ const BATAS_WAJIB = {
 };
 
 const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT'];
+/** DAFTAR-IZIN pengiriman (containment DOSIS): hanya tipe ini yang boleh di-dequeue/dikirim, cocok PERSIS.
+ *  Sengaja bukan daftar-tolak: varian tulisan DOSIS (tab, newline, huruf/Unicode lain) dan tipe tak dikenal tetap tertahan. */
+const TIPE_DIKIRIM = TIPE.filter((t) => t !== 'DOSIS');
 const LARUTAN = ['AB', 'PH_UP', 'PH_DOWN'];
 const PERANGKAT_AKTUATOR = 'aktuator-01';
 
@@ -311,7 +314,7 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
 async function rapikanAntrean(perangkat) {
   await q(
     `UPDATE perintah_aktuator SET status = 'kedaluwarsa', selesai_pada = now()
-      WHERE perangkat_kode = $1 AND status = 'menunggu' AND kedaluwarsa_pada <= now()`, [perangkat]);
+      WHERE perangkat_kode = $1 AND status = 'menunggu' AND tipe = ANY($2::text[]) AND kedaluwarsa_pada <= now()`, [perangkat, TIPE_DIKIRIM]);
   const timeout = await q(
     `UPDATE perintah_aktuator SET status = 'gagal', selesai_pada = now(), hasil = '{"error":"timeout_tanpa_laporan"}'
       WHERE perangkat_kode = $1 AND status = 'dikirim' AND dikirim_pada <= now() - interval '90 seconds'
@@ -330,11 +333,11 @@ async function ambilPerintah(perangkat, maks = 5) {
     `UPDATE perintah_aktuator SET status = 'dikirim', dikirim_pada = now()
       WHERE id IN (
         SELECT id FROM perintah_aktuator
-         WHERE perangkat_kode = $1 AND status = 'menunggu' AND kedaluwarsa_pada > now()
+         WHERE perangkat_kode = $1 AND status = 'menunggu' AND tipe = ANY($3::text[]) AND kedaluwarsa_pada > now()
          ORDER BY (tipe = 'STOP_DARURAT') DESC, (tipe = 'STOP') DESC, id
          LIMIT $2 FOR UPDATE SKIP LOCKED)
       RETURNING id, tipe, parameter, kedaluwarsa_pada`,
-    [perangkat, Math.min(10, Math.max(1, Number(maks) || 5))]);
+    [perangkat, Math.min(10, Math.max(1, Number(maks) || 5)), TIPE_DIKIRIM]);
   return rows.sort((a, b) => Number(a.id) - Number(b.id));
 }
 
@@ -408,7 +411,7 @@ async function statusEstop() {
 }
 
 module.exports = {
-  TIPE, LARUTAN, PERANGKAT_AKTUATOR, PerintahDitolak,
+  TIPE, TIPE_DIKIRIM, LARUTAN, PERANGKAT_AKTUATOR, PerintahDitolak,
   bacaKonfig, validasiPerintah, buatPerintah, ambilPerintah, laporHasil, kategoriVolume, rapikanAntrean, resetEstop, statusEstop,
   kunciPenampung, bukaKunci, KEJADIAN_BASI_MENIT,
 };

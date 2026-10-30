@@ -17,7 +17,7 @@
  */
 const mqtt = require('mqtt');
 const { q, one } = require('./db');
-const { ambilPerintah, laporHasil, statusEstop, PerintahDitolak } = require('./aktuator');
+const { ambilPerintah, laporHasil, statusEstop, PerintahDitolak, TIPE_DIKIRIM } = require('./aktuator');
 const { simpanBacaan, tandaiTerlihat } = require('./routes/device');
 
 const PREFIX = 'garap';
@@ -27,6 +27,27 @@ const DETAK_MS = 5000;           // detak server → aktuator (fail-safe firmwar
 const KIRIM_MS = 1000;           // seberapa sering antrean perintah diperiksa
 const ONLINE_MS = 90_000;        // aktuator dianggap online bila status terakhir ≤ 90 dtk lalu
 const CACHE_MS = 30_000;
+const PERINGATAN_DOSIS_MS = 60_000;
+let peringatanDosisTerakhir = 0;
+
+const TIPE_BOLEH = new Set(TIPE_DIKIRIM);
+
+/** Batas dispatch legacy (lapis kedua): hanya tipe pada DAFTAR-IZIN (cocok persis) yang diterbitkan.
+ *  DOSIS, variannya, dan tipe tak dikenal tertahan sampai pipeline v0.3 disahkan. */
+function terbitkanPerintah(client, kode, list, log = console) {
+  for (const p of list) {
+    if (!TIPE_BOLEH.has(p.tipe)) {
+      const sekarang = Date.now();
+      if (sekarang - peringatanDosisTerakhir >= PERINGATAN_DOSIS_MS) {
+        log.warn('[mqtt] dispatch ditahan oleh containment (tipe di luar daftar izin, termasuk DOSIS)');
+        peringatanDosisTerakhir = sekarang;
+      }
+      continue;
+    }
+    client.publish(`${PREFIX}/${kode}/perintah`,
+      JSON.stringify({ id: Number(p.id), tipe: p.tipe, parameter: p.parameter }), { qos: 1 });
+  }
+}
 
 /** Perangkat + apakah masih punya kunci aktif; di-cache 30 dtk agar tiap bacaan tak query ulang. */
 function buatPemeriksaPerangkat(cacheMs = CACHE_MS) {
@@ -88,10 +109,7 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
         // aktuator offline → perintah tetap 'menunggu' lalu kedaluwarsa sendiri (tidak terkirim terlambat)
         if (Date.now() - t > ONLINE_MS) { online.delete(kode); continue; }
         const list = await ambilPerintah(kode, 3);
-        for (const p of list) {
-          client.publish(`${PREFIX}/${kode}/perintah`,
-            JSON.stringify({ id: Number(p.id), tipe: p.tipe, parameter: p.parameter }), { qos: 1 });
-        }
+        terbitkanPerintah(client, kode, list, log);
       }
     } catch (e) {
       log.warn('[mqtt] kirim perintah gagal:', e.message);
@@ -168,4 +186,4 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
   };
 }
 
-module.exports = { mulai, bacaJson, POLA_TOPIK };
+module.exports = { mulai, bacaJson, POLA_TOPIK, terbitkanPerintah };

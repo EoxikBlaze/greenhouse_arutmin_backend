@@ -155,7 +155,7 @@ test('kunci: rotasi mencabut yang lama dan membuat yang baru; kedaluwarsa & pera
 });
 
 /* ── aktuator: antrean + pagar ────────────────────────────────────── */
-test('aktuator: dosis lolos pagar, terkirim sekali, hasil dilaporkan; pagar harian & ml menolak', async () => {
+test('aktuator: dosis lolos pagar tetapi TIDAK dikirim (containment 3E.3/3F); hasil baris warisan & pagar harian/ml tetap benar', async () => {
   const akt = await buatKunci({ nama: 'uji-aktuator', perangkat_kode: 'aktuator-01' });
   const buat = (b) => request(base).post('/api/aktuator/perintah').set(bearer(admin)).send(b);
 
@@ -178,15 +178,18 @@ test('aktuator: dosis lolos pagar, terkirim sekali, hasil dilaporkan; pagar hari
   assert.equal(c.status, 409);
   assert.match(c.body.message, /AB harian/);
 
-  // perangkat mengambil: tiap perintah hanya sekali
+  // CONTAINMENT: polling perangkat TIDAK mengembalikan DOSIS (tidak sekali pun) dan statusnya tidak berubah
   const ambil = await request(base).get('/api/device/v1/perintah').set(hdr(akt.kunci));
   assert.equal(ambil.status, 200);
   assert.equal(ambil.body.estop, false);
-  assert.equal(ambil.body.perintah.length, 2);
-  assert.equal(ambil.body.perintah[0].tipe, 'DOSIS');
+  assert.equal(ambil.body.perintah.length, 0, 'DOSIS tidak dikirim ke perangkat');
   assert.equal((await request(base).get('/api/device/v1/perintah').set(hdr(akt.kunci))).body.perintah.length, 0);
-
-  const idA = ambil.body.perintah[0].id; const idB = ambil.body.perintah[1].id;
+  const antre = await q("SELECT id, status FROM perintah_aktuator WHERE tipe = 'DOSIS' AND status = 'menunggu' AND (parameter->>'penampung')::bigint = $1 ORDER BY id", [meja]);
+  assert.equal(antre.length, 2);
+  // Baris warisan yang SUDAH berstatus 'dikirim' (mis. terkirim sebelum containment) disimulasikan lewat SQL di DB uji,
+  // supaya pelaporan hasil dan pengembalian jatah harian tetap teruji tanpa membuka jalur pengiriman.
+  const idA = antre[0].id; const idB = antre[1].id;
+  await q("UPDATE perintah_aktuator SET status = 'dikirim', dikirim_pada = now() WHERE id = ANY($1)", [[idA, idB]]);
   assert.equal((await request(base).post(`/api/device/v1/perintah/${idA}/hasil`).set(hdr(akt.kunci)).send({ status: 'selesai', hasil: { ml_nyata: 199.5 } })).status, 200);
   // lapor dua kali → 404
   assert.equal((await request(base).post(`/api/device/v1/perintah/${idA}/hasil`).set(hdr(akt.kunci)).send({ status: 'selesai' })).status, 404);
