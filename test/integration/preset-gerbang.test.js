@@ -26,6 +26,15 @@ before(async () => {
   petani = craftToken({ sub: idAdmin, username: 'p', level: 'petani', demo: false }, { expiresIn: '10m' });
   preset = (await q(`SELECT p.id, p.id_tanaman, p.aktif_versi_id FROM preset_nutrisi p JOIN tanamen t USING (id_tanaman)
                       WHERE t.nama_tanaman = 'Bayam' AND p.aktif_versi_id IS NOT NULL LIMIT 1`))[0];
+  // DB uji dari dump yang di-commit tidak punya Bayam: buat preset rancangan sendiri (versi 1 tanpa batas
+  // operasi, BELUM_TERVALIDASI) supaya tes tidak bergantung pada data DB pengembangan.
+  if (!preset) {
+    const tan = Number((await q("INSERT INTO tanamen (nama_tanaman, created_at, updated_at) VALUES ('uji-3b3-tanaman', now(), now()) RETURNING id_tanaman"))[0].id_tanaman);
+    const p = (await q("INSERT INTO preset_nutrisi (id_tanaman, nama) VALUES ($1, 'uji-3b3') RETURNING id", [tan]))[0];
+    const v = (await q("INSERT INTO preset_versi (id_preset, versi, parameter, catatan) VALUES ($1, 1, '{}'::jsonb, 'fixture uji 3B.3') RETURNING id", [p.id]))[0];
+    await q('UPDATE preset_nutrisi SET aktif_versi_id = $2 WHERE id = $1', [p.id, v.id]);
+    preset = { id: p.id, id_tanaman: tan, aktif_versi_id: v.id };
+  }
   meja = Number((await q("INSERT INTO mejas (meja, jumlah_lubang, created_at, updated_at) VALUES ('uji-3b3-gerbang', 1, now(), now()) RETURNING id_meja"))[0].id_meja);
 });
 after(async () => {

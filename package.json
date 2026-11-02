@@ -11,7 +11,8 @@
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
     "db:seed-fake": "psql \"$DATABASE_URL\" -f database/seed_fake.sql",
-    "sim:sensor": "node scripts/simulasi-sensor.js"
+    "sim:sensor": "node scripts/simulasi-sensor.js",
+    "test:regresi": "bash scripts/regresi.sh"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
