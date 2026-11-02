@@ -51,3 +51,28 @@ test('petunjuk semai menyebut batas peran saat ini', () => {
   assert.match(TEKS.semai, /hanya admin/);
   assert.match(TEKS.semai, /Mulai Semai Baru/);
 });
+
+const { tautanUntuk, PATH_SAH, TAUTAN_TOPIK, HALAMAN } = require('../src/aiPanduan');
+
+test('tautan: petani tidak ditawari halaman admin, admin dapat semuanya', () => {
+  const petani = tautanUntuk('semai', 'petani');
+  assert.deepEqual(petani.map((t) => t.to), ['/tanam']);
+  const admin = tautanUntuk('semai', 'admin');
+  assert.deepEqual(admin.map((t) => t.to), ['/tanam', '/semai', '/tanaman', '/meja']);
+  assert.deepEqual(tautanUntuk('semai', 'demo').map((t) => t.to), admin.map((t) => t.to));
+  assert.deepEqual(tautanUntuk('semai', '').map((t) => t.to), ['/tanam']);
+});
+
+test('tautan: topik tanpa halaman tetap kosong, topik tak dikenal aman', () => {
+  assert.deepEqual(tautanUntuk('fase', 'admin'), []);
+  assert.deepEqual(tautanUntuk('keputusan', 'admin'), []);
+  assert.deepEqual(tautanUntuk('tidak-ada', 'admin'), []);
+});
+
+test('tautan: hanya jalur internal tetap yang sah (tanpa host, tanpa query)', () => {
+  for (const h of Object.values(HALAMAN)) assert.match(h.to, /^\/[a-z0-9-]+$/);
+  for (const [topik, daftar] of Object.entries(TAUTAN_TOPIK)) {
+    for (const k of daftar) assert.ok(HALAMAN[k], `${topik} → ${k} tidak ada di HALAMAN`);
+    for (const t of tautanUntuk(topik, 'admin')) assert.ok(PATH_SAH.has(t.to));
+  }
+});

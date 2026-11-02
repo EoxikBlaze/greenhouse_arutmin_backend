@@ -99,6 +99,64 @@ const POLA = [
   ['alur', /\balur\b|\bcara kerja\b|bagaimana (?:aplikasi|sistem|website|web) (?:ini )?(?:bekerja|jalan)|\b(?:panduan|tutorial)\b|\bcara (?:pakai|memakai|menggunakan)\b.{0,15}\b(?:aplikasi|website|web|garap)\b/],
 ];
 
+
+/* ── TAUTAN: arah ke halaman aplikasi ─────────────────────────────────────────────────────────
+ * Tautan TIDAK pernah ditulis model. Server memilih dari daftar tetap di bawah, menyaring menurut peran
+ * (petani tidak ditawari halaman admin), lalu klien merender sebagai tombol internal. */
+const PETANI = 'semua';
+const ADMIN = 'admin';
+const HALAMAN = {
+  dashboard: { to: '/dashboard', label: 'Dashboard', izin: PETANI },
+  tanam: { to: '/tanam', label: 'Kebun Saya', izin: PETANI },
+  sensor: { to: '/sensor-realtime', label: 'Telemetri & Sensor', izin: PETANI },
+  peringatan: { to: '/peringatan', label: 'Peringatan', izin: PETANI },
+  semai: { to: '/semai', label: 'Semai', izin: ADMIN },
+  peremajaan: { to: '/peremajaan', label: 'Peremajaan', izin: ADMIN },
+  pendewasaan: { to: '/pendewasaan', label: 'Pendewasaan', izin: ADMIN },
+  panen: { to: '/panen', label: 'Panen', izin: ADMIN },
+  tanaman: { to: '/tanaman', label: 'Jenis Tanaman', izin: ADMIN },
+  meja: { to: '/meja', label: 'Meja Tanaman', izin: ADMIN },
+  ambang: { to: '/ambang', label: 'Ambang Sensor', izin: ADMIN },
+  kalibrasi: { to: '/kalibrasi', label: 'Kalibrasi', izin: ADMIN },
+  dosing: { to: '/dosing', label: 'Dosing', izin: ADMIN },
+  saklar: { to: '/saklar', label: 'Saklar & Mode', izin: ADMIN },
+  pengaturanAlat: { to: '/pengaturan-alat', label: 'Pengaturan Alat', izin: ADMIN },
+  mqtt: { to: '/mqtt-diagnostik', label: 'Diagnostik MQTT', izin: ADMIN },
+};
+
+const TAUTAN_TOPIK = {
+  alur: ['dashboard', 'tanam', 'sensor', 'peringatan'],
+  semai: ['tanam', 'semai', 'tanaman', 'meja'],
+  pindah_tahap: ['tanam', 'semai', 'peremajaan', 'pendewasaan'],
+  panen: ['tanam', 'panen'],
+  alat_baru: ['sensor', 'ambang', 'kalibrasi', 'pengaturanAlat', 'mqtt'],
+  dosing: ['dosing', 'saklar', 'peringatan'],
+  keputusan: [],
+  fase: [],
+  // jalur data langsung (deteksiNiat di aiDiagnosa.js)
+  diagnosa: ['peringatan', 'sensor'],
+  alert: ['peringatan'],
+  penampung: ['dosing', 'sensor'],
+  tahap: ['tanam'],
+  sensor: ['sensor'],
+  ph_turun: ['sensor', 'dosing'],
+  ph_naik: ['sensor', 'dosing'],
+  tds_turun: ['sensor', 'dosing'],
+  tds_naik: ['sensor', 'dosing'],
+  preset: ['tanaman', 'dosing'],
+};
+
+/** Daftar tautan [{label,to}] untuk topik & peran. Peran selain admin/demo = hanya halaman umum. */
+function tautanUntuk(topik, level) {
+  const pengelola = level === 'admin' || level === 'demo';
+  return (TAUTAN_TOPIK[topik] || [])
+    .map((k) => HALAMAN[k])
+    .filter((h) => h && (h.izin === PETANI || pengelola))
+    .map((h) => ({ label: h.label, to: h.to }));
+}
+
+const PATH_SAH = new Set(Object.values(HALAMAN).map((h) => h.to));
+
 /** Kunci panduan untuk pesan (ternormalisasi), atau null. */
 function deteksiPanduan(pesanTernormalisasi) {
   const s = String(pesanTernormalisasi || '');
@@ -117,4 +175,4 @@ function apakahMintaSaran(pesanTernormalisasi) {
   return /\b(?:saran|masukan|rekomendasi)\b|\bapa (?:yang )?(?:harus|sebaiknya|perlu) (?:saya |aku |kami )?(?:lakukan|kerjakan)\b/.test(String(pesanTernormalisasi || ''));
 }
 
-module.exports = { deteksiPanduan, jawabPanduan, apakahMintaSaran, STATUS_DIPERBARUI, TEKS };
+module.exports = { deteksiPanduan, jawabPanduan, apakahMintaSaran, tautanUntuk, PATH_SAH, HALAMAN, TAUTAN_TOPIK, STATUS_DIPERBARUI, TEKS };
