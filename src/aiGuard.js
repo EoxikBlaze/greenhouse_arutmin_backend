@@ -151,6 +151,8 @@ const KATA_TOPIK = [
   'pemeliharaan', 'esp32', 'cctv', 'kamera', 'garap', 'vertonik', 'dashboard', 'riwayat', 'laporan',
   'diagnosa', 'diagnosis', 'tabel', 'grafik', 'kebun', 'alat', 'perangkat', 'iot', 'pupuk', 'bibit', 'benih',
   'nutrient', 'water', 'stage', 'harvest', 'humidity', 'temperature', 'plant', 'hydroponic', 'hydroponics',
+  // panduan aplikasi (aiPanduan.js)
+  'fase', 'keputusan', 'aplikasi', 'alur', 'panduan', 'mqtt', 'menyemai', 'penyemaian', 'menanam', 'memanen',
 ];
 // Kata umum ("cek", "status", "kondisi", "saran", "bantuan", "hari ini", …) TIDAK lagi cukup sendirian:
 // uji tembus 23 Okt 2026 — "Berapa harga bitcoin hari ini?", "Cek kondisi politik" lolos ke LLM.

@@ -24,6 +24,7 @@ const { requireAuth, json } = require('../auth');
 const { idValidValue } = require('./_id');
 const guard = require('../aiGuard');
 const diag = require('../aiDiagnosa');
+const panduan = require('../aiPanduan');
 const diagnosaEkstrak = diag.ekstrakTabelMarkdown;
 
 const router = express.Router();
@@ -809,6 +810,19 @@ router.post('/chat', async (req, res, next) => {
     if (niat) {
       const h = await diag.jawabNiat(niat, data, guard.normalisasi(v.pesan));
       return res.json(wajah({ jawaban: h.jawaban, tabel: h.tabel, status: h.status, sumber: niat === 'diagnosa' ? 'diagnosa' : 'data' }));
+    }
+
+    // panduan aplikasi (cara menyemai, alur, status fase, keputusan): jawaban tetap, tanpa LLM — model kecil sering mengarang menu
+    const norm = guard.normalisasi(v.pesan);
+    const kunciPanduan = panduan.deteksiPanduan(norm);
+    if (kunciPanduan) {
+      const pd = panduan.jawabPanduan(kunciPanduan);
+      return res.json(wajah({ jawaban: pd.jawaban, tabel: pd.tabel, sumber: 'panduan' }));
+    }
+    // "beri saran": ringkasan dari data nyata (diagnosa), bukan tebakan model
+    if (panduan.apakahMintaSaran(norm)) {
+      const h = await diag.jawabNiat('diagnosa', data, norm);
+      return res.json(wajah({ jawaban: h.jawaban, tabel: h.tabel, status: h.status, sumber: 'diagnosa' }));
     }
 
     // jalur LLM
