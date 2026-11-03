@@ -1,0 +1,42 @@
+name: CI backend
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+jobs:
+  regresi:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: garap
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U garap" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGUSER: garap
+      PGPASSWORD: ci-only-password
+      CI_ATUR_SANDI: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      # Peran garap harus boleh CREATE DATABASE (superuser di service) — regresi.sh hanya menyentuh garap_uji_*.
+      - name: Buat .env uji (nilai acak, tidak dipakai di luar CI)
+        run: |
+          {
+            echo "DATABASE_URL=postgres://garap:ci-only-password@127.0.0.1:5432/garap_uji_tpl"
+            echo "JWT_SECRET=$(openssl rand -hex 32)"
+            echo "APP_KEY=$(openssl rand -hex 16)"
+            echo "ESP32_API_KEY=$(openssl rand -hex 16)"
+            echo "ADMIN_PASSWORD=$(openssl rand -hex 12)"
+            echo "PETANI_PASSWORD=$(openssl rand -hex 12)"
+            echo "DEMO_PASSWORD=$(openssl rand -hex 12)"
+          } > .env
+          chmod 600 .env
+      - run: sudo apt-get install -y postgresql-client >/dev/null
+      - run: PARALEL=3 bash scripts/regresi.sh

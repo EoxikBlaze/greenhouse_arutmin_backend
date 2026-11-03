@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
 const { q, one } = require('./db');
+const sesiCookie = require('./sesiCookie');
 
 /* ── JWT_SECRET — wajib eksplisit (S10: gagal-loud, bukan fallback) ── *
  * fallback historis 'dev-secret-ganti' (dan nilai 'dev-secret-ganti' apa pun
@@ -72,12 +73,19 @@ function json(res, status, body) {
   return res.status(status).json(body);
 }
 
-/** Wajib login (Authorization: Bearer). */
+/**
+ * Wajib login: Authorization Bearer (Flutter/alat) atau cookie HttpOnly vsf_sesi (browser).
+ * Lewat cookie, metode yang mengubah data wajib membawa X-CSRF-Token yang cocok dengan cookie vsf_csrf.
+ */
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = bearer || sesiCookie.bacaCookie(req, sesiCookie.NAMA_SESI);
   const payload = token && verifyToken(token);
   if (!payload) return json(res, 401, { message: 'Tidak terautentikasi.' });
+  if (!bearer && !sesiCookie.csrfCocok(req)) {
+    return json(res, 403, { message: 'Permintaan ditolak (token CSRF tidak cocok). Muat ulang halaman.', kode: 'csrf_tidak_cocok' });
+  }
   req.user = payload;
   next();
 }

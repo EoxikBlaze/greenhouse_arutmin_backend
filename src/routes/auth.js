@@ -2,6 +2,7 @@
 /** Auth — GET /login (info), POST /login, GET /logout, GET / (info). */
 const express = require('express');
 const { verifyLogin, signToken, publicUser, json } = require('../auth');
+const sesiCookie = require('../sesiCookie');
 
 const router = express.Router();
 
@@ -43,19 +44,26 @@ router.post('/login', async (req, res, next) => {
       after: { username: user.username, level: user.level, ingat: !!remember },
     };
 
+    // Web: token hanya di cookie HttpOnly (tidak ada di body, tidak terjangkau JS). Klien lain: token di body.
+    const token = signToken(user);
+    const lewatCookie = req.body?.sesi === 'cookie';
+    if (lewatCookie) sesiCookie.pasangSesi(req, res, token);
     json(res, 200, {
       status: true,
       message: 'Login berhasil.',
-      token: signToken(user),
+      ...(lewatCookie ? {} : { token }),
       user: publicUser(user),
       redirect: user.level === 'petani' ? '/tanam' : '/dashboard',
     });
   } catch (e) { next(e); }
 });
 
-router.get('/logout', (_req, res) => {
-  // JWT bersifat stateless — client membuang token.
+function keluar(req, res) {
+  // JWT stateless: klien Bearer membuang token; cookie sesi web dihapus di sini.
+  sesiCookie.hapusSesi(req, res);
   json(res, 200, { status: true, message: 'Berhasil logout.', redirect: '/login' });
-});
+}
+router.get('/logout', keluar);
+router.post('/logout', keluar);
 
 module.exports = router;
