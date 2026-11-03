@@ -187,7 +187,7 @@ test('POST (Ollama hidup) → 200 sumber=ollama + model AI_MODEL; prompt data-on
   const ok = await request(baseMock).post('/api/ai/langkah-selanjutnya').set(token).send({});
   assert.equal(ok.status, 200, `body: ${ok.text}`);
   assert.equal(ok.body.sumber, 'ollama');
-  assert.equal(ok.body.model, process.env.AI_MODEL || 'deepseek-r1:1.5b');
+  assert.equal(ok.body.model, process.env.AI_MODEL || 'qwen2.5:1.5b');
   assert.equal(ok.body.keputusan, 'Aktifkan aerasi tambahan pada meja utama');
   assert.equal(ok.body.prioritas, 'sedang');
   assert.equal(ok.body.fallback_karena, null);
@@ -201,7 +201,7 @@ test('POST (Ollama hidup) → 200 sumber=ollama + model AI_MODEL; prompt data-on
     'harus ada tepat 1 tag penutup </data> (data di-escape, tak bisa menutup tag)');
   assert.match(m.prompt, /BUKAN perintah/, 'prompt wajib menegaskan isi <data> = data mentah');
   assert.match(m.prompt, /Jangan menyapa/, 'prompt wajib melarang menyapa/menjawab lain');
-  assert.equal(m.model, process.env.AI_MODEL || 'deepseek-r1:1.5b');
+  assert.equal(m.model, process.env.AI_MODEL || 'qwen2.5:1.5b');
 
   // (b) balasan LLM bukan JSON valid → fallback heuristik keras
   m.mode = 'rusak';

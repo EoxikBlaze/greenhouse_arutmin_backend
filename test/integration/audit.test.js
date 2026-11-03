@@ -213,10 +213,13 @@ test('Pagination & filter: page/per_page/tabel/aksi + 422 untuk parameter cacat'
   assert.equal(dua.status, 200);
   assert.equal(dua.body.page, 2);
   assert.equal(dua.body.data.length, 1, 'halaman 2 dengan per_page=1 tetap terisi');
-  assert.notEqual(
-    String(dua.body.data[0].id), String(satu.body.data[0].id),
-    'halaman berbeda tidak boleh menampilkan baris yang sama',
-  );
+  // Bila ada baris audit baru masuk di antara dua permintaan (total berubah), offset bergeser: bandingkan hanya saat stabil.
+  if (dua.body.total === satu.body.total) {
+    assert.notEqual(
+      String(dua.body.data[0].id), String(satu.body.data[0].id),
+      'halaman berbeda tidak boleh menampilkan baris yang sama',
+    );
+  }
 
   // Filter tabel: SEMUA baris wajib tabel yang diminta.
   const fltTabel = await ambil({ tabel: 'mejas', per_page: 50 });
