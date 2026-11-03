@@ -438,7 +438,7 @@ router.post('/pemeliharaan', ...writeGuard, async (req, res, next) => {
                 kejadian_dosis_hari = 0,
                 volume_ab_hari_ml = 0,
                 volume_ph_hari_ml = 0,
-                reset_harian_pada = CURRENT_TIMESTAMP,
+                reset_harian_pada = (now() AT TIME ZONE 'Asia/Makassar'),  -- jam WITA (kolom tanpa zona; dibandingkan dgn tanggal WITA)
                 updated_at = CURRENT_TIMESTAMP`,
       );
       await simpanParam(run, 'konfigurasi_dosis', 'mode_pemeliharaan_v41', 0, 'bool', 'Status mode pemeliharaan v4.1');

@@ -42,6 +42,9 @@ function tolakDanKunci(status, pesan, kunci) {
 /** Kejadian tanpa ronde baru selama ini dianggap selesai (mixing 15 mnt × 5 ronde masih jauh di bawahnya). */
 const KEJADIAN_BASI_MENIT = 60;
 const HARI_WITA = "(now() AT TIME ZONE 'Asia/Makassar')::date";
+// reset_harian_pada = timestamp TANPA zona: simpan jam WITA eksplisit, bukan now() (yang mengikuti TimeZone sesi DB —
+// di sesi UTC, 16:00–24:00 UTC tanggalnya ≠ tanggal WITA → jatah harian ter-reset tiap permintaan)
+const JAM_WITA = "(now() AT TIME ZONE 'Asia/Makassar')";
 
 /**
  * LOCK penampung + alert kritis + tutup kejadian berjalan + batalkan dosis yang masih menunggu.
@@ -275,7 +278,7 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
       }
       await client.query(
         `UPDATE penampung_states SET volume_ab_hari_ml = $2, volume_ph_hari_ml = $3, kejadian_dosis_hari = $4,
-                reset_harian_pada = now(), updated_at = now() WHERE id_meja = $1`,
+                reset_harian_pada = ${JAM_WITA}, updated_at = now() WHERE id_meja = $1`,
         [param.penampung, ab, ph, kej]);
     }
 
