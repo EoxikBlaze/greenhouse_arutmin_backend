@@ -36,7 +36,11 @@ const tgl = (v) => {
 const tabel = (judul, kolom, baris) => ({ judul, kolom, baris });
 
 async function aman(fn, cadangan) {
-  try { return await fn(); } catch (e) { return cadangan === undefined ? { galat: String(e.code || e.message || e).slice(0, 60) } : cadangan; }
+  try { return await fn(); } catch (e) {
+    // rincian galat (kode/pesan DB) hanya ke log server — tidak pernah masuk jawaban yang tampil di UI
+    console.warn('[ai-diagnosa]', e.code || e.message || e);
+    return cadangan === undefined ? { galat: true } : cadangan;
+  }
 }
 
 /* ── penilai sensor terhadap ambang ──────────────────────────────────── */
@@ -166,8 +170,8 @@ async function diagnosaMenyeluruh(data) {
   const t0 = Date.now();
   const db = await aman(() => one('SELECT 1 AS ok'));
   const ms = Date.now() - t0;
-  if (!db || db.galat) tambah('Basis data', KRITIS, `gagal terhubung (${db && db.galat})`, 'Periksa PostgreSQL dan DATABASE_URL di .env');
-  else tambah('Basis data', ms > 500 ? PERHATIAN : OK, `terhubung · ${ms} ms`, ms > 500 ? 'Respons lambat — cek beban/indeks DB' : null);
+  if (!db || db.galat) tambah('Penyimpanan data', KRITIS, 'tidak dapat diakses', 'Hubungi admin untuk memeriksa penyimpanan data sistem');
+  else tambah('Penyimpanan data', ms > 500 ? PERHATIAN : OK, `terhubung · ${ms} ms`, ms > 500 ? 'Respons lambat — sistem sedang sibuk' : null);
 
   const mig = await aman(() => one("SELECT to_regclass('schema_migrations') IS NOT NULL AS ada"), null);
   if (mig && mig.ada) {
@@ -181,12 +185,12 @@ async function diagnosaMenyeluruh(data) {
   const ambang = (data && data.ambang) || {};
   const sp = await aman(() => sensorPerMeja(ambang));
   let tSensor = null;
-  if (!sp || sp.galat) tambah('Data sensor', KRITIS, `tidak terbaca (${sp && sp.galat})`, 'Periksa tabel monitorings');
+  if (!sp || sp.galat) tambah('Data sensor', KRITIS, 'tidak terbaca', 'Hubungi admin untuk memeriksa catatan sensor');
   else {
     tSensor = sp.tabel;
-    if (sp.umurGlobal == null) tambah('Koneksi ESP32', KRITIS, 'belum ada satu pun bacaan', 'Nyalakan ESP32 / cek API key & jaringan');
-    else if (!sp.online) tambah('Koneksi ESP32', KRITIS, `OFFLINE · data terakhir ${umur(sp.umurGlobal)} lalu`, 'Cek daya, WiFi, dan API key ESP32');
-    else tambah('Koneksi ESP32', OK, `ONLINE · data terakhir ${umur(sp.umurGlobal)} lalu`);
+    if (sp.umurGlobal == null) tambah('Koneksi alat sensor', KRITIS, 'belum ada satu pun bacaan', 'Nyalakan alat sensor, lalu cek Wi-Fi dan kunci alat');
+    else if (!sp.online) tambah('Koneksi alat sensor', KRITIS, `TERPUTUS · data terakhir ${umur(sp.umurGlobal)} lalu`, 'Cek daya, Wi-Fi, dan kunci alat sensor');
+    else tambah('Koneksi alat sensor', OK, `TERHUBUNG · data terakhir ${umur(sp.umurGlobal)} lalu`);
     tambah('Nilai sensor', sp.status === KRITIS ? KRITIS : (sp.status === PERHATIAN ? PERHATIAN : OK),
       sp.temuan.length ? sp.temuan.join('; ') : (sp.status === PERHATIAN ? 'data sudah basi — nilai terakhir belum bisa dianggap terkini' : 'semua dalam ambang'),
       sp.temuan.length ? 'Koreksi larutan (pH/nutrisi/suhu) lalu pantau 15 menit' : null);
@@ -200,7 +204,7 @@ async function diagnosaMenyeluruh(data) {
     const st = al.kritis || al.terkunci ? KRITIS : (al.total ? PERHATIAN : OK);
     tambah('Alert', st, al.total ? `${al.total} terbuka · ${al.kritis} kritis · ${al.terkunci} memicu LOCK` : 'tidak ada alert terbuka',
       al.total ? 'Tinjau dan tandai selesai di halaman Alert' : null);
-  } else tambah('Alert', PERHATIAN, `tidak terbaca (${al && al.galat})`, 'Periksa tabel alert_logs');
+  } else tambah('Alert', PERHATIAN, 'tidak terbaca', 'Hubungi admin untuk memeriksa catatan peringatan');
 
   // 4) penampung / dosing
   const pn = await aman(() => tabelPenampung());

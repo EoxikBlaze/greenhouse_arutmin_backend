@@ -353,7 +353,9 @@ test('HTTP: diagnosa menyeluruh → tabel terstruktur tanpa memanggil LLM', asyn
   const t = res.body.tabel[0];
   assert.deepEqual(t.kolom, ['Komponen', 'Status', 'Detail', 'Saran']);
   const komponen = t.baris.map((b) => b[0]);
-  for (const k of ['Basis data', 'Koneksi ESP32', 'Alert', 'Penampung & dosing', 'Tahap tanam', 'CCTV']) assert.ok(komponen.includes(k), k);
+  for (const k of ['Penyimpanan data', 'Koneksi alat sensor', 'Alert', 'Penampung & dosing', 'Tahap tanam', 'CCTV']) assert.ok(komponen.includes(k), k);
+  // jawaban yang tampil di UI tidak membawa nama tabel, variabel env, atau rincian galat DB
+  assert.doesNotMatch(JSON.stringify(res.body), /sensor_thresholds|alert_logs|monitorings|sikluses|DATABASE_URL|PostgreSQL|\.env\b/);
   assert.equal(mock.state.panggilan, sebelum);
 });
 
