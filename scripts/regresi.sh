@@ -115,5 +115,9 @@ hapusDb "$TPL"
 # ── 3. ringkasan ─────────────────────────────────────────────────────────────
 sort -k5 "$OUT_DIR/ringkas.tsv" -o "$OUT_DIR/ringkas.tsv"
 awk -F'\t' '$2!="0" || $4!="0" {printf "  ✗ %-55s lulus %s, gagal %s (exit %s)\n", $5, $1, $2, $4}' "$OUT_DIR/ringkas.tsv"
+# Cetak potongan tes gagal agar CI tidak buta (log lengkap hanya ada di runner).
+awk -F'\t' '$2!="0" || $4!="0" {print $5}' "$OUT_DIR/ringkas.tsv" | while read -r f; do
+  echo "── gagal: $f"; grep -E -A14 '^\s*not ok|^# Subtest.*\n' "$OUT_DIR/$(echo "$f" | tr '/' '_').log" | head -60
+done
 awk -F'\t' '{p+=$1; f+=($2=="?"?1:$2); s+=$3; if ($2!="0"||$4!="0") b++} END {
   printf "\nTOTAL: %d lulus, %d gagal, %d dilewati, %d berkas bermasalah dari %d\n", p, f, s, b, NR; exit (b>0)}' "$OUT_DIR/ringkas.tsv"
