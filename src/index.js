@@ -46,11 +46,10 @@ app.use((err, req, res, next) => {
 // nosniff · X-Frame-Options DENY · Referrer-Policy no-referrer ·
 // Cache-Control no-store · X-Powered-By mati (app.disable di atas).
 //
-// CSP disetel agar SPA tetap jalan: backend ini TIDAK PERNAH menyajikan HTML
-// (rute navigasi dijawab 204), sedangkan frontend :5173 disajikan Vite dan
-// di-proxy same-origin — jadi 'unsafe-inline' untuk script-src & style-src
-// dipertahankan (bundle Vite bisa menyuntik inline module-preload & style
-// React) sementara objek/embed diblokir. Uji frontend :5173 + login lulus.
+// CSP: backend ini TIDAK PERNAH menyajikan HTML (rute navigasi dijawab 204).
+// Build Vite (dist) tidak punya skrip/gaya inline, jadi script-src & style-src
+// hanya 'self' (tanpa 'unsafe-inline'). HTML di Pi disajikan nginx dengan CSP
+// yang sama (deploy-pi/nginx/vertonik.conf) — ubah keduanya bersamaan.
 //
 // HSTS hanya bila TIDAK merusak http:// lokal:
 //   SECURITY_HSTS=auto (default) → kirim hanya saat request datang lewat TLS
@@ -63,10 +62,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       'default-src': ["'self'"],
-      'script-src': ["'self'", "'unsafe-inline'"],
-      'style-src': ["'self'", "'unsafe-inline'"],
+      'script-src': ["'self'"],
+      'style-src': ["'self'", 'https://fonts.googleapis.com'],
       'img-src': ["'self'", 'data:', 'blob:'],
-      'font-src': ["'self'", 'data:'],
+      'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
       'connect-src': ["'self'"],
       'object-src': ["'none'"],
       'base-uri': ["'self'"],
