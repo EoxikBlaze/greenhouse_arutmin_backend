@@ -18,11 +18,15 @@ test('3B.3: pengendali dosing lama (otomasi.js) sudah dihapus; tidak ada yang me
   }
 });
 
-test('3B.3/3C: pemanggil buatPerintah di luar aktuator.js hanya rute admin (menolak DOSIS), kontrolAir (ISI_AIR saja), dosingSiklus (STOP saja)', () => {
+test('3B.3/3C: pemanggil buatPerintah di luar aktuator.js hanya rute admin (menolak DOSIS), kontrolAir (ISI_AIR saja), dosingSiklus dan routes/iotV41 (STOP saja)', () => {
   const pemanggil = semua().filter((f) => !f.endsWith(`${path.sep}aktuator.js`) || f.includes(`routes${path.sep}`))
     .filter((f) => /buatPerintah\(/.test(fs.readFileSync(f, 'utf8')))
     .map((f) => path.relative(SRC, f)).sort();
-  assert.deepEqual(pemanggil, ['dosingSiklus.js', 'kontrolAir.js', path.join('routes', 'aktuator.js')].sort());
+  assert.deepEqual(pemanggil, ['dosingSiklus.js', 'kontrolAir.js', path.join('routes', 'aktuator.js'), path.join('routes', 'iotV41.js')].sort());
+  // modul v4.1 (dosing manual): satu-satunya perintah adalah STOP; dosing_ab/dosis_ph dikunci 423 tanpa membuat perintah
+  const v41 = fs.readFileSync(path.join(SRC, 'routes', 'iotV41.js'), 'utf8');
+  assert.equal((v41.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'STOP'", 'iotV41 hanya STOP');
+  assert.equal((v41.match(/buatPerintah\(/g) || []).length, 1);
   // alur persetujuan (3C): eksekusi diblokir — satu-satunya perintah adalah STOP saat siklus RUNNING dicabut
   const dos = fs.readFileSync(path.join(SRC, 'dosingSiklus.js'), 'utf8');
   assert.equal((dos.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'STOP'", 'dosingSiklus hanya STOP');

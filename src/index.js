@@ -161,6 +161,7 @@ const device = require('./routes/device');
 const aktuatorRoutes = require('./routes/aktuator');
 const preset = require('./routes/preset');
 const kalibrasi = require('./routes/kalibrasi');
+const iotV41 = require('./routes/iotV41');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
 // Publik (landing page): agregat aman, tanpa login — rate limit GET 'view' berlaku.
@@ -198,6 +199,8 @@ app.use('/watercontrol', ...adminDemo, watercontrol);
 app.use('/dosing', preset);
 // Kalibrasi alat IoT (jadwal, riwayat, konstanta firmware) — guard di dalam modul.
 app.use('/kalibrasi', kalibrasi);
+// Kontrol & Parameter IoT 1-Penampung v4.1 (saklar, pengaturan alat, uji lab, kalibrasi 2-titik & pompa, pemulihan papan).
+app.use('/iot-v41', iotV41);
 app.use('/laporan', ...adminDemo, laporan);
 app.use('/user', ...adminDemo, user);
 // Riwayat audit — khusus admin. Guard dipasang DI SINI (bukan di dalam modul)
