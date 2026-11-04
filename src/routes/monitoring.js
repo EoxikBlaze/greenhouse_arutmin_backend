@@ -106,10 +106,14 @@ async function simpanBaris(c, data, idMeja) {
   // SATU round-trip CTE: anti-duplikat (per penampung) + simpan sensor + state katup + angkat
   // command pending lalu reset ke AUTO (kontrak Laravel dipertahankan).
   // created_at hanya presisi detik → `id DESC` memecah seri bacaan dalam detik yang sama.
+  // `IS NOT DISTINCT FROM $7` tidak bisa memakai indeks (id_meja, created_at): bila belum ada bacaan untuk penampung itu
+  // (atau id_meja NULL) seluruh tabel dipindai — terukur 11 ms di 200 rb baris, makin lambat seiring data. Bentuk
+  // eksplisit (`IS NULL` / `= $7`) memakai indeks → 0,04 ms. Fragmen konstan, bukan input pengguna.
+  const cocokMeja = idMeja == null ? 'id_meja IS NULL' : 'id_meja = $7::bigint';
   const { rows } = await c.query(`
     WITH last AS (
       SELECT id, "waterTemp", ph, tds, "airTemp", humidity
-      FROM monitorings WHERE id_meja IS NOT DISTINCT FROM $7::bigint ORDER BY created_at DESC, id DESC LIMIT 1
+      FROM monitorings WHERE ${cocokMeja} ORDER BY created_at DESC, id DESC LIMIT 1
     ), ins AS (
       INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at)
       SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric, $7::bigint, now(), now()
