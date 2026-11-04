@@ -10,7 +10,7 @@
  *  - PUT  /iot-v41/saklar              ubah 4 saklar izin tindakan + mode isi air (manual/otomatis)
  *  - PUT  /iot-v41/pengaturan          ubah volume, talang, debit, waktu kerja, persen dosing, batas aman
  *  - POST /iot-v41/ujilab              hitung & simpan hasil Uji Lab EC (ppm_per_ml) / pH (mL/pH/L)
- *  - POST /iot-v41/pemeliharaan        aktifkan/matikan mode pemeliharaan, mulai kuras, konfirmasi air diganti
+ *  - POST /iot-v41/pemeliharaan        aktifkan/matikan mode pemeliharaan (halaman Kuras sudah dihapus)
  *  - POST /iot-v41/kalibrasi-pompa     catat laju pompa (a, b, ph_up, ph_down) dari hasil takar gelas ukur
  *  - POST /iot-v41/kalibrasi-dua-titik catat kalibrasi 2 titik EC (1413 & 12880 µS/cm) / pH (4,0 & 7,0)
  *                                      atau balik ke kalibrasi sebelumnya
@@ -20,6 +20,8 @@ const express = require('express');
 const { q, one, pool } = require('../db');
 const { EKSEKUSI_DIIZINKAN } = require('../gerbangDosis');
 const aktuator = require('../aktuator');
+const saklarSvc = require('../saklar');
+const manual = require('../dosingManual');
 const { requireAuth, requireRole, demoGuard, json } = require('../auth');
 const {
   BAWAAN_V41,
@@ -74,6 +76,7 @@ async function muatKonfigV41(runner = q) {
   const talang_debit = ambil('debit_per_talang_lpm', 'talang_debit', false);
   const ph_maks_ml = ambil('ph_maks_ml', 'ph_maks_ml', true);
   const sirkulasi = hitungSirkulasi({ volume_l, talang_jumlah, talang_debit });
+  const peta_saklar = Object.fromEntries((await saklarSvc.daftar(runner)).map((r) => [r.kode, r.aktif]));
 
   return {
     volume_l,
@@ -94,10 +97,11 @@ async function muatKonfigV41(runner = q) {
     ph_maks_ml,
     batas_ml_ph_efektif: hitungBatasMlPh({ ph_maks_ml, volume_l }),
     pemeliharaan_maks_menit: ambil('pemeliharaan_maks_menit', 'pemeliharaan_maks_menit', true),
-    saklar_ab: ambil('saklar_ab', 'saklar_ab', true) ? 1 : 0,
-    saklar_ph_up: ambil('saklar_ph_up', 'saklar_ph_up', true) ? 1 : 0,
-    saklar_ph_down: ambil('saklar_ph_down', 'saklar_ph_down', true) ? 1 : 0,
-    saklar_pengenceran: ambil('saklar_pengenceran', 'saklar_pengenceran', true) ? 1 : 0,
+    // sumber kebenaran saklar = tabel saklar_aktuator (bukan konfigurasi_dosis)
+    saklar_ab: peta_saklar.nutrisi_ab ? 1 : 0,
+    saklar_ph_up: peta_saklar.ph_up ? 1 : 0,
+    saklar_ph_down: peta_saklar.ph_down ? 1 : 0,
+    saklar_pengenceran: peta_saklar.pengenceran ? 1 : 0,
     mode_isi: ambil('mode_isi_otomatis', 'mode_isi_otomatis', true) ? 'otomatis' : 'manual',
     ppm_per_ml: ambil('ppm_per_ml', 'ppm_per_ml', false),
     ph_up_ml: ambil('ph_up_ml_per_ph_l', 'ph_up_ml', false),
@@ -240,20 +244,25 @@ router.put('/saklar', ...writeGuard, async (req, res, next) => {
   const client = await pool.connect();
   try {
     const b = req.body && typeof req.body === 'object' ? req.body : {};
-    const saklar_ab = b.saklar_ab ? 1 : 0;
-    const saklar_ph_up = b.saklar_ph_up ? 1 : 0;
-    const saklar_ph_down = b.saklar_ph_down ? 1 : 0;
-    const saklar_pengenceran = b.saklar_pengenceran ? 1 : 0;
     const mode_isi = b.mode_isi === 'manual' || b.mode_isi_otomatis === false || b.mode_isi_otomatis === 0 ? 'manual' : 'otomatis';
     const modeAngka = mode_isi === 'otomatis' ? 1 : 0;
 
     await client.query('BEGIN');
     const run = (t, p) => client.query(t, p);
-    await simpanParam(run, 'konfigurasi_dosis', 'saklar_ab', saklar_ab, 'status', 'Saklar izin dosing nutrisi A + B');
-    await simpanParam(run, 'konfigurasi_dosis', 'saklar_ph_up', saklar_ph_up, 'status', 'Saklar izin koreksi pH Up');
-    await simpanParam(run, 'konfigurasi_dosis', 'saklar_ph_down', saklar_ph_down, 'status', 'Saklar izin koreksi pH Down');
-    await simpanParam(run, 'konfigurasi_dosis', 'saklar_pengenceran', saklar_pengenceran, 'status', 'Saklar izin pengenceran air');
-    await simpanParam(run, 'konfigurasi_dosis', 'mode_isi_otomatis', modeAngka, 'status', 'Mode pengisian air otomatis');
+    const uid = Number(req.user.sub) || null;
+    const sebelum = {};
+    const sesudah = {};
+    // hanya kunci yang dikirim yang diubah (body parsial tidak mematikan saklar lain)
+    const diminta = [['nutrisi_ab', b.saklar_ab], ['ph_up', b.saklar_ph_up], ['ph_down', b.saklar_ph_down], ['pengenceran', b.saklar_pengenceran]]
+      .filter(([, v]) => v !== undefined);
+    if (b.mode_isi !== undefined || b.mode_isi_otomatis !== undefined) diminta.push(['isi_air', modeAngka]);
+    for (const [kode, nilai] of diminta) {
+      const aktif = Boolean(nilai);
+      const r = await saklarSvc.ubah(kode, aktif, uid, run);
+      if (r) { sebelum[kode] = r.sebelum.aktif; sesudah[kode] = r.sesudah.aktif; }
+    }
+    if (b.mode_isi !== undefined || b.mode_isi_otomatis !== undefined) await simpanParam(run, 'konfigurasi_dosis', 'mode_isi_otomatis', modeAngka, 'status', 'Mode pengisian air otomatis');
+    req.audit = { aksi: 'config_change', tabel: 'saklar_aktuator', row_id: 'semua', before: sebelum, after: { ...sesudah, mode_isi }, meta: { dari: sebelum, ke: sesudah } };
     await client.query('COMMIT');
 
     const params = await muatKonfigV41(q);
@@ -417,39 +426,9 @@ router.post('/pemeliharaan', ...writeGuard, async (req, res, next) => {
     await client.query('BEGIN');
     const run = (t, p) => client.query(t, p);
     await client.query('INSERT INTO penampung_states (id_meja) SELECT id_meja FROM mejas ORDER BY id_meja LIMIT 1 ON CONFLICT (id_meja) DO NOTHING');
-    if (aksi === 'kuras_mulai') {
-      await client.query('UPDATE penampung_states SET mode_pemeliharaan = true, updated_at = CURRENT_TIMESTAMP');
-      await simpanParam(run, 'konfigurasi_dosis', 'mode_pemeliharaan_v41', 1, 'bool', 'Status mode pemeliharaan v4.1');
-      await client.query('COMMIT');
-      return res.json({
-        status: true,
-        pemeliharaan: true,
-        message: 'Kuras dimulai: mode pemeliharaan AKTIF, semua tindakan dijeda dan hitungan dibekukan.',
-      });
-    }
-
-    if (aksi === 'air_diganti' || aksi === 'selesai') {
-      await client.query(
-        `UPDATE penampung_states
-            SET mode_pemeliharaan = false,
-                status_lock = false,
-                lock_alasan = NULL,
-                lock_sejak = NULL,
-                kejadian_dosis_hari = 0,
-                volume_ab_hari_ml = 0,
-                volume_ph_hari_ml = 0,
-                reset_harian_pada = (now() AT TIME ZONE 'Asia/Makassar'),  -- jam WITA (kolom tanpa zona; dibandingkan dgn tanggal WITA)
-                updated_at = CURRENT_TIMESTAMP`,
-      );
-      await simpanParam(run, 'konfigurasi_dosis', 'mode_pemeliharaan_v41', 0, 'bool', 'Status mode pemeliharaan v4.1');
-      await simpanParam(run, 'konfigurasi_dosis', 'hit_ec_hari_v41', 0, 'kali', 'Hitungan dosing EC harian v4.1');
-      await simpanParam(run, 'konfigurasi_dosis', 'vol_ph_hari_v41', 0, 'mL', 'Total volume koreksi pH harian v4.1');
-      await client.query('COMMIT');
-      return res.json({
-        status: true,
-        pemeliharaan: false,
-        message: 'Air baru dikonfirmasi di server: mode pemeliharaan dimatikan, penahanan dibuka, dan hitungan harian dimulai dari nol. Alat belum diberi tahu (jalur perintah ke alat belum tersedia).',
-      });
+    if (aksi !== 'pemeliharaan') {
+      await client.query('ROLLBACK');
+      return json(res, 422, { message: 'Aksi tidak dikenal.', errors: { aksi: ['Hanya aksi pemeliharaan (aktif true/false) yang tersedia.'] } });
     }
 
     const aktif = Boolean(b.aktif);
@@ -666,6 +645,17 @@ router.post('/dosing-manual', ...writeGuard, async (req, res, next) => {
     const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const aksi = String(b.aksi || '').toLowerCase();
 
+    // Nutrisi Manual berbasis zat: {zat, volume_ml | durasi_detik}. Pagar + pencatatan di src/dosingManual.js.
+    if (b.zat !== undefined) {
+      try {
+        const r = await manual.dosingManual(b, req.user);
+        return json(res, r.status, r.body);
+      } catch (e) {
+        if (e instanceof manual.ManualDitolak) return json(res, e.status, { message: e.message, kode: e.kode, ...(e.errors ? { errors: e.errors } : {}) });
+        throw e;
+      }
+    }
+
     if (aksi === 'stop') {
       let perintah;
       try {
@@ -677,6 +667,7 @@ router.post('/dosing-manual', ...writeGuard, async (req, res, next) => {
         if (e && e.status) return json(res, e.status, { message: e.message });
         throw e;
       }
+      await manual.batalkanBerjalan();
       await q(
         `INSERT INTO kalibrasi_log (sensor, lulus, catatan, oleh_user_id, oleh_label)
          VALUES ('pulsa_peristaltik', true, $1, $2, $3)`,
@@ -701,6 +692,10 @@ router.post('/dosing-manual', ...writeGuard, async (req, res, next) => {
 
     return json(res, 422, { message: 'Aksi dosing manual tidak dikenal.', errors: { aksi: ['Pilih stop, dosing_ab, atau dosis_ph.'] } });
   } catch (e) { next(e); }
+});
+
+router.get('/dosing-manual/riwayat', async (_req, res, next) => {
+  try { res.json({ status: true, data: await manual.riwayat(), batas: await manual.batas() }); } catch (e) { next(e); }
 });
 
 router.post('/mqtt-uji', ...writeGuard, async (req, res, next) => {

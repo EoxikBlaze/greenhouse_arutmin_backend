@@ -200,6 +200,8 @@ app.use('/dosing', preset);
 app.use('/kalibrasi', kalibrasi);
 // Kontrol & Parameter IoT 1-Penampung v4.1 (saklar, pengaturan alat, uji lab, kalibrasi 2-titik & pompa, pemulihan papan).
 app.use('/iot-v41', iotV41);
+app.use('/saklar', require('./routes/saklar'));
+app.use('/uji-lab', require('./routes/ujiLab'));
 app.use('/laporan', ...adminDemo, laporan);
 app.use('/user', ...adminDemo, user);
 // Riwayat audit — khusus admin. Guard dipasang DI SINI (bukan di dalam modul)

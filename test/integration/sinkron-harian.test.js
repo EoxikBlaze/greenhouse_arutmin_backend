@@ -34,6 +34,8 @@ const get = (p) => request(base).get(p).set(bearer(petani));
 const post = (p, b, t = petani) => request(base).post(p).set(bearer(t)).send(b);
 
 before(async () => {
+  // Saklar otomasi ON: tes ini menguji pagar volume/kejadian lewat sumber 'otomasi' (default produksi = OFF)
+  await (require('../../src/db').q)('UPDATE saklar_aktuator SET aktif = true').catch(() => {});
   srv = await startServer(); base = srv.base;
   petani = craftToken({ sub: 3, username: 'petani', level: 'petani', demo: false }, { expiresIn: '30m' });
   admin = craftToken({ sub: 1, username: 'garap', level: 'admin', demo: false }, { expiresIn: '30m' });

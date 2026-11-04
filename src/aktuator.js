@@ -9,6 +9,7 @@
  */
 const { pool, q, one } = require('./db');
 const { tidakTerisi } = require('./parameter');
+const saklar = require('./saklar');
 
 /** Batas konfigurasi_dosis yang dipakai pagar per jenis perintah — wajib terisi & sah. */
 const BATAS_WAJIB = {
@@ -198,6 +199,14 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
     const estop = (await client.query("SELECT nilai FROM aktuator_state WHERE kunci = 'estop' FOR UPDATE")).rows[0]?.nilai === '1';
     if (estop && berisiko(tipe, param)) {
       throw new PerintahDitolak(423, 'E-STOP aktif — semua perintah berisiko ditolak sampai di-reset oleh admin.');
+    }
+
+    // Saklar OFF: otomasi (bukan pengguna) tidak boleh menyalakan aktuator. Dosing manual tetap boleh (override).
+    if (sumber !== 'pengguna' && berisiko(tipe, param)) {
+      const kodeSaklar = tipe === 'DOSIS' ? saklar.SAKLAR_LARUTAN[param.larutan] : tipe === 'ISI_AIR' ? 'isi_air' : null;
+      if (kodeSaklar && !(await saklar.otomasiBoleh(kodeSaklar, (t, pr) => client.query(t, pr)))) {
+        throw new PerintahDitolak(423, `Saklar ${kodeSaklar} OFF — otomasi tidak boleh menyalakannya.`);
+      }
     }
 
     if (berisiko(tipe, param)) {

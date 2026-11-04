@@ -38,6 +38,8 @@ const tutupBroker = async (x) => { await new Promise((r) => x.b.close(r)); await
 const bacaanUji = () => q("SELECT id FROM monitorings WHERE id > $1 AND tds BETWEEN 7700 AND 7799", [awalMon]);
 
 before(async () => {
+  // Saklar otomasi ON: tes ini menguji pagar volume/kejadian lewat sumber 'otomasi' (default produksi = OFF)
+  await (require('../../src/db').q)('UPDATE saklar_aktuator SET aktif = true').catch(() => {});
   const x = await bukaBroker(); broker = x.b; srv = x.s; port = x.port; url = `mqtt://127.0.0.1:${port}`;
   awalMon = Number((await one('SELECT coalesce(max(id),0) AS m FROM monitorings')).m);
   awalEvent = Number((await one('SELECT coalesce(max(id),0) AS m FROM dosing_events')).m);

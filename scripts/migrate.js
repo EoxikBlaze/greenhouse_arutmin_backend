@@ -14,6 +14,7 @@
  *  - Riwayat disimpan di tabel schema_migrations (versi, checksum, dijalankan_pada).
  *  - File yang sudah jalan lalu ISINYA DIUBAH → ditolak (buat file migrasi baru saja).
  *  - Tiap file boleh punya BEGIN/COMMIT sendiri; file tanpa transaksi dijalankan apa adanya.
+ *  - File yang memuat baris "-- DESTRUKTIF: menunggu-konfirmasi" TIDAK dijalankan kecuali memakai --izinkan-destruktif.
  */
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,7 @@ require('../src/config'); // memuat .env ke process.env
 
 const DIR = path.join(__dirname, '..', 'database', 'migrations');
 const arg = process.argv[2] || '';
+const PENANDA_DESTRUKTIF = '-- DESTRUKTIF: menunggu-konfirmasi';
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diisi di .env');
@@ -53,6 +55,11 @@ async function main() {
         if (lama !== sum) {
           throw new Error(`${f} sudah dijalankan tetapi isinya berubah. Jangan ubah migrasi lama — buat file baru.`);
         }
+        continue;
+      }
+      // Migrasi destruktif (hapus data/tabel/kolom) ditahan sampai pengguna mengonfirmasi daftar yang dihapus.
+      if (arg !== '--baseline' && sql.includes(PENANDA_DESTRUKTIF) && !process.argv.includes('--izinkan-destruktif')) {
+        console.log(`⏸  ${f} DITAHAN (destruktif, menunggu konfirmasi). Jalankan: node scripts/migrate.js --izinkan-destruktif`);
         continue;
       }
       if (arg !== '--baseline') {

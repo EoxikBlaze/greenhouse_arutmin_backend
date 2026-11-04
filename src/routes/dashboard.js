@@ -4,6 +4,7 @@ const express = require('express');
 const { q, one } = require('../db');
 const cache = require('../cache');
 const { thresholdsMap } = require('./monitoring');
+const saklar = require('../saklar');
 
 const router = express.Router();
 
@@ -74,7 +75,8 @@ router.get('/', async (_req, res, next) => {
       ambang: await thresholdsMap(),
     };
     });
-    res.json(payload);
+    // saklar tidak ikut cache 5 dtk: perubahan harus langsung terlihat (realtime)
+    res.json({ ...payload, saklar: await saklar.daftar() });
   } catch (e) { next(e); }
 });
 

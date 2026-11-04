@@ -34,6 +34,8 @@ async function buatKunci(body) {
 }
 
 before(async () => {
+  // Saklar otomasi ON: tes ini menguji pagar volume/kejadian lewat sumber 'otomasi' (default produksi = OFF)
+  await (require('../../src/db').q)('UPDATE saklar_aktuator SET aktif = true').catch(() => {});
   srv = await startServer(); base = srv.base; admin = await adminToken(base);
   meja = (await q('SELECT id_meja FROM mejas ORDER BY id_meja LIMIT 1'))[0].id_meja;
   await q("UPDATE aktuator_state SET nilai = '0' WHERE kunci = 'estop'");

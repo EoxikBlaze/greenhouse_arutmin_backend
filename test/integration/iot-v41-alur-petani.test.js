@@ -9,7 +9,7 @@
  *  Langkah 4 — Saklar & Mode (/saklar): 4 saklar tindakan + mode isi air (otomatis/manual)
  *  Langkah 5 — Tanam & Pratinjau Dosis (/tanam & /dosing): hitungPratinjauDosis 65% dari kekurangan
  *  Langkah 6 — Dosing Manual (/dosing-manual): Dosing A+B, Koreksi pH Up/Down, STOP darurat, blokir saat saklar OFF/pemeliharaan ON
- *  Langkah 7 — Kuras & Ganti Air (/kuras-air & /watercontrol): 1. Mulai kuras -> 2. Air sudah diganti (reset hitungan 0/10 & 0/5)
+ *  Langkah 7 — Kuras dihapus; toggle pemeliharaan tetap ada (dipakai halaman Kalibrasi)
  *  Langkah 8 — Peringatan, Pemulihan Papan & MQTT Diagnostik (/peringatan, /pemulihan-papan, /mqtt-diagnostik)
  */
 const { test, before, after } = require('node:test');
@@ -65,10 +65,7 @@ after(async () => {
         saklar_pengenceran: 0,
         mode_isi: 'manual',
       });
-    await request(srv.base)
-      .post('/iot-v41/pemeliharaan')
-      .set(bearer(tokAdmin))
-      .send({ aksi: 'air_diganti' });
+    await q("UPDATE penampung_states SET mode_pemeliharaan = false, status_lock = false, lock_alasan = NULL, kejadian_dosis_hari = 0, volume_ab_hari_ml = 0, volume_ph_hari_ml = 0");
   }
   if (srv) await srv.stop();
 });
@@ -266,11 +263,8 @@ test('Langkah 4 — Saklar & Mode: Toggle saklar dan Tombol [Simpan & kirim ke a
 });
 
 test('Langkah 6 — Dosing Manual: Tombol [Kirim dosing A + B], [Kirim koreksi pH], dan [STOP — matikan semua pompa]', { skip: lewati }, async () => {
-  // Reset hitungan harian dulu lewat air_diganti supaya mulai dari 0
-  await request(srv.base)
-    .post('/iot-v41/pemeliharaan')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'air_diganti' });
+  // Reset hitungan harian langsung di DB (halaman Kuras sudah dihapus) supaya mulai dari 0
+  await q("UPDATE penampung_states SET mode_pemeliharaan = false, status_lock = false, lock_alasan = NULL, kejadian_dosis_hari = 0, volume_ab_hari_ml = 0, volume_ph_hari_ml = 0");
 
   const sebelum = (await request(srv.base).get('/iot-v41/state').set(bearer(tokAdmin))).body.kondisi;
 
@@ -316,35 +310,19 @@ test('Langkah 6 — Dosing Manual: Tombol [Kirim dosing A + B], [Kirim koreksi p
 });
 
 
-test('Langkah 7 — Kuras & Ganti Air: Tombol [1. Mulai kuras] & [2. Air sudah diganti — Selesai & lanjutkan]', { skip: lewati }, async () => {
-  // 7a. Klik [1. Mulai kuras]
-  const mulai = await request(srv.base)
-    .post('/iot-v41/pemeliharaan')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'kuras_mulai' });
-  assert.equal(mulai.status, 200);
-  assert.equal(mulai.body.pemeliharaan, true);
-
-  // Saat kuras (pemeliharaan ON) dosing tetap ditolak (dikunci, 423)
-  const tolakSaatKuras = await request(srv.base)
-    .post('/iot-v41/dosing-manual')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'dosing_ab', ppm: 50 });
-  assert.equal(tolakSaatKuras.status, 423);
-
-  // 7b. Klik [2. Air sudah diganti — Selesai & lanjutkan]
-  const selesai = await request(srv.base)
-    .post('/iot-v41/pemeliharaan')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'air_diganti' });
-  assert.equal(selesai.status, 200);
-  assert.equal(selesai.body.pemeliharaan, false);
-
-  // Pastikan hitungan harian direset ke 0/10 & 0/5
-  const st = await request(srv.base).get('/iot-v41/state').set(bearer(tokAdmin));
-  assert.equal(st.body.kondisi.hit_ec, 0);
-  assert.equal(st.body.kondisi.hit_ph, 0);
-  assert.equal(st.body.params.pemeliharaan, false);
+test('Langkah 7 — Kuras dihapus: aksi kuras_mulai/air_diganti ditolak; toggle pemeliharaan (Kalibrasi) tetap jalan', { skip: lewati }, async () => {
+  for (const aksi of ['kuras_mulai', 'air_diganti', 'selesai']) {
+    const r = await request(srv.base).post('/iot-v41/pemeliharaan').set(bearer(tokAdmin)).send({ aksi });
+    assert.equal(r.status, 422, aksi);
+  }
+  const on = await request(srv.base).post('/iot-v41/pemeliharaan').set(bearer(tokAdmin)).send({ aksi: 'pemeliharaan', aktif: true });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.pemeliharaan, true);
+  const tolak = await request(srv.base).post('/iot-v41/dosing-manual').set(bearer(tokAdmin)).send({ aksi: 'dosing_ab', ppm: 50 });
+  assert.equal(tolak.status, 423);
+  const off = await request(srv.base).post('/iot-v41/pemeliharaan').set(bearer(tokAdmin)).send({ aksi: 'pemeliharaan', aktif: false });
+  assert.equal(off.status, 200);
+  assert.equal(off.body.pemeliharaan, false);
 });
 
 test('Langkah 8 — Peringatan, Pemulihan Papan & MQTT Diagnostik: Tombol [Kirim RESET], [Kirim parameter + kalibrasi], & [Kirim ke broker]', { skip: lewati }, async () => {
