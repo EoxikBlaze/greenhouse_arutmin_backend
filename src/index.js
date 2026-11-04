@@ -202,6 +202,7 @@ app.use('/kalibrasi', kalibrasi);
 app.use('/iot-v41', iotV41);
 app.use('/saklar', require('./routes/saklar'));
 app.use('/uji-lab', require('./routes/ujiLab'));
+app.use('/alert-logs', require('./routes/alertLogs'));
 app.use('/laporan', ...adminDemo, laporan);
 app.use('/user', ...adminDemo, user);
 // Riwayat audit — khusus admin. Guard dipasang DI SINI (bukan di dalam modul)

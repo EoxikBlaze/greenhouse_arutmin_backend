@@ -154,3 +154,17 @@ test('Uji Lab: spesifikasi, validasi, simpan buah/sayur, filter kategori, hapus,
   assert.equal((await request(srv.base).delete(`/uji-lab/${s.body.ids[0]}`).set(admin)).status, 200);
   assert.equal((await request(srv.base).delete(`/uji-lab/${s.body.ids[0]}`).set(admin)).status, 404);
 });
+
+test('alert-logs: daftar semua login, ack hanya admin dan tercatat', { skip: lewati }, async () => {
+  const id = Number((await q("INSERT INTO alert_logs (type, value, severity, created_at, updated_at) VALUES ('uji-ack', 'pH uji', 'warning', now(), now()) RETURNING id"))[0].id);
+  try {
+    const l = await request(srv.base).get('/alert-logs?limit=5').set(petani);
+    assert.equal(l.status, 200);
+    assert.ok(l.body.data.some((a) => Number(a.id) === id && a.acknowledged === false));
+    assert.ok(l.body.aktif >= 1);
+    assert.equal((await request(srv.base).post(`/alert-logs/${id}/ack`).set(petani)).status, 403);
+    assert.equal((await request(srv.base).post('/alert-logs/abc/ack').set(admin)).status, 404);
+    assert.equal((await request(srv.base).post(`/alert-logs/${id}/ack`).set(admin)).status, 200);
+    assert.equal((await q('SELECT acknowledged FROM alert_logs WHERE id = $1', [id]))[0].acknowledged, true);
+  } finally { await q('DELETE FROM alert_logs WHERE id = $1', [id]); }
+});
