@@ -5,6 +5,7 @@ const { q, one } = require('../db');
 const { demoGuard, requireAuth, requireRole } = require('../auth');
 const { crudRouter } = require('./_crud');
 const { idValid, notFound } = require('./_id');
+const { halaman } = require('./_halaman');
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(['admin', 'demo'])];
@@ -16,11 +17,16 @@ const guard = [requireAuth, requireRole(['admin', 'demo'])];
 // Definisi bersama (BIGINT_MAX / idValid / notFound) kini ada di ./_id.
 
 /* ── SEMAI (ada endpoint khusus — letakkan SEBELUM crud) ───────────── */
-router.get('/semai/selesai', ...guard, async (_req, res, next) => {
+router.get('/semai/selesai', ...guard, async (req, res, next) => {
   try {
-    res.json(await q(`
-      SELECT s.*, t.nama_tanaman FROM semais s LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
-      WHERE s.status = 'selesai' ORDER BY s.id_semai DESC`));
+    const { limit, offset } = halaman(req.query);
+    const [rows, total] = await Promise.all([
+      q(`SELECT s.*, t.nama_tanaman FROM semais s LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
+         WHERE s.status = 'selesai' ORDER BY s.id_semai DESC LIMIT $1 OFFSET $2`, [limit, offset]),
+      one("SELECT count(*)::int AS n FROM semais WHERE status = 'selesai'"),
+    ]);
+    res.set('X-Total-Count', String(total.n));
+    res.json(rows);
   } catch (e) { next(e); }
 });
 
@@ -45,24 +51,24 @@ router.get('/semai/batch/:id', ...guard, async (req, res, next) => {
 });
 
 router.use('/semai', ...guard, demoGuard('semai.store'), crudRouter({
-  table: 'semais', pk: 'id_semai', orderBy: 'id_semai',
+  table: 'semais', pk: 'id_semai', orderBy: 'id_semai', paginasi: true,
   columns: ['id_tanaman', 'id_siklus', 'id_meja', 'jumlah_benih', 'tgl_awal_semai', 'tgl_akhir_semai', 'status', 'keterangan', 'benih_berhasil', 'benih_gagal'],
 }));
 
 router.use('/peremajaan', ...guard, demoGuard('peremajaan.store'), crudRouter({
-  table: 'peremajaans', pk: 'id_peremajaan', orderBy: 'id_peremajaan',
+  table: 'peremajaans', pk: 'id_peremajaan', orderBy: 'id_peremajaan', paginasi: true,
   columns: ['id_semai', 'id_meja', 'jumlah_masuk', 'benih_berhasil', 'benih_gagal', 'tgl_awal_peremajaan', 'tgl_akhir_peremajaan', 'keterangan'],
   readColumns: ['status'], // ditulis hanya oleh POST /tanam/:tipe/:id/selesai
 }));
 
 router.use('/pendewasaan', ...guard, demoGuard('pendewasaan.store'), crudRouter({
-  table: 'pendewasaans', pk: 'id_pendewasaan', orderBy: 'id_pendewasaan',
+  table: 'pendewasaans', pk: 'id_pendewasaan', orderBy: 'id_pendewasaan', paginasi: true,
   columns: ['id_peremajaan', 'id_meja', 'jumlah_masuk', 'tanaman_berhasil', 'tanaman_gagal', 'tgl_awal_pendewasaan', 'tgl_akhir_pendewasaan', 'keterangan'],
   readColumns: ['status'], // ditulis hanya oleh POST /tanam/:tipe/:id/selesai
 }));
 
 router.use('/panen', ...guard, demoGuard('panen.store'), crudRouter({
-  table: 'panens', pk: 'id_panen', orderBy: 'id_panen',
+  table: 'panens', pk: 'id_panen', orderBy: 'id_panen', paginasi: true,
   columns: ['id_pendewasaan', 'panen_berhasil', 'panen_gagal', 'tgl_panen', 'keterangan'],
 }));
 

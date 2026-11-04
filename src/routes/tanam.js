@@ -4,6 +4,7 @@ const express = require('express');
 const { pool, q, one } = require('../db');
 const { demoGuard, demoExpiry, json } = require('../auth');
 const { idValid, notFound } = require('./_id');
+const { halaman } = require('./_halaman');
 const { fkErrors, FK_TARGETS } = require('./_crud');
 const { isDateString } = require('./_validate');
 const { sinkronDiam } = require('../presetDosing');
@@ -83,22 +84,24 @@ const TAHAP = {
 const DURASI = (tipe) => `(SELECT k.waktu_siklus FROM sikluses k
    WHERE k.id_tanaman = t.id_tanaman AND lower(k.nama_siklus) = '${tipe}' ORDER BY k.id_siklus LIMIT 1)`;
 
-router.get('/', async (_req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
+    // tiap tahap diambil limit+1 baris → tahu ada sisa tanpa count(*); bawaan 200 per tahap
+    const { limit } = halaman(req.query);
     const [semai, peremajaan, pendewasaan] = await Promise.all([
       q(`SELECT s.id_semai AS id, 'semai' AS tipe, s.status, s.tgl_awal_semai AS mulai,
                 t.nama_tanaman AS varietas, m.meja, s.id_meja, s.jumlah_benih, s.jumlah_benih AS jumlah,
                 ${DURASI('semai')} AS durasi_hari
          FROM semais s LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
          LEFT JOIN mejas m ON m.id_meja = s.id_meja
-         WHERE s.status = 'proses' ORDER BY s.id_semai DESC`),
+         WHERE s.status = 'proses' ORDER BY s.id_semai DESC LIMIT $1`, [limit + 1]),
       q(`SELECT p.id_peremajaan AS id, 'peremajaan' AS tipe, p.status, p.tgl_awal_peremajaan AS mulai,
                 t.nama_tanaman AS varietas, m.meja, p.id_meja, p.jumlah_masuk, p.jumlah_masuk AS jumlah,
                 ${DURASI('peremajaan')} AS durasi_hari
          FROM peremajaans p LEFT JOIN semais s ON s.id_semai = p.id_semai
          LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
          LEFT JOIN mejas m ON m.id_meja = p.id_meja
-         WHERE p.status = 'proses' ORDER BY p.id_peremajaan DESC`),
+         WHERE p.status = 'proses' ORDER BY p.id_peremajaan DESC LIMIT $1`, [limit + 1]),
       q(`SELECT d.id_pendewasaan AS id, 'pendewasaan' AS tipe, d.status, d.tgl_awal_pendewasaan AS mulai,
                 t.nama_tanaman AS varietas, m.meja, d.id_meja, d.jumlah_masuk, d.jumlah_masuk AS jumlah,
                 ${DURASI('pendewasaan')} AS durasi_hari
@@ -106,15 +109,16 @@ router.get('/', async (_req, res, next) => {
          LEFT JOIN semais s ON s.id_semai = p.id_semai
          LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
          LEFT JOIN mejas m ON m.id_meja = d.id_meja
-         WHERE d.status = 'proses' ORDER BY d.id_pendewasaan DESC`),
+         WHERE d.status = 'proses' ORDER BY d.id_pendewasaan DESC LIMIT $1`, [limit + 1]),
     ]);
+    const terpotong = [semai, peremajaan, pendewasaan].some((r) => r.length > limit);
     const hariIni = await one('SELECT current_date AS d');
-    const list = [...semai, ...peremajaan, ...pendewasaan].map((r) => {
+    const list = [semai, peremajaan, pendewasaan].flatMap((r) => r.slice(0, limit)).map((r) => {
       const hari = Math.max(1, Math.round((new Date(hariIni.d) - new Date(r.mulai)) / 86_400_000) + 1);
       const durasi = r.durasi_hari == null ? null : Number(r.durasi_hari);
       return { ...r, durasi_hari: durasi, hari_ke: hari, siap: durasi != null && hari >= durasi, tahap_berikut: TAHAP[r.tipe].lanjut };
     });
-    res.json({ page: 'tanam', list });
+    res.json({ page: 'tanam', list, terpotong });
   } catch (e) { next(e); }
 });
 

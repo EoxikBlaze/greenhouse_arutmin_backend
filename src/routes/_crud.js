@@ -14,6 +14,7 @@ const { q, one } = require('../db');
 const { demoExpiry } = require('../auth');
 const { idValid, notFound } = require('./_id');
 const { validateBody } = require('./_validate');
+const { halaman } = require('./_halaman');
 
 /**
  * Peta kolom FK → tabel rujukannya (kunci: nama kolom; dipakai bersama oleh
@@ -71,7 +72,8 @@ async function fkErrors(cols, body) {
 /** Balasan 422 seragam untuk hasil cek FK. */
 const fkReject = (res, errors) => res.status(422).json({ message: 'Data tidak valid.', errors });
 
-function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins }) {
+// paginasi: true → GET / dibatasi ?limit/?offset (bawaan 200) + header X-Total-Count; untuk tabel yang bisa tumbuh besar
+function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins, paginasi = false }) {
   const router = express.Router();
   // V5 — kolom tulis yang merupakan FK (otomatis dari whitelist `columns` ∩ FK_TARGETS):
   // tanaman.id_meja · siklus.id_tanaman · semai.{id_tanaman,id_siklus,id_meja} ·
@@ -139,7 +141,14 @@ function crudRouter({ table, pk, columns, readColumns, name, orderBy, withJoins 
 
   router.get('/', async (req, res, next) => {
     try {
-      res.json(await q(`${select} ORDER BY ${orderBy || pk} DESC`));
+      if (!paginasi) return res.json(await q(`${select} ORDER BY ${orderBy || pk} DESC`));
+      const { limit, offset } = halaman(req.query);
+      const [rows, total] = await Promise.all([
+        q(`${select} ORDER BY ${orderBy || pk} DESC LIMIT $1 OFFSET $2`, [limit, offset]),
+        one(`SELECT count(*)::int AS n FROM ${table}`),
+      ]);
+      res.set('X-Total-Count', String(total.n));
+      res.json(rows);
     } catch (e) { next(e); }
   });
 
