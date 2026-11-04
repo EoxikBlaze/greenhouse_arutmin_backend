@@ -58,7 +58,7 @@ test('tautan: petani tidak ditawari halaman admin, admin dapat semuanya', () => 
   const petani = tautanUntuk('semai', 'petani');
   assert.deepEqual(petani.map((t) => t.to), ['/tanam']);
   const admin = tautanUntuk('semai', 'admin');
-  assert.deepEqual(admin.map((t) => t.to), ['/tanam', '/semai', '/tanaman', '/meja']);
+  assert.deepEqual(admin.map((t) => t.to), ['/tanam', '/semai', '/tanaman']);
   assert.deepEqual(tautanUntuk('semai', 'demo').map((t) => t.to), admin.map((t) => t.to));
   assert.deepEqual(tautanUntuk('semai', '').map((t) => t.to), ['/tanam']);
 });
@@ -75,4 +75,17 @@ test('tautan: hanya jalur internal tetap yang sah (tanpa host, tanpa query)', ()
     for (const k of daftar) assert.ok(HALAMAN[k], `${topik} → ${k} tidak ada di HALAMAN`);
     for (const t of tautanUntuk(topik, 'admin')) assert.ok(PATH_SAH.has(t.to));
   }
+});
+
+test('topik baru: logbook, tim, saklar, nutrisi manual, uji lab terdeteksi; daftar tim memuat 7 anggota', () => {
+  const { deteksiPanduan, TEKS } = require('../src/aiPanduan');
+  assert.equal(deteksiPanduan('tolong tampilkan logbook'), 'logbook');
+  assert.equal(deteksiPanduan('siapa saja anggota tim'), 'tim');
+  assert.equal(deteksiPanduan('bio data anggota'), 'tim');
+  assert.equal(deteksiPanduan('cara pakai saklar'), 'saklar');
+  assert.equal(deteksiPanduan('gimana nutrisi manual'), 'nutrisi_manual');
+  assert.equal(deteksiPanduan('catat hasil uji lab'), 'uji_lab');
+  assert.equal(deteksiPanduan('cara menyemai melon'), 'semai');
+  assert.equal(TEKS.tim.split('\n').filter((l) => l.startsWith('•')).length, 7);
+  assert.match(TEKS.semai, /Persiapan/);
 });

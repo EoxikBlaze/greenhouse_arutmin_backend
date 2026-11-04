@@ -27,6 +27,7 @@ const diag = require('../aiDiagnosa');
 const panduan = require('../aiPanduan');
 const diagnosaEkstrak = diag.ekstrakTabelMarkdown;
 
+const { logbookKebun } = require('../aiLogbook');
 const router = express.Router();
 
 const AI_TIMEOUT_MS = 30_000;          // kontrak: timeout Ollama 30 detik
@@ -824,6 +825,7 @@ router.post('/chat', async (req, res, next) => {
     const kunciPanduan = panduan.deteksiPanduan(norm);
     if (kunciPanduan) {
       const pd = panduan.jawabPanduan(kunciPanduan);
+      if (kunciPanduan === 'logbook') pd.jawaban = await logbookKebun();
       return res.json(wajah({ jawaban: pd.jawaban, tabel: pd.tabel, tautan: panduan.tautanUntuk(kunciPanduan, peranPengguna(req)), sumber: 'panduan' }));
     }
     // "beri saran": ringkasan dari data nyata (diagnosa), bukan tebakan model

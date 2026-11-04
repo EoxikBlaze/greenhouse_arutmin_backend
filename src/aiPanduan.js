@@ -9,7 +9,7 @@
  * PERAWATAN: ubah teks di bawah bila alur aplikasi berubah. Tanggal status ada di STATUS_DIPERBARUI.
  */
 
-const STATUS_DIPERBARUI = '2 Nov 2026';
+const STATUS_DIPERBARUI = '4 Nov 2026';
 
 const TEKS = {
   alur: [
@@ -22,13 +22,15 @@ const TEKS = {
   ].join('\n'),
 
   semai: [
-    'Cara menyemai (memulai batch baru) di aplikasi:',
-    '1. Masuk sebagai admin, buka menu Tanam (Kebun Saya).',
+    'Langkah menyemai melon (memulai batch baru):',
+    'Persiapan: media semai dan benih siap, penampung berisi air, sensor mengirim data (cek Dashboard). Target nutrisi tanaman diatur di Pengaturan Nutrisi bila ingin naik harian.',
+    '1. Masuk sebagai admin, buka menu Kebun Saya.',
     '2. Tekan "Mulai Semai Baru" (juga ada di Dashboard).',
-    '3. Pilih tanaman, pilih meja tanam, atur tanggal mulai semai, isi jumlah benih, dan boleh menambah keterangan singkat.',
-    '4. Simpan. Batch muncul di daftar tanam dengan tahap Semai dan hitungan "Hari ke-X dari Y".',
+    '3. Pilih tanaman, atur tanggal mulai semai, isi jumlah benih, dan boleh menambah keterangan singkat.',
+    '4. Simpan. Batch muncul di daftar dengan tahap Semai dan hitungan "Hari ke-X dari Y".',
+    '5. Selama semai, pantau pH dan nutrisi di Dashboard; peringatan muncul di menu Peringatan.',
+    '6. Saat umurnya cukup, batch bertanda "Siap pindah"; lanjut ke tahap Peremajaan (tanya "cara pindah tahap").',
     'Catatan: saat ini hanya admin yang bisa memulai semai. Petani memantau batch dan target nutrisi di Kebun Saya. Kalau petani perlu memulai semai sendiri, itu keputusan pemilik.',
-    'Siapkan juga: meja kosong untuk batch itu, dan target nutrisi tanaman (halaman Jenis Tanaman) bila ingin target naik harian.',
   ].join('\n'),
 
   pindah_tahap: [
@@ -76,6 +78,43 @@ const TEKS = {
     'Selain itu, sejumlah parameter keselamatan masih kosong dan perlu angka yang divalidasi pemilik. Saya tidak boleh mengarang angkanya.',
   ].join('\n'),
 
+  saklar: [
+    'Cara memakai Saklar:',
+    '1. Admin buka menu Saklar. Tiap aktuator (Nutrisi A+B, pH Up, pH Down, Pengenceran, Isi air) punya tombol ON/OFF.',
+    '2. OFF = otomasi (preset, jadwal) tidak boleh menyalakan aktuator itu. Nutrisi Manual tetap boleh (override manual).',
+    '3. Setiap perubahan tercatat di Catatan Aktivitas (siapa, kapan, dari/ke) dan tampil di Dashboard.',
+  ].join('\n'),
+
+  nutrisi_manual: [
+    'Cara memakai Nutrisi Manual:',
+    '1. Admin buka menu Nutrisi Manual, pilih zat (Nutrisi A, Nutrisi B, pH Up, pH Down).',
+    '2. Isi volume (mL) atau durasi (detik), lalu tekan Dosing.',
+    '3. Server memeriksa batas per sekali dosing, jeda minimum, jatah harian, LOCK, dan E-STOP.',
+    '4. Saat ini pompa dari aplikasi masih DIKUNCI: permintaan yang lolos dicatat "gagal" dan tidak ada pompa menyala. Tambahkan nutrisi secara manual di lapangan.',
+  ].join('\n'),
+
+  uji_lab: [
+    'Cara mencatat Uji Lab hasil panen:',
+    '1. Buka menu Data, tab Uji Lab.',
+    '2. Pilih Buah (bawaan untuk melon) atau Sayur.',
+    '3. Isi parameter yang diukur (pH, EC/PPM, brix, ukuran, bobot) dan tanggal, lalu Simpan hasil.',
+    '4. Riwayat dan grafik per parameter ada di halaman yang sama.',
+  ].join('\n'),
+
+  logbook: 'Logbook kebun: ringkasan kegiatan 7 hari terakhir diambil dari data aplikasi.', // isi sebenarnya dibuat di routes/ai.js (aiLogbook)
+
+  tim: [
+    'Tim Vertonik Smart Farm (KKN Arutmin Asik 2026, Politeknik Negeri Tanah Laut, TRKJ):',
+    '• Rivi Ramdani — Project Manager',
+    '• Nova Atika Angelia — Finance',
+    '• Putri Nadilatu Zahra — Secretary',
+    '• Siti Azizahtusholihah — Creative & Public Relations',
+    '• Muhammad Rizki Maulana — Backend Engineering',
+    '• Muhammad Zainal Haqi — IoT Engineer',
+    '• Eka Ridhoni August Firmansyah — Web & Application Developer',
+    'Data lain (NIM, kontak) tidak disimpan di aplikasi, jadi tidak bisa saya jawab.',
+  ].join('\n'),
+
   fase: [
     `Posisi pengembangan (per ${STATUS_DIPERBARUI}):`,
     '• Fase 3A–3D selesai dan sudah di GitHub: dasar data siklus budidaya, layanan, alur persetujuan dosing, dan audit keamanan API.',
@@ -89,6 +128,11 @@ const TEKS = {
 
 /** Pola pada teks yang SUDAH dinormalisasi (huruf kecil, tanpa diakritik). Urutan = prioritas. */
 const POLA = [
+  ['logbook', /\blog ?book\b|catatan kegiatan|riwayat kegiatan|kegiatan (?:terakhir|minggu ini|hari ini|kemarin)/],
+  ['tim', /\b(?:anggota|biodata|bio data|profil tim|susunan tim)\b|\bsiapa\b.{0,20}\b(?:tim|anggota|pembuat|pengembang)\b/],
+  ['saklar', /\bsaklar\b/],
+  ['nutrisi_manual', /\bnutrisi manual\b|\bdosing manual\b|\bmanual dosing\b/],
+  ['uji_lab', /\buji lab\b|\bhasil lab\b|\bbrix\b/],
   ['fase', /\bfase\b|sudah sampai (?:mana|fase)|sampai (?:mana|fase)|status (?:proyek|pengembangan)|progres (?:proyek|pengembangan)/],
   ['keputusan', /\bkeputusan\b|belum diputuskan|menunggu (?:pemilik|keputusan)/],
   ['dosing', /\b(?:dosing|dosis|pompa nutrisi)\b.{0,20}\b(?:otomatis|aktif|jalan|menyala)\b|\bnutrisi otomatis\b|kenapa (?:dosing|pompa)/],
@@ -115,22 +159,28 @@ const HALAMAN = {
   pendewasaan: { to: '/pendewasaan', label: 'Pendewasaan', izin: ADMIN },
   panen: { to: '/panen', label: 'Panen', izin: ADMIN },
   tanaman: { to: '/tanaman', label: 'Jenis Tanaman', izin: ADMIN },
-  meja: { to: '/meja', label: 'Meja Tanaman', izin: ADMIN },
   ambang: { to: '/ambang', label: 'Ambang Sensor', izin: ADMIN },
   kalibrasi: { to: '/kalibrasi', label: 'Kalibrasi', izin: ADMIN },
   dosing: { to: '/dosing', label: 'Dosing', izin: ADMIN },
-  saklar: { to: '/saklar', label: 'Saklar & Mode', izin: ADMIN },
+  saklar: { to: '/saklar', label: 'Saklar', izin: ADMIN },
+  nutrisiManual: { to: '/dosing-manual', label: 'Nutrisi Manual', izin: ADMIN },
+  data: { to: '/data', label: 'Data', izin: ADMIN },
   pengaturanAlat: { to: '/pengaturan-alat', label: 'Pengaturan Alat', izin: ADMIN },
   mqtt: { to: '/mqtt-diagnostik', label: 'Diagnostik MQTT', izin: ADMIN },
 };
 
 const TAUTAN_TOPIK = {
   alur: ['dashboard', 'tanam', 'sensor', 'peringatan'],
-  semai: ['tanam', 'semai', 'tanaman', 'meja'],
+  semai: ['tanam', 'semai', 'tanaman'],
   pindah_tahap: ['tanam', 'semai', 'peremajaan', 'pendewasaan'],
   panen: ['tanam', 'panen'],
   alat_baru: ['sensor', 'ambang', 'kalibrasi', 'pengaturanAlat', 'mqtt'],
   dosing: ['dosing', 'saklar', 'peringatan'],
+  saklar: ['saklar'],
+  nutrisi_manual: ['nutrisiManual', 'saklar'],
+  uji_lab: ['data'],
+  logbook: [],
+  tim: [],
   keputusan: [],
   fase: [],
   // jalur data langsung (deteksiNiat di aiDiagnosa.js)

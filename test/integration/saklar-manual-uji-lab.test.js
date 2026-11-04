@@ -168,3 +168,15 @@ test('alert-logs: daftar semua login, ack hanya admin dan tercatat', { skip: lew
     assert.equal((await q('SELECT acknowledged FROM alert_logs WHERE id = $1', [id]))[0].acknowledged, true);
   } finally { await q('DELETE FROM alert_logs WHERE id = $1', [id]); }
 });
+
+test('Asisten AI: logbook dari data aplikasi, biodata tim tetap, tanpa LLM', { skip: lewati }, async () => {
+  await q("INSERT INTO uji_lab (kategori, parameter, nilai, satuan) VALUES ('buah', 'brix', 11.5, '°Brix')");
+  const lb = await request(srv.base).post('/api/ai/chat').set(admin).send({ pesan: 'tampilkan logbook kebun' });
+  assert.equal(lb.status, 200);
+  assert.equal(lb.body.sumber, 'panduan');
+  assert.match(lb.body.jawaban, /Logbook kebun 7 hari terakhir/);
+  assert.match(lb.body.jawaban, /Uji lab buah: brix = 11\.5/);
+  const tim = await request(srv.base).post('/api/ai/chat').set(admin).send({ pesan: 'siapa saja anggota tim?' });
+  assert.equal(tim.body.sumber, 'panduan');
+  assert.match(tim.body.jawaban, /Muhammad Rizki Maulana — Backend Engineering/);
+});

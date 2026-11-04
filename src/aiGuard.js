@@ -153,6 +153,8 @@ const KATA_TOPIK = [
   'nutrient', 'water', 'stage', 'harvest', 'humidity', 'temperature', 'plant', 'hydroponic', 'hydroponics',
   // panduan aplikasi (aiPanduan.js)
   'fase', 'keputusan', 'aplikasi', 'alur', 'panduan', 'mqtt', 'menyemai', 'penyemaian', 'menanam', 'memanen',
+  // logbook, biodata tim, saklar, nutrisi manual, uji lab
+  'logbook', 'anggota', 'biodata', 'saklar', 'brix',
 ];
 // Kata umum ("cek", "status", "kondisi", "saran", "bantuan", "hari ini", …) TIDAK lagi cukup sendirian:
 // uji tembus 23 Okt 2026 — "Berapa harga bitcoin hari ini?", "Cek kondisi politik" lolos ke LLM.
