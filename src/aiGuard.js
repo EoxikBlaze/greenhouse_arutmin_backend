@@ -214,18 +214,20 @@ function paragrafLuarTopik(teks) {
     return kata.length >= 15 && !kata.some((k) => DOMAIN_KUAT.has(k));
   });
 }
-const SAPAAN = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam|\w+)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|tolong|bantu|help|bisa bantu(?:\s+saya)?|mau tanya|tanya dong|siapa kamu|kamu siapa|apa (?:itu|yang bisa) .*)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min))?[\s.!?]*$/;
+const SAPAAN = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam|\w+)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|apa kabar|gimana kabar|tolong|bantu|help|bisa bantu(?:\s+saya)?|mau tanya|tanya dong|siapa kamu|kamu siapa|apa (?:itu|yang bisa) .*)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min|kebun|semua|apa kabar|gimana kabar))*[\s,!?]*$/;
 
 // salam/terima kasih murni — dijawab tetap tanpa LLM (model kecil membalas salam tanpa kata domain)
-const SALAM = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|siapa kamu|kamu siapa)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min))?[\s.!?]*$/;
+const SALAM = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|apa kabar|gimana kabar|siapa kamu|kamu siapa)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min|kebun|semua|apa kabar|gimana kabar))*[\s,!?]*$/;
 function apakahSalam(pesan) {
-  return SALAM.test(normalisasi(pesan));
+  const bersih = normalisasi(pesan).replace(/[\s,!?]+/g, ' ').trim();
+  return SALAM.test(bersih);
 }
 
 function dalamTopik(pesan, adaRiwayat) {
   const s = normalisasi(pesan);
   if (LUAR_TOPIK.test(s)) return false;
-  if (SAPAAN.test(s) || FRASA_TOPIK.test(s)) return true;
+  const bersih = s.replace(/[\s,!?]+/g, ' ').trim();
+  if (SAPAAN.test(bersih) || FRASA_TOPIK.test(s)) return true;
   const kata = new Set(s.split(/[^a-z0-9]+/).filter(Boolean));
   for (const k of KATA_TOPIK) {
     if (k.includes(' ') ? s.includes(k) : kata.has(k)) return true;
