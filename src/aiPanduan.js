@@ -102,23 +102,23 @@ const TEKS = {
   ].join('\n'),
 
   input_data: [
-    'Urutan lengkap cara input data di aplikasi GARAP dari awal:',
-    '1. Input Jenis Tanaman & Siklus: Masuk sebagai Superadmin (garap), buka menu Jenis Tanaman (/tanaman) untuk menambah tanaman baru, lalu atur lama hari tiap tahap (Semai, Peremajaan, Pendewasaan).',
-    '2. Input Meja & Penampung: Buka menu Pengaturan Alat atau Master Meja (/meja) untuk mendaftarkan nomor meja/penampung yang terhubung ke sensor.',
-    '3. Input Ambang Sensor & Target Nutrisi: Buka menu Ambang Sensor (/ambang) untuk mengatur batas aman minimum-maksimum pH, TDS, serta suhu, dan buka menu Dosing (/dosing) untuk mengisi preset target nutrisi per tahap.',
-    '4. Input Batch Tanam Baru (Mulai Menanam): Buka menu Kebun Saya (/tanam), klik tombol "Mulai Semai Baru", pilih tanaman, tanggal mulai, dan jumlah benih, lalu klik Simpan.',
-    '5. Input Pindah Tahap & Panen: Saat umur tahap terpenuhi, klik pindah tahap dari Semai ke Peremajaan (/peremajaan), lanjut ke Pendewasaan (/pendewasaan), hingga catat hasil di menu Panen (/panen) dan Uji Lab (/data).',
+    'Urutan lengkap cara input data di aplikasi GARAP dari awal untuk petani & pengelola:',
+    '1. Input Jenis Tanaman & Siklus: Masuk ke menu Jenis Tanaman untuk mendaftarkan varietas melon, lalu atur lama hari tiap tahap (Semai, Peremajaan, Pendewasaan).',
+    '2. Input Meja & Penampung: Buka menu Pengaturan Alat / Master Meja untuk mendaftarkan nomor meja hidroponik dan tandon nutrisi yang terhubung ke sensor.',
+    '3. Input Ambang Sensor & Target Nutrisi: Buka menu Ambang Sensor untuk mengatur batas aman pH (5,8–6,5), PPM nutrisi, dan suhu air, serta buka menu Dosing untuk mengisi target nutrisi per tahap.',
+    '4. Input Batch Tanam Baru (Mulai Menanam): Buka menu Kebun Saya (ikon tanaman di navigasi bawah), klik tombol "Mulai Semai Baru", pilih tanaman, tanggal semai, dan jumlah benih, lalu klik Simpan.',
+    '5. Input Pindah Tahap & Panen: Saat umur melon bertambah dan muncul tanda "Siap Pindah", klik tombol pindah tahap (dari Semai ke Peremajaan, lalu ke Pendewasaan), dan catat hasil panen di menu Panen serta Uji Lab.',
   ].join('\n'),
 
   fitur: [
     'Daftar lengkap seluruh fitur Website & Aplikasi GARAP (Vertonik Smart Farm):',
-    '1. Dashboard (/dashboard): Ringkasan kondisi kebun, bacaan sensor terakhir, status koneksi alat, dan pintasan cepat.',
-    '2. Telemetri & Sensor (/sensor-realtime): Pantauan langsung pH, nutrisi TDS/EC, suhu air, suhu udara, dan kelembapan per meja.',
-    '3. Kebun Saya & Tahap Tanam (/tanam, /semai, /peremajaan, /pendewasaan, /panen): Mengelola siklus hidup tanaman dari semai hingga panen.',
-    '4. Dosing & Naik Harian (/dosing): Mengatur preset target nutrisi per tahap, kenaikan target harian otomatis, dan persetujuan usulan dosis.',
-    '5. Saklar & Nutrisi Manual (/saklar, /dosing-manual): Mengatur izin aktuator ON/OFF dan pencatatan suntik nutrisi manual.',
-    '6. Kalibrasi & Ambang Sensor (/kalibrasi, /ambang): Menyesuaikan akurasi sensor dengan cairan standar serta batas peringatan.',
-    '7. Peringatan, Data Uji Lab, CCTV & Asisten AI (/peringatan, /data, /cctv, /asisten-ai): Deteksi masalah otomatis, pencatatan brix/bobot panen, pantauan kamera, dan tanya-jawab cerdas dengan AI lokal Qwen.',
+    '1. Dashboard / Beranda Utama: Ringkasan kondisi kebun, bacaan sensor terakhir, status tandon air, dan pintasan cepat.',
+    '2. Telemetri & Sensor: Grafik pantauan langsung pH air, nutrisi TDS/EC, suhu air tandon, serta suhu & kelembaban udara greenhouse.',
+    '3. Kebun Saya & Tahap Tanam: Mengelola siklus hidup tanaman melon dari semai, peremajaan, pendewasaan, hingga panen.',
+    '4. Dosing & Naik Harian: Mengatur preset target nutrisi per tahap, kenaikan target harian otomatis, dan rekomendasi pupuk AB Mix.',
+    '5. Saklar & Nutrisi Manual: Mengatur izin pompa ON/OFF dan pencatatan suntik nutrisi manual.',
+    '6. Kalibrasi & Ambang Sensor: Menyesuaikan akurasi sensor dengan cairan standar serta batas peringatan bahaya.',
+    '7. Peringatan, Data Uji Lab, CCTV & Asisten AI: Deteksi masalah otomatis, pencatatan brix (rasa manis), pantauan kamera kebun, dan konsultasi cerdas dengan AI lokal Qwen.',
   ].join('\n'),
 
   logbook: 'Logbook kebun: ringkasan kegiatan 7 hari terakhir diambil dari data aplikasi.', // isi sebenarnya dibuat di routes/ai.js (aiLogbook)
@@ -238,10 +238,112 @@ function deteksiPanduan(pesanTernormalisasi) {
   return null;
 }
 
+/* ── TANGKAPAN LAYAR / SCREENSHOT RESMI GARAP ──────────────────────────────
+ * Menyertakan gambar nyata dan alasan petani diarahkan ke layar tersebut agar
+ * orang awam/petani tidak bingung dan tahu persis ke mana harus melangkah. */
+const GAMBAR = {
+  alur: [
+    {
+      url: '/panduan/beranda.png',
+      judul: '1. Layar Beranda Utama (Dashboard)',
+      kenapa: 'Petani diarahkan ke sini untuk melihat status greenhouse hari ini secara sekilas (kondisi tandon, sensor pH/TDS, dan peringatan penting).',
+    },
+    {
+      url: '/panduan/tanam.png',
+      judul: '2. Layar Kebun Saya & Tahap Tanam',
+      kenapa: 'Petani diarahkan ke sini untuk melihat umur tanaman melon (hari ke-X), target nutrisi harian, dan tanda siap pindah tahap.',
+    },
+    {
+      url: '/panduan/kontrol.png',
+      judul: '3. Layar Kontrol Air & Saklar Pompa',
+      kenapa: 'Petani diarahkan ke sini untuk memeriksa saklar pompa pengisian air tandon dan sirkulasi nutrisi.',
+    },
+  ],
+  input_data: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Langkah Input: Formulir Mulai Tanam & Pindah Tahap',
+      kenapa: 'Petani membuka menu Kebun Saya untuk mendaftarkan benih melon baru dan mencatat bibit yang tumbuh berhasil.',
+    },
+    {
+      url: '/panduan/web-dashboard.png',
+      judul: 'Pusat Manajemen Kebun (Dashboard Web)',
+      kenapa: 'Admin mendaftarkan jenis tanaman melon, meja hidroponik, dan batas ambang sensor.',
+    },
+    {
+      url: '/panduan/dosing.png',
+      judul: 'Pengaturan Target Nutrisi & Kenaikan Harian',
+      kenapa: 'Petani mengatur target kenaikan PPM nutrisi harian agar pupuk AB Mix bertambah stabil sesuai umur tanaman.',
+    },
+  ],
+  fitur: [
+    {
+      url: '/panduan/beranda.png',
+      judul: 'Menu Beranda (Ringkasan Kebun)',
+      kenapa: 'Pusat pantauan cepat harian untuk petani dan pengelola.',
+    },
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Menu Kebun Saya (Tahap Tanam)',
+      kenapa: 'Memantau perkembangan melon dari semai, peremajaan, pendewasaan, hingga panen.',
+    },
+    {
+      url: '/panduan/sensor.png',
+      judul: 'Menu Sensor & Telemetri Realtime',
+      kenapa: 'Melihat grafik pergerakan sensor pH, TDS, dan suhu air secara langsung.',
+    },
+    {
+      url: '/panduan/kontrol.png',
+      judul: 'Menu Kontrol Air & Saklar',
+      kenapa: 'Melihat status pompa tandon dan aktuator solenoid valve.',
+    },
+    {
+      url: '/panduan/ai.png',
+      judul: 'Asisten AI GARAP',
+      kenapa: 'Konsultasi cerdas kapan saja untuk diagnosa masalah daun atau dosis nutrisi.',
+    },
+  ],
+  semai: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Menu Kebun Saya — Mulai Semai Baru',
+      kenapa: 'Petani diarahkan ke tombol "Mulai Semai Baru" di menu Kebun Saya untuk mendaftarkan benih melon yang disemai.',
+    },
+  ],
+  pindah_tahap: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Menu Kebun Saya — Pindah Tahap Tanam',
+      kenapa: 'Ketika umur tanaman cukup dan muncul label "Siap pindah", petani menekan tombol untuk memindahkan melon ke meja peremajaan.',
+    },
+  ],
+  panen: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Menu Kebun Saya — Pencatatan Panen',
+      kenapa: 'Petani mencatat jumlah buah melon yang dipanen beserta hasil timbangan bobot dan rasa manis (brix).',
+    },
+  ],
+  dosing: [
+    {
+      url: '/panduan/dosing.png',
+      judul: 'Menu Pengaturan Target Nutrisi & Dosing',
+      kenapa: 'Petani diarahkan ke sini untuk melihat target PPM nutrisi melon dan rekomendasi penambahan AB Mix.',
+    },
+  ],
+  saklar: [
+    {
+      url: '/panduan/kontrol.png',
+      judul: 'Menu Kontrol Air & Saklar Aktuator',
+      kenapa: 'Petani memeriksa apakah pompa sirkulasi dan katup nutrisi dalam status aman (ON/OFF).',
+    },
+  ],
+};
+
 function jawabPanduan(kunci) {
   const jawaban = TEKS[kunci];
   if (!jawaban) return null;
-  return { jawaban, tabel: [], status: undefined };
+  return { jawaban, tabel: [], status: undefined, gambar: GAMBAR[kunci] || [] };
 }
 
 /** Saran umum ("apa saran/rekomendasinya", "sebaiknya bagaimana", "langkah selanjutnya") → diarahkan ke diagnosa data nyata. */
@@ -249,4 +351,4 @@ function apakahMintaSaran(pesanTernormalisasi) {
   return /\b(?:saran|masukan|rekomendasi|langkah selanjutnya|langkah berikutnya)\b|\bapa (?:yang )?(?:harus|sebaiknya|perlu) (?:saya |aku |kami )?(?:lakukan|kerjakan)\b/.test(String(pesanTernormalisasi || ''));
 }
 
-module.exports = { deteksiPanduan, jawabPanduan, apakahMintaSaran, tautanUntuk, PATH_SAH, HALAMAN, TAUTAN_TOPIK, STATUS_DIPERBARUI, TEKS };
+module.exports = { deteksiPanduan, jawabPanduan, apakahMintaSaran, tautanUntuk, PATH_SAH, HALAMAN, TAUTAN_TOPIK, STATUS_DIPERBARUI, TEKS, GAMBAR };

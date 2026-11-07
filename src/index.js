@@ -163,6 +163,8 @@ const kalibrasi = require('./routes/kalibrasi');
 const iotV41 = require('./routes/iotV41');
 
 app.use('/', authRouter);                              // publik: /, /login, /logout
+// Screenshot dan infografis panduan resmi GARAP untuk petani
+app.use('/panduan', express.static(path.join(__dirname, '../../react-web-app/public/panduan')));
 // Publik (landing page): agregat aman, tanpa login — rate limit GET 'view' berlaku.
 app.use('/api/publik', publik);
 // Perangkat ESP32 (sensor & aktuator) + klien REST berkunci — kunci per-perangkat (src/kunci.js).

@@ -865,7 +865,7 @@ async function panggilOllamaChat(messages) {
   }
 }
 
-const wajah = (extra) => ({ tabel: [], tautan: [], saran_pertanyaan: [], model: null, fallback_karena: null, generated_at: new Date().toISOString(), ...extra });
+const wajah = (extra) => ({ tabel: [], tautan: [], gambar: [], saran_pertanyaan: [], model: null, fallback_karena: null, generated_at: new Date().toISOString(), ...extra });
 
 router.post('/chat', async (req, res, next) => {
   try {
@@ -918,7 +918,24 @@ router.post('/chat', async (req, res, next) => {
     const niat = diag.deteksiNiat(guard.normalisasi(v.pesan));
     if (niat) {
       const h = await diag.jawabNiat(niat, data, guard.normalisasi(v.pesan));
-      return res.json(wajah({ jawaban: h.jawaban, tabel: h.tabel, status: h.status, tautan: panduan.tautanUntuk(niat, peranPengguna(req)), sumber: niat === 'diagnosa' ? 'diagnosa' : 'data' }));
+      const gambarNiat = niat === 'diagnosa'
+        ? [
+            { url: '/panduan/beranda.png', judul: 'Layar Beranda (Status Umum Kebun)', kenapa: 'Menampilkan ringkasan sensor pH/TDS dan peringatan aktif saat ini.' },
+            { url: '/panduan/sensor.png', judul: 'Layar Sensor (Telemetri Realtime)', kenapa: 'Memperlihatkan grafik pergerakan nutrisi dan suhu air secara detail.' },
+          ]
+        : niat === 'sensor'
+        ? [{ url: '/panduan/sensor.png', judul: 'Layar Sensor & Telemetri', kenapa: 'Petani diarahkan ke sini untuk memantau grafik sensor pH dan TDS secara langsung.' }]
+        : niat === 'tahap'
+        ? [{ url: '/panduan/tanam.png', judul: 'Layar Kebun Saya (Tahap Tanam)', kenapa: 'Petani diarahkan ke sini untuk memeriksa batch melon dan hari tanam.' }]
+        : [];
+      return res.json(wajah({
+        jawaban: h.jawaban,
+        tabel: h.tabel,
+        status: h.status,
+        gambar: gambarNiat,
+        tautan: panduan.tautanUntuk(niat, peranPengguna(req)),
+        sumber: niat === 'diagnosa' ? 'diagnosa' : 'data',
+      }));
     }
 
     // panduan aplikasi (cara menyemai, alur, status fase, keputusan): jawaban tetap, tanpa LLM — model kecil sering mengarang menu
@@ -927,12 +944,28 @@ router.post('/chat', async (req, res, next) => {
     if (kunciPanduan) {
       const pd = panduan.jawabPanduan(kunciPanduan);
       if (kunciPanduan === 'logbook') pd.jawaban = await logbookKebun();
-      return res.json(wajah({ jawaban: pd.jawaban, tabel: pd.tabel, tautan: panduan.tautanUntuk(kunciPanduan, peranPengguna(req)), sumber: 'panduan' }));
+      return res.json(wajah({
+        jawaban: pd.jawaban,
+        tabel: pd.tabel,
+        gambar: pd.gambar || [],
+        tautan: panduan.tautanUntuk(kunciPanduan, peranPengguna(req)),
+        sumber: 'panduan',
+      }));
     }
     // "beri saran": ringkasan dari data nyata (diagnosa), bukan tebakan model
     if (panduan.apakahMintaSaran(norm)) {
       const h = await diag.jawabNiat('diagnosa', data, norm);
-      return res.json(wajah({ jawaban: h.jawaban, tabel: h.tabel, status: h.status, tautan: panduan.tautanUntuk('diagnosa', peranPengguna(req)), sumber: 'diagnosa' }));
+      return res.json(wajah({
+        jawaban: h.jawaban,
+        tabel: h.tabel,
+        status: h.status,
+        gambar: [
+          { url: '/panduan/beranda.png', judul: 'Layar Beranda (Status Umum Kebun)', kenapa: 'Menampilkan ringkasan sensor pH/TDS dan peringatan aktif saat ini.' },
+          { url: '/panduan/sensor.png', judul: 'Layar Sensor (Telemetri Realtime)', kenapa: 'Memperlihatkan grafik pergerakan nutrisi dan suhu air secara detail.' },
+        ],
+        tautan: panduan.tautanUntuk('diagnosa', peranPengguna(req)),
+        sumber: 'diagnosa',
+      }));
     }
 
     // jalur LLM
