@@ -194,7 +194,7 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
     const param = validasiPerintah(tipe, parameter, cfg);
 
     const dev = (await client.query('SELECT kode, peran FROM perangkat WHERE kode = $1', [perangkat])).rows[0];
-    if (!dev || dev.peran !== 'aktuator') throw new PerintahDitolak(404, 'Perangkat aktuator tidak ditemukan.');
+    if (!dev || !['aktuator', 'gabungan'].includes(dev.peran)) throw new PerintahDitolak(404, 'Perangkat aktuator tidak ditemukan.');
 
     const estop = (await client.query("SELECT nilai FROM aktuator_state WHERE kunci = 'estop' FOR UPDATE")).rows[0]?.nilai === '1';
     if (estop && berisiko(tipe, param)) {

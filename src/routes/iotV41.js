@@ -182,7 +182,7 @@ router.get('/state', async (_req, res, next) => {
       laju_b: params.laju_b,
     });
 
-    const papanUtama = perangkatRows.find((p) => p.peran === 'aktuator') || perangkatRows[0] || null;
+    const papanUtama = perangkatRows.find((p) => p.peran === 'aktuator' || p.peran === 'gabungan') || perangkatRows[0] || null;
     const online = papanUtama?.terakhir_terlihat
       ? Date.now() - new Date(papanUtama.terakhir_terlihat).getTime() < 120_000
       : false;
@@ -193,6 +193,9 @@ router.get('/state', async (_req, res, next) => {
         : online ? 'online' : 'offline';
 
     const arsipUjiLab = arsipKal.filter((a) => a.catatan && a.catatan.startsWith('[UJI LAB'));
+    const takaranBuah = Object.fromEntries((await q(
+      "SELECT param, nilai FROM konfigurasi_dosis WHERE param IN ('ppm_per_ml_buah','ph_up_ml_per_ph_l_buah','ph_down_ml_per_ph_l_buah')", []))
+      .map((r) => [r.param, r.nilai === null ? null : Number(r.nilai)]));
 
     res.json({
       params: {
@@ -236,6 +239,11 @@ router.get('/state', async (_req, res, next) => {
       },
       arsip_kalibrasi: arsipKal,
       arsip_ujilab: arsipUjiLab,
+      takaran_buah: {
+        ppm_per_ml: takaranBuah.ppm_per_ml_buah ?? null,
+        ph_up_ml: takaranBuah.ph_up_ml_per_ph_l_buah ?? null,
+        ph_down_ml: takaranBuah.ph_down_ml_per_ph_l_buah ?? null,
+      },
     });
   } catch (e) { next(e); }
 });
@@ -356,6 +364,10 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
   try {
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const jenis = String(b.aksi || b.jenis || 'ec').toLowerCase();
+    // takaran dipisah per kategori: 'tanaman' (bawaan, kunci lama) dan 'buah' (kunci berakhiran _buah)
+    const buah = String(b.kategori || 'tanaman').toLowerCase() === 'buah';
+    const sfx = buah ? '_buah' : '';
+    const tag = buah ? ' BUAH' : '';
 
     if (jenis === 'ec') {
       const hasil = hitungUjiLabEc(b);
@@ -363,8 +375,8 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
 
       await client.query('BEGIN');
       const run = (t, p) => client.query(t, p);
-      await simpanParam(run, 'konfigurasi_dosis', 'ppm_per_ml', hasil.ppm_per_ml, 'ppm/mL', 'Kenaikan EC per mL hasil Uji Lab EC');
-      const catatan = `[UJI LAB EC] Air ${hasil.volume} L, awal ${hasil.awal} -> akhir ${hasil.akhir} ppm (A ${hasil.ml_a} mL + B ${hasil.ml_b} mL) = ${hasil.ppm_per_ml} ppm/mL`;
+      await simpanParam(run, 'konfigurasi_dosis', `ppm_per_ml${sfx}`, hasil.ppm_per_ml, 'ppm/mL', `Kenaikan EC per mL hasil Uji Lab EC${tag.toLowerCase()}`);
+      const catatan = `[UJI LAB EC${tag}] Air ${hasil.volume} L, awal ${hasil.awal} -> akhir ${hasil.akhir} ppm (A ${hasil.ml_a} mL + B ${hasil.ml_b} mL) = ${hasil.ppm_per_ml} ppm/mL`;
       await client.query(
         `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sebelum, bacaan_sesudah, lulus, konstanta_baru, catatan, oleh_user_id, oleh_label)
          VALUES ('ec', $1, $2, $3, true, $4, $5, $6, $7)`,
@@ -374,7 +386,7 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
 
       return res.status(201).json({
         status: true,
-        message: `Hasil Uji Lab EC disimpan: ${String(hasil.ppm_per_ml).replace('.', ',')} ppm/mL.`,
+        message: `Hasil Uji Lab EC${tag.toLowerCase()} disimpan: ${String(hasil.ppm_per_ml).replace('.', ',')} ppm/mL.`,
         data: hasil,
       });
     }
@@ -388,12 +400,12 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
       await simpanParam(
         run,
         'konfigurasi_dosis',
-        hasil.param,
+        `${hasil.param}${sfx}`,
         hasil.ml_per_ph_l,
         'mL/pH/L',
-        `Takaran pH ${hasil.arah} per 1 pH per 1 L hasil Uji Lab pH`,
+        `Takaran pH ${hasil.arah} per 1 pH per 1 L hasil Uji Lab pH${tag.toLowerCase()}`,
       );
-      const catatan = `[UJI LAB PH ${hasil.arah.toUpperCase()}] Air ${hasil.volume} L, delta pH ${hasil.delta_ph}, larutan ${hasil.ml} mL = ${hasil.ml_per_ph_l} mL/pH/L`;
+      const catatan = `[UJI LAB PH ${hasil.arah.toUpperCase()}${tag}] Air ${hasil.volume} L, delta pH ${hasil.delta_ph}, larutan ${hasil.ml} mL = ${hasil.ml_per_ph_l} mL/pH/L`;
       await client.query(
         `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sesudah, lulus, konstanta_baru, catatan, oleh_user_id, oleh_label)
          VALUES ('ph', $1, $2, true, $3, $4, $5, $6)`,
@@ -403,7 +415,7 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
 
       return res.status(201).json({
         status: true,
-        message: `Hasil Uji Lab pH ${hasil.arah} disimpan: ${String(hasil.ml_per_ph_l).replace('.', ',')} mL per 1 pH per 1 L.`,
+        message: `Hasil Uji Lab pH ${hasil.arah}${tag.toLowerCase()} disimpan: ${String(hasil.ml_per_ph_l).replace('.', ',')} mL per 1 pH per 1 L.`,
         data: hasil,
       });
     }

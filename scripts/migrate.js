@@ -36,7 +36,7 @@ async function main() {
       checksum char(64) NOT NULL,
       dijalankan_pada timestamp(0) without time zone NOT NULL DEFAULT now()
     )`);
-    const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.sql')).sort();
+    const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.sql') && !f.startsWith('.')).sort();
     const sudah = new Map((await c.query('SELECT versi, checksum FROM schema_migrations')).rows
       .map((r) => [r.versi, r.checksum]));
 

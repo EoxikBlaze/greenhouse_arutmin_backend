@@ -18,6 +18,7 @@ const POLA_KUNCI = /^vsf_([0-9a-f]{8})_([0-9a-f]{48})$/;
 const SCOPE_PERAN = {
   sensor: ['sensor:tulis', 'data:baca'],
   aktuator: ['aktuator:perintah'],
+  gabungan: ['sensor:tulis', 'aktuator:perintah'],   // satu ESP32: sensor + aktuator
 };
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');

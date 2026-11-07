@@ -128,7 +128,7 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
       const d = bacaJson(buf);
       if (!d) return;
       if (d.online === false) { online.delete(kode); return; }
-      if (p.peran === 'aktuator') online.set(kode, Date.now());
+      if (p.peran === 'aktuator' || p.peran === 'gabungan') online.set(kode, Date.now());
       await tandaiTerlihat(kode, null, {
         firmware: typeof d.firmware === 'string' ? d.firmware.slice(0, 40) : null,
         rssi: Number.isFinite(Number(d.rssi)) ? Math.round(Number(d.rssi)) : null,
@@ -139,7 +139,7 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
     }
 
     if (jenis === 'data') {
-      if (p.peran !== 'sensor') return;
+      if (p.peran !== 'sensor' && p.peran !== 'gabungan') return;   // gabungan = satu ESP32 sensor + aktuator
       const d = bacaJson(buf);
       const gagal = await simpanBacaan(d, kode, null);
       if (gagal) log.warn('[mqtt] bacaan sensor ditolak', { kode, galat: gagal.errors ? Object.keys(gagal.errors) : 'kosong' });
@@ -147,7 +147,7 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
     }
 
     // hasil perintah
-    if (p.peran !== 'aktuator') return;
+    if (p.peran !== 'aktuator' && p.peran !== 'gabungan') return;
     const d = bacaJson(buf);
     const id = d && /^[0-9]{1,18}$/.test(String(d.id)) ? String(d.id) : null;
     if (!id) return;

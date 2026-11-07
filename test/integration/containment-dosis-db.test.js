@@ -36,7 +36,7 @@ before(async () => {
   if (lewati) return;
   estopAwal = (await q("SELECT nilai FROM aktuator_state WHERE kunci = 'estop'"))[0].nilai;
   assert.equal(estopAwal, '0', 'prasyarat: E-STOP DB uji harus mati sebelum tes');
-  assert.equal((await q("SELECT peran FROM perangkat WHERE kode = $1", [DEV]))[0].peran, 'aktuator');
+  assert.equal((await q("SELECT peran FROM perangkat WHERE kode = $1", [DEV]))[0].peran, 'gabungan');   // satu ESP32: sensor + aktuator (migrasi 2026-11-05_01)
   for (let i = 0; i < 3; i += 1) {
     meja.push(Number((await q('INSERT INTO mejas (meja, jumlah_lubang, created_at, updated_at) VALUES ($1, 10, now(), now()) RETURNING id_meja', [`uji-3f-${i}`]))[0].id_meja));
   }

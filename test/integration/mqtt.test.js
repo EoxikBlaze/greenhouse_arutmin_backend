@@ -89,6 +89,24 @@ test('sensor → data tersimpan; data tak valid, peran salah, dan perangkat tanp
   await Promise.all([s.endAsync(), a.endAsync(), t.endAsync()]);
 });
 
+test('satu ESP32 gabungan: perangkat berperan gabungan boleh kirim data sensor', async () => {
+  const G = 'uji-mqtt-gab';
+  await q('DELETE FROM perangkat WHERE kode = $1', [G]);
+  await q("INSERT INTO perangkat (kode, nama, peran) VALUES ($1, 'uji gabungan', 'gabungan')", [G]);
+  await buatKunci({ nama: 'uji', scope: ['aktuator:perintah', 'sensor:tulis'], perangkatKode: G });
+  const c = await perangkatMqtt(G);
+  try {
+    await c.publishAsync(`garap/${G}/data`, JSON.stringify({ ph: 6.11, tds: 778, waterTemp: 25 }));
+    const ada = await sampai(async () => (await q('SELECT id FROM monitorings WHERE id > $1 AND tds = 778 AND ph = 6.11', [awalMon])).length);
+    assert.ok(ada, 'bacaan dari perangkat gabungan tersimpan');
+  } finally {
+    await c.endAsync();
+    await q('DELETE FROM monitorings WHERE id > $1 AND tds = 778 AND ph = 6.11', [awalMon]);
+    await q('DELETE FROM api_keys WHERE perangkat_kode = $1', [G]);
+    await q('DELETE FROM perangkat WHERE kode = $1', [G]);
+  }
+});
+
 test('perintah: aktuator offline → tetap menunggu; online → terkirim, hasil dicatat, ack (juga untuk kiriman ulang)', async () => {
   const p = await one(
     `INSERT INTO perintah_aktuator (perangkat_kode, tipe, parameter, sumber, kedaluwarsa_pada)

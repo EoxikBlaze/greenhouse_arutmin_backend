@@ -12,6 +12,7 @@
 const { pool, q } = require('./db');
 const { EKSEKUSI_DIIZINKAN } = require('./gerbangDosis');
 const { BAWAAN_V41 } = require('./iotV41');
+const { tidakTerisi } = require('./parameter');
 
 const ZAT = {
   nutrisi_a: { jenis: 'A', nama: 'Nutrisi A', batas: 'maks_ml_per_suntikan', bawaanBatas: 214, laju: 'laju_pompa_a_mls', bawaanLaju: BAWAAN_V41.laju_a, hari: 'maks_volume_ab_hari_ml', kolomHari: 'volume_ab_hari_ml', bawaanHari: 500 },
@@ -105,6 +106,11 @@ async function dosingManual(body, user, { eksekusiDiizinkan = EKSEKUSI_DIIZINKAN
   const cfg = await bacaCfg();
   const v = validasi(body, cfg);
   if (!v.ok) throw new ManualDitolak(422, 'Data tidak valid.', v.errors);
+  // Sama seperti jalur otomasi (aktuator.js): batas per dosing & jatah harian wajib terisi dan sah, tanpa nilai bawaan.
+  const kosong = await tidakTerisi({ konfigurasi_dosis: [v.def.batas, v.def.hari] });
+  if (kosong.length) {
+    throw new ManualDitolak(409, `Batas keselamatan belum terisi/tidak sah: ${kosong.map((k) => `${k.param} (${k.status})`).join(', ')}. Dosing ditolak.`, null, 'parameter_belum_siap');
+  }
   const idMeja = await pagar(v, cfg);
   const userId = Number(user.sub) || null;
   if (!userId) throw new ManualDitolak(403, 'Dosing manual wajib atas nama pengguna.');

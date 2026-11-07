@@ -27,7 +27,8 @@ const ada = (n) => process.argv.includes(`--${n}`);
   if (kode) {
     const d = await one('SELECT kode, nama, peran FROM perangkat WHERE kode = $1', [kode]);
     if (!d || !d.peran) throw new Error(`perangkat '${kode}' tidak ditemukan/tidak punya peran (jalankan npm run migrate)`);
-    nama = `kunci ${d.kode}`; scope = SCOPE_PERAN[d.peran]; perangkatKode = d.kode;
+    nama = `kunci ${d.kode}`; scope = arg('scope') ? arg('scope').split(',') : SCOPE_PERAN[d.peran]; perangkatKode = d.kode;
+    if (scope.some((s) => !SCOPE_VALID.includes(s))) throw new Error(`scope harus dari: ${SCOPE_VALID.join(', ')}`);
   } else {
     nama = klien; scope = (arg('scope') || 'data:baca').split(',');
     if (scope.some((s) => !SCOPE_VALID.includes(s))) throw new Error(`scope harus dari: ${SCOPE_VALID.join(', ')}`);
