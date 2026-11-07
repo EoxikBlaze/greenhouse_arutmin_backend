@@ -151,6 +151,22 @@ const KATA_TOPIK = [
   'pemeliharaan', 'esp32', 'cctv', 'kamera', 'garap', 'vertonik', 'dashboard', 'riwayat', 'laporan',
   'diagnosa', 'diagnosis', 'tabel', 'grafik', 'kebun', 'alat', 'perangkat', 'iot', 'pupuk', 'bibit', 'benih',
   'nutrient', 'water', 'stage', 'harvest', 'humidity', 'temperature', 'plant', 'hydroponic', 'hydroponics',
+  // varietas melon & tanaman kebun
+  'melon', 'semangka', 'cabai', 'cabe', 'tomat', 'timun', 'mentimun', 'terong', 'kacang', 'sayur', 'sayuran', 'buah',
+  // organ tanaman & fase bunga
+  'bunga', 'polinasi', 'penyerbukan', 'sulur', 'tunas', 'cabang', 'batang', 'pucuk', 'tajuk',
+  // hama & penyakit tanaman
+  'hama', 'kutu', 'thrips', 'trip', 'ulat', 'jamur', 'fungi', 'bakteri', 'busuk', 'layu', 'kuning', 'rontok',
+  'bercak', 'kering', 'mati', 'klorosis', 'nekrosis', 'keriting', 'kebul', 'tungau', 'ulat grayak', 'lalat buah',
+  // wadah, tandon & instalasi air
+  'tandon', 'toren', 'wadah', 'tangki', 'bak', 'liter', 'drum', 'pipa', 'talang', 'selang', 'nozzle', 'sprinkler',
+  'drip', 'irigasi', 'sirkulasi', 'kuras', 'cuci', 'bersih',
+  // formulasi nutrisi
+  'abmix', 'ab mix', 'ab-mix', 'nutrisi ab', 'npk', 'kalsium', 'magnesium', 'unsur hara', 'kepekatan',
+  // kegiatan operasional & kondisi
+  'siram', 'penyiraman', 'semprot', 'pemupukan', 'pemangkasan', 'pruning', 'topping', 'petik',
+  'ventilasi', 'exhaust', 'kipas', 'fan', 'screen', 'insektisida', 'pestisida', 'fungisida',
+  'kondisi', 'status', 'keadaan', 'sehat', 'aman', 'normal', 'masalah', 'kendala', 'rekomendasi', 'saran', 'tips', 'jadwal', 'perawatan', 'bantuan',
   // panduan aplikasi (aiPanduan.js)
   'fase', 'keputusan', 'aplikasi', 'alur', 'panduan', 'mqtt', 'menyemai', 'penyemaian', 'menanam', 'memanen',
   'fitur', 'input', 'menu', 'halaman', 'langkah',
@@ -160,7 +176,7 @@ const KATA_TOPIK = [
 // Kata umum ("cek", "status", "kondisi", "saran", "bantuan", "hari ini", …) TIDAK lagi cukup sendirian:
 // uji tembus 23 Okt 2026 — "Berapa harga bitcoin hari ini?", "Cek kondisi politik" lolos ke LLM.
 // Pertanyaan kerja harian tanpa kata domain dikenali lewat frasa utuh:
-const FRASA_TOPIK = /\bapa (?:saja )?yang (?:harus|perlu|sebaiknya) (?:saya |aku |kami )?(?:lakukan|kerjakan|periksa|cek)\b|\bprioritas (?:hari ini|sekarang|kerja)\b|\bjadwal (?:perawatan|kalibrasi|pembersihan)\b|\blangkah (?:selanjutnya|berikutnya)\b|\b(?:cara|bagaimana|gimana) (?:input|isi|masukkan) data\b/;
+const FRASA_TOPIK = /\bapa (?:saja )?yang (?:harus|perlu|sebaiknya) (?:saya |aku |kami )?(?:lakukan|kerjakan|periksa|cek)\b|\bprioritas (?:hari ini|sekarang|kerja)\b|\bjadwal (?:perawatan|kalibrasi|pembersihan|siram|penyiraman)\b|\blangkah (?:selanjutnya|berikutnya)\b|\b(?:cara|bagaimana|gimana) (?:input|isi|masukkan) data\b|\b(?:kondisi|status|keadaan) (?:kebun|greenhouse|tanaman|melon|saat ini|hari ini|sekarang)\b|\b(?:cek|periksa|pantau|lihat) (?:kondisi|keadaan|status|semuanya|kebun|greenhouse|tanaman)\b|\bapakah (?:kondisi )?(?:aman|sehat|normal|ada masalah)\b/;
 
 /**
  * Penanda jelas DI LUAR bidang. Menolak walau ada kata domain yang diselipkan
@@ -187,6 +203,8 @@ const DOMAIN_KUAT = new Set([
   'benih', 'bibit', 'alert', 'katup', 'pompa', 'suhu', 'kelembapan', 'greenhouse', 'kebun', 'budidaya', 'tahap',
   'siklus', 'peremajaan', 'pendewasaan', 'garap', 'vertonik', 'aplikasi', 'cctv', 'kamera', 'mix', 'nutrient',
   'plant', 'talang', 'aerasi', 'aerator', 'botol', 'kalibrasi', 'probe', 'iot', 'esp32', 'tandon',
+  'melon', 'buah', 'bunga', 'sulur', 'tunas', 'hama', 'kutu', 'thrips', 'jamur', 'layu', 'kuning', 'busuk', 'rontok',
+  'abmix', 'liter', 'sirkulasi', 'kuras', 'sayur', 'sayuran',
 ]);
 
 /** true bila ada paragraf panjang (≥ 15 kata) tanpa satu pun kata domain kuat — tanda selundupan topik lain. */
@@ -196,10 +214,10 @@ function paragrafLuarTopik(teks) {
     return kata.length >= 15 && !kata.some((k) => DOMAIN_KUAT.has(k));
   });
 }
-const SAPAAN = /^(?:h(?:a)?i|halo|hai|hello|hey|pagi|siang|sore|malam|selamat \w+|terima ?kasih|makasih|thanks?|ok(?:e|ay)?|siap|baik|mantap|tolong|bantu|help|siapa kamu|kamu siapa|apa (?:itu|yang bisa) .*)[\s.!?]*$/;
+const SAPAAN = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam|\w+)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|tolong|bantu|help|bisa bantu(?:\s+saya)?|mau tanya|tanya dong|siapa kamu|kamu siapa|apa (?:itu|yang bisa) .*)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min))?[\s.!?]*$/;
 
 // salam/terima kasih murni — dijawab tetap tanpa LLM (model kecil membalas salam tanpa kata domain)
-const SALAM = /^(?:h(?:a)?i|halo|hai|hello|hey|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam)|terima ?kasih|makasih|thanks?|ok(?:e|ay)?|siap|baik|mantap|siapa kamu|kamu siapa)[\s.!?]*$/;
+const SALAM = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|siapa kamu|kamu siapa)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min))?[\s.!?]*$/;
 function apakahSalam(pesan) {
   return SALAM.test(normalisasi(pesan));
 }

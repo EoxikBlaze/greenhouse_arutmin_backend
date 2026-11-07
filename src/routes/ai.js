@@ -50,6 +50,9 @@ const KATA_DOMAIN = [
   'pompa', 'aliran', 'cahaya', 'lampu', 'media', 'akar', 'daun', 'gizi', 'konsentrasi',
   // uji 23 Okt 2026: jawaban "Dosing 65% per ronde berarti…" dibuang karena tak satu pun kata di atas muncul
   'dosing', 'dosis', 'penampung', 'tandon', 'pupuk', 'selada', 'pakcoy', 'kangkung', 'bayam', 'sawi', 'garap',
+  'melon', 'buah', 'hama', 'bunga', 'cabang', 'batang', 'semangka', 'cabai', 'tomat', 'kuras', 'liter',
+  'kuning', 'layu', 'jamur', 'kutu', 'thrips', 'polinasi', 'abmix', 'kebun', 'pertanian', 'petani',
+  'kondisi', 'status', 'rekomendasi', 'saran', 'perawatan', 'siram', 'sirkulasi', 'toren', 'sayur', 'sayuran',
 ];
 
 
@@ -889,10 +892,13 @@ router.post('/chat', async (req, res, next) => {
 
     // salam/terima kasih: balasan tetap, tanpa DB/LLM
     if (guard.apakahSalam(v.pesan)) {
+      const normSalam = guard.normalisasi(v.pesan);
       return res.json(wajah({
-        jawaban: /kasih|thank|makasih/.test(guard.normalisasi(v.pesan))
-          ? 'Sama-sama! Kalau ada yang ingin dicek lagi soal kebun, tanyakan saja.'
-          : 'Halo! Saya asisten kebun GARAP. Tanyakan kondisi pH, TDS, suhu, alert, tahap tanam, atau ketik "Diagnosa menyeluruh" untuk pemeriksaan lengkap.',
+        jawaban: /kasih|thank|makasih/.test(normSalam)
+          ? 'Sama-sama! Kalau ada yang ingin dicek lagi soal kebun atau tanaman melon Anda, tanyakan saja.'
+          : /assalamu/.test(normSalam)
+          ? 'Wa\'alaikumsalam! Saya asisten kebun GARAP. Ada yang bisa saya bantu terkait kondisi tanaman melon atau sensor greenhouse hari ini?'
+          : 'Halo! Saya asisten kebun GARAP yang siap membantu budidaya Anda. Tanyakan kondisi sensor (pH, TDS, suhu), status tanaman melon, alert, atau ketik "Diagnosa menyeluruh" untuk pemeriksaan lengkap.',
         sumber: 'sapaan',
       }));
     }
