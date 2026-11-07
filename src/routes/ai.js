@@ -523,7 +523,10 @@ Contoh FORMAT balasan (hanya format, bukan data):
 Data sistem saat ini (data mentah dari database):
 <data>
 ${dataMentah}
-</data>`;
+</data>
+
+Salin persis objek JSON rekomendasi_terverifikasi berikut sebagai satu-satunya balasanmu:
+${JSON.stringify({ keputusan: dasar.keputusan, alasan: dasar.alasan, prioritas: dasar.prioritas })}`;
 }
 
 /** JSON dari balasan LLM: coba utuh, lalu potong {...}, lalu buang code-fence. */
@@ -557,7 +560,7 @@ function adaKataDomain(teks) {
  * @returns {{ok: true, hasil: {keputusan: string, alasan: string, prioritas: string}}
  *          | {ok: false, alasan: string}}
  */
-function validasiOutputLlm(teks) {
+function validasiOutputLlm(teks, dasar = null) {
   const mentah = String(teks || '')
     .replace(/`/g, '')
     .trim();
@@ -569,17 +572,28 @@ function validasiOutputLlm(teks) {
   const o = parseJsonLlm(mentah);
   if (!o) return { ok: false, alasan: 'bukan JSON valid' };
   // (d) normalisasi + potong field
-  const keputusan = bersihTeks(o.keputusan).slice(0, 500);
-  const alasan = bersihTeks(o.alasan).slice(0, 1000);
+  let keputusan = bersihTeks(o.keputusan).slice(0, 500);
+  let alasan = bersihTeks(o.alasan).slice(0, 1000);
   if (!keputusan || !alasan) return { ok: false, alasan: 'field keputusan/alasan hilang' };
   // (c) prioritas wajib enum
-  const prioritas = bersihTeks(o.prioritas).toLowerCase();
+  let prioritas = bersihTeks(o.prioritas).toLowerCase();
   if (!PRIORITAS.includes(prioritas)) {
     return { ok: false, alasan: `prioritas di luar enum: ${prioritas.slice(0, 30)}` };
   }
   // (b) filter topik: wajib menyebut minimal 1 kata domain hidroponik
   if (!adaKataDomain(`${keputusan} ${alasan}`)) {
     return { ok: false, alasan: 'tidak ada kata kunci domain budidaya' };
+  }
+  // (e) cegah model kecil (0.5B) mengarang angka yang tidak ada di rekomendasi_terverifikasi
+  if (dasar && dasar.keputusan && dasar.alasan) {
+    const angkaKeluar = (`${keputusan} ${alasan}`).match(/\b\d+(?:[.,]\d+)?\b/g) || [];
+    const teksDasar = `${dasar.keputusan} ${dasar.alasan}`;
+    const adaAngkaKarangan = angkaKeluar.some((n) => !teksDasar.includes(n));
+    if (adaAngkaKarangan) {
+      keputusan = dasar.keputusan;
+      alasan = dasar.alasan;
+      prioritas = dasar.prioritas;
+    }
   }
   return { ok: true, hasil: { keputusan, alasan, prioritas } };
 }
@@ -615,7 +629,82 @@ function klasifikasiGagal(err) {
   return 'koneksi';
 }
 
+/**
+ * Hangatkan model AI di RAM saat boot awal.
+ * Mengirim ping kosong dengan keep_alive -1 agar model langsung dimuat ke memori
+ * sehingga pengguna tidak mengalami jeda loading model saat pertama kali bertanya.
+ */
+async function hangatkanModel() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    const res = await fetch(`${config.aiOllamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.aiModel,
+        prompt: '',
+        keep_alive: -1,
+      }),
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(timer));
+    if (res.ok) {
+      console.log(`[AI] Model ${config.aiModel} berhasil dihangatkan di memori (Selalu Siap)`);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.log(`[AI] Info status Ollama: ${e.message} (Fallback heuristik aktif)`);
+    return false;
+  }
+}
+
 /* ── rute ──────────────────────────────────────────────────────────── */
+
+/**
+ * Cek status kesehatan AI lokal (Ollama & Model).
+ * Terbuka untuk semua user yang login (admin, petani, demo).
+ */
+router.get('/status', requireAuth, async (_req, res) => {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const vRes = await fetch(`${config.aiOllamaUrl}/api/version`, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+    if (!vRes.ok) throw new Error(`http_${vRes.status}`);
+    const v = await vRes.json();
+
+    // Periksa apakah model sudah termuat di RAM (warm)
+    let modelDimuat = false;
+    try {
+      const psCtrl = new AbortController();
+      const psTimer = setTimeout(() => psCtrl.abort(), 1500);
+      const psRes = await fetch(`${config.aiOllamaUrl}/api/ps`, { signal: psCtrl.signal }).finally(() => clearTimeout(psTimer));
+      if (psRes.ok) {
+        const psData = await psRes.json();
+        modelDimuat = Array.isArray(psData?.models) && psData.models.some((m) => m.name?.startsWith(config.aiModel) || config.aiModel?.startsWith(m.name || ''));
+      }
+    } catch { /* opsional */ }
+
+    res.json({
+      status: 'siap',
+      ollama_aktif: true,
+      versi_ollama: v.version || 'aktif',
+      model: config.aiModel,
+      memori_hangat: modelDimuat,
+      fallback_tersedia: true,
+    });
+  } catch (e) {
+    res.json({
+      status: 'fallback',
+      ollama_aktif: false,
+      alasan: e.message,
+      model: config.aiModel,
+      memori_hangat: false,
+      fallback_tersedia: true,
+    });
+  }
+});
+
 router.use(requireAuth, aiRole);
 
 router.post('/langkah-selanjutnya', async (req, res, next) => {
@@ -638,9 +727,10 @@ router.post('/langkah-selanjutnya', async (req, res, next) => {
     // filter topik, enum prioritas, normalisasi) — gagal = FALLBACK heuristik.
     let hasil = null;
     let fallbackKarena = null;
+    const dasar = heuristik(data);
     try {
       const teks = await panggilOllama(promptRingkas(data));
-      const v = validasiOutputLlm(teks);
+      const v = validasiOutputLlm(teks, dasar);
       if (v.ok) hasil = v.hasil;
       else fallbackKarena = 'output_tidak_sah';
     } catch (e) {
@@ -893,3 +983,4 @@ router.post('/chat', async (req, res, next) => {
 
 module.exports = router;
 module.exports.cekAngkaPengguna = cekAngkaPengguna;
+module.exports.hangatkanModel = hangatkanModel;

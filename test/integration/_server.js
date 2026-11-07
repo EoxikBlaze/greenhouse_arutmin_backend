@@ -56,7 +56,7 @@ async function stopChild(child) {
  */
 async function startServer() {
   const port = await freePort();
-  const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1' };
+  const env = { ...process.env, PORT: String(port), HOST: '127.0.0.1', AI_WARMUP: '0' };
   // Jangan warisi konteks test-runner ke server (dan jangan bawa flag --test).
   delete env.NODE_TEST_CONTEXT;
   if (/\B--test\b/.test(env.NODE_OPTIONS || '')) delete env.NODE_OPTIONS;

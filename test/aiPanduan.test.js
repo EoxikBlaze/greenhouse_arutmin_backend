@@ -86,6 +86,12 @@ test('topik baru: logbook, tim, saklar, nutrisi manual, uji lab terdeteksi; daft
   assert.equal(deteksiPanduan('gimana nutrisi manual'), 'nutrisi_manual');
   assert.equal(deteksiPanduan('catat hasil uji lab'), 'uji_lab');
   assert.equal(deteksiPanduan('cara menyemai melon'), 'semai');
+  assert.equal(deteksiPanduan('bagaimana cara menanam'), 'semai');
+  assert.equal(deteksiPanduan('bagaimana cara input data'), 'input_data');
+  assert.equal(deteksiPanduan('jelaskan semua fitur aplikasi'), 'fitur');
+  assert.equal(apakahMintaSaran('apa saran dan langkah selanjutnya'), true);
   assert.equal(TEKS.tim.split('\n').filter((l) => l.startsWith('•')).length, 7);
   assert.match(TEKS.semai, /Persiapan/);
+  assert.match(TEKS.input_data, /Input Jenis Tanaman/);
+  assert.match(TEKS.fitur, /Dashboard/);
 });

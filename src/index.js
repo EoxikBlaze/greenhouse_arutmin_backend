@@ -342,6 +342,10 @@ loadColumnLengths()
     startServers(); require('./presetDosing').mulai();
     // penjadwal konfirmasi siklus budidaya: default MATI (SIKLUS_PENJADWAL=1), tanpa aktuator
     require('./siklusBudidaya').mulaiPenjadwal().catch((e) => console.error('[SIKLUS] gagal mulai:', e.message));
+    // Hangatkan model AI lokal di RAM saat boot awal agar selalu standby & respon instan (AI_WARMUP=1 di .env)
+    if (process.env.AI_WARMUP === '1') {
+      require('./routes/ai').hangatkanModel();
+    }
     if (config.mqttUrl) {
       require('./mqttJembatan').mulai({ url: config.mqttUrl, username: config.mqttUser || undefined, password: config.mqttPass || undefined });
     }

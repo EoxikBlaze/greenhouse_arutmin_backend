@@ -8,8 +8,27 @@ const saklar = require('../saklar');
 
 const router = express.Router();
 
-router.get('/', async (_req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
+    // Mode demo: data operasional dan sensor sengaja disembunyikan (null) demi keamanan
+    if (req.user?.demo) {
+      return res.json({
+        page: 'dashboard',
+        iotStatus: { online: false, seconds_ago: null, diff_text: 'Mode Demo (Hanya Lihat)', last_seen: null },
+        total_tanaman: 0, total_meja: 0, total_siklus: 0,
+        total_semai: 0, total_peremajaan: 0, total_pendewasaan: 0,
+        total_panen: 0, total_panen_qty: 0,
+        semai_aktif: 0, peremajaan_aktif: 0, pendewasaan_aktif: 0,
+        latest_sensor: null,
+        sensor_avg: null,
+        water_control: null,
+        recent_alerts: [],
+        recent_panen: [],
+        ambang: await thresholdsMap(),
+        saklar: [],
+      });
+    }
+
     // cache 5 detik — dashboard di-refresh polling; DB dihajar sekali / 5 dtk
     const payload = await cache.remember('dashboard', 5_000, async () => {
     const latest = await one('SELECT * FROM monitorings ORDER BY created_at DESC LIMIT 1');

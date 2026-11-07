@@ -101,6 +101,26 @@ const TEKS = {
     '4. Riwayat dan grafik per parameter ada di halaman yang sama.',
   ].join('\n'),
 
+  input_data: [
+    'Urutan lengkap cara input data di aplikasi GARAP dari awal:',
+    '1. Input Jenis Tanaman & Siklus: Masuk sebagai Superadmin (garap), buka menu Jenis Tanaman (/tanaman) untuk menambah tanaman baru, lalu atur lama hari tiap tahap (Semai, Peremajaan, Pendewasaan).',
+    '2. Input Meja & Penampung: Buka menu Pengaturan Alat atau Master Meja (/meja) untuk mendaftarkan nomor meja/penampung yang terhubung ke sensor.',
+    '3. Input Ambang Sensor & Target Nutrisi: Buka menu Ambang Sensor (/ambang) untuk mengatur batas aman minimum-maksimum pH, TDS, serta suhu, dan buka menu Dosing (/dosing) untuk mengisi preset target nutrisi per tahap.',
+    '4. Input Batch Tanam Baru (Mulai Menanam): Buka menu Kebun Saya (/tanam), klik tombol "Mulai Semai Baru", pilih tanaman, tanggal mulai, dan jumlah benih, lalu klik Simpan.',
+    '5. Input Pindah Tahap & Panen: Saat umur tahap terpenuhi, klik pindah tahap dari Semai ke Peremajaan (/peremajaan), lanjut ke Pendewasaan (/pendewasaan), hingga catat hasil di menu Panen (/panen) dan Uji Lab (/data).',
+  ].join('\n'),
+
+  fitur: [
+    'Daftar lengkap seluruh fitur Website & Aplikasi GARAP (Vertonik Smart Farm):',
+    '1. Dashboard (/dashboard): Ringkasan kondisi kebun, bacaan sensor terakhir, status koneksi alat, dan pintasan cepat.',
+    '2. Telemetri & Sensor (/sensor-realtime): Pantauan langsung pH, nutrisi TDS/EC, suhu air, suhu udara, dan kelembapan per meja.',
+    '3. Kebun Saya & Tahap Tanam (/tanam, /semai, /peremajaan, /pendewasaan, /panen): Mengelola siklus hidup tanaman dari semai hingga panen.',
+    '4. Dosing & Naik Harian (/dosing): Mengatur preset target nutrisi per tahap, kenaikan target harian otomatis, dan persetujuan usulan dosis.',
+    '5. Saklar & Nutrisi Manual (/saklar, /dosing-manual): Mengatur izin aktuator ON/OFF dan pencatatan suntik nutrisi manual.',
+    '6. Kalibrasi & Ambang Sensor (/kalibrasi, /ambang): Menyesuaikan akurasi sensor dengan cairan standar serta batas peringatan.',
+    '7. Peringatan, Data Uji Lab, CCTV & Asisten AI (/peringatan, /data, /cctv, /asisten-ai): Deteksi masalah otomatis, pencatatan brix/bobot panen, pantauan kamera, dan tanya-jawab cerdas dengan AI lokal Qwen.',
+  ].join('\n'),
+
   logbook: 'Logbook kebun: ringkasan kegiatan 7 hari terakhir diambil dari data aplikasi.', // isi sebenarnya dibuat di routes/ai.js (aiLogbook)
 
   tim: [
@@ -130,6 +150,8 @@ const TEKS = {
 const POLA = [
   ['logbook', /\blog ?book\b|catatan kegiatan|riwayat kegiatan|kegiatan (?:terakhir|minggu ini|hari ini|kemarin)/],
   ['tim', /\b(?:anggota|biodata|bio data|profil tim|susunan tim)\b|\bsiapa\b.{0,20}\b(?:tim|anggota|pembuat|pengembang)\b/],
+  ['input_data', /\b(?:cara|langkah|bagaimana|gimana|panduan|urutan)\b.{0,25}\b(?:input|masukkan|memasukkan|mengisi|isi|tambah|menambah)\b.{0,20}\bdata\b|\binput data\b|\bisi data\b/],
+  ['fitur', /\b(?:semua|seluruh|daftar|apa saja)\b.{0,20}\b(?:fitur|menu|halaman)\b|\b(?:fitur|menu)\b.{0,20}\b(?:aplikasi|website|web|garap|lengkap)\b|\bjelaskan (?:semua )?fitur\b/],
   ['saklar', /\bsaklar\b/],
   ['nutrisi_manual', /\bnutrisi manual\b|\bdosing manual\b|\bmanual dosing\b/],
   ['uji_lab', /\buji lab\b|\bhasil lab\b|\bbrix\b/],
@@ -139,7 +161,7 @@ const POLA = [
   ['alat_baru', /\balat\b.{0,20}\b(?:baru|belum ada|belum terpasang)\b|\b(?:pasang|memasang|pemasangan|konfigurasi|mengonfigurasi|menyambung\w*|menghubung\w*)\b.{0,20}\b(?:alat|sensor|esp32|mqtt)\b|\bmqtt\b/],
   ['pindah_tahap', /\bpindah\w*\b.{0,15}\btahap\b|\bnaik tahap\b|\bsiap pindah\b|\bpeming?ndahan\b.{0,10}\btahap\b/],
   ['panen', /\b(?:cara|langkah|bagaimana|gimana)\b.{0,25}\b(?:panen|memanen|mencatat panen)\b|\b(?:mencatat|catat)\b.{0,10}\bpanen\b/],
-  ['semai', /\b(?:cara|langkah|bagaimana|gimana|mulai|memulai)\b.{0,30}\b(?:semai|menyemai|nyemai|menanam|tanam|batch)\b|\b(?:semai|menyemai|nyemai)\b.{0,30}\b(?:cara|langkah|bagaimana|gimana)\b|\bmenyemai\b|\bsemai baru\b/],
+  ['semai', /\b(?:cara|langkah|bagaimana|gimana|mulai|memulai)\b.{0,30}\b(?:semai|menyemai|nyemai|menanam|tanam|batch|budidaya)\b|\b(?:semai|menyemai|nyemai|menanam)\b.{0,30}\b(?:cara|langkah|bagaimana|gimana)\b|\bmenyemai\b|\bsemai baru\b|\bcara menanam\b/],
   ['alur', /\balur\b|\bcara kerja\b|bagaimana (?:aplikasi|sistem|website|web) (?:ini )?(?:bekerja|jalan)|\b(?:panduan|tutorial)\b|\bcara (?:pakai|memakai|menggunakan)\b.{0,15}\b(?:aplikasi|website|web|garap)\b/],
 ];
 
@@ -179,6 +201,8 @@ const TAUTAN_TOPIK = {
   saklar: ['saklar'],
   nutrisi_manual: ['nutrisiManual', 'saklar'],
   uji_lab: ['data'],
+  input_data: ['tanam', 'tanaman', 'ambang', 'dosing', 'data'],
+  fitur: ['dashboard', 'sensor', 'tanam', 'peringatan', 'dosing', 'saklar', 'kalibrasi', 'data'],
   logbook: [],
   tim: [],
   keputusan: [],
@@ -220,9 +244,9 @@ function jawabPanduan(kunci) {
   return { jawaban, tabel: [], status: undefined };
 }
 
-/** Saran umum ("apa saran/rekomendasinya", "sebaiknya bagaimana") → diarahkan ke diagnosa data nyata. */
+/** Saran umum ("apa saran/rekomendasinya", "sebaiknya bagaimana", "langkah selanjutnya") → diarahkan ke diagnosa data nyata. */
 function apakahMintaSaran(pesanTernormalisasi) {
-  return /\b(?:saran|masukan|rekomendasi)\b|\bapa (?:yang )?(?:harus|sebaiknya|perlu) (?:saya |aku |kami )?(?:lakukan|kerjakan)\b/.test(String(pesanTernormalisasi || ''));
+  return /\b(?:saran|masukan|rekomendasi|langkah selanjutnya|langkah berikutnya)\b|\bapa (?:yang )?(?:harus|sebaiknya|perlu) (?:saya |aku |kami )?(?:lakukan|kerjakan)\b/.test(String(pesanTernormalisasi || ''));
 }
 
 module.exports = { deteksiPanduan, jawabPanduan, apakahMintaSaran, tautanUntuk, PATH_SAH, HALAMAN, TAUTAN_TOPIK, STATUS_DIPERBARUI, TEKS };

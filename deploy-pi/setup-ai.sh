@@ -10,14 +10,13 @@
 # Aman dijalankan berulang-kali (idempotent).
 #
 # Pilihan model (bisa juga di-override lewat env: AI_MODEL=... ./setup-ai.sh):
-#   RAM 4 GB  -> qwen2.5:1.5b  (default, ±1,1 GB saat muat model)
-#   RAM 8 GB  -> qwen2.5:1.5b  atau qwen2.5:3b (lebih rapi jawabannya)
-#   RAM 2 GB  -> qwen2.5:0.5b      (catatan di bawah, model 0,5B)
+#   Default   -> qwen2.5:0.5b  (paling ringan ±397 MB, sangat cepat di Raspberry Pi CPU)
+#   RAM 4-8GB -> qwen2.5:1.5b  (opsional bila ingin model lebih besar)
 # ============================================================================
 set -euo pipefail
 
-MODEL="${AI_MODEL:-qwen2.5:1.5b}"
-MODEL_0_5B="qwen2.5:0.5b"                 # alternatif untuk Pi RAM 2 GB
+MODEL="${AI_MODEL:-qwen2.5:0.5b}"
+MODEL_0_5B="qwen2.5:0.5b"                 # model ringan utama untuk Raspberry Pi
 OLLAMA_URL="http://127.0.0.1:11434"
 jalan() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 info()  { printf '\033[1;36m[..]\033[0m %s\n' "$*"; }
@@ -56,19 +55,36 @@ else
   jalan "Instalasi Ollama selesai"
 fi
 
-# ── Langkah 2 — nyalakan layanannya (auto-start saat Pi dinyalakan) ──────────
-info "Mengaktifkan layanan ollama ..."
+# ── Langkah 2 — nyalakan layanannya (auto-start saat Pi dinyalakan & kunci ke 127.0.0.1) ──
+info "Mengaktifkan layanan ollama (terkunci ke 127.0.0.1:11434 & selalu restart) ..."
 if command -v systemctl >/dev/null 2>&1; then
+  $SUDO mkdir -p /etc/systemd/system/ollama.service.d
+  cat <<'EOF' | $SUDO tee /etc/systemd/system/ollama.service.d/localhost.conf >/dev/null
+[Unit]
+Description=Ollama Service (GARAP Local AI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_KEEP_ALIVE=-1"
+Environment="OLLAMA_NUM_PARALLEL=1"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Restart=always
+RestartSec=3
+EOF
+  $SUDO systemctl daemon-reload 2>/dev/null || true
   $SUDO systemctl enable --now ollama 2>/dev/null || true
+  $SUDO systemctl restart ollama 2>/dev/null || true
   sleep 2
   if systemctl is-active --quiet ollama 2>/dev/null; then
-    jalan "Layanan ollama AKTIF (enable on boot: $(systemctl is-enabled ollama 2>/dev/null || echo '?'))"
+    jalan "Layanan ollama AKTIF & AUTO-START di 127.0.0.1:11434 (enable on boot: $(systemctl is-enabled ollama 2>/dev/null || echo '?'))"
   else
     waspad "Layanan ollama belum aktif — coba: sudo systemctl start ollama"
   fi
 else
-  nohup ollama serve >/tmp/ollama.log 2>&1 &
-  jalan "Menjalankan 'ollama serve' tanpa systemd (lihat /tmp/ollama.log)"
+  OLLAMA_HOST=127.0.0.1:11434 nohup ollama serve >/tmp/ollama.log 2>&1 &
+  jalan "Menjalankan 'ollama serve' di 127.0.0.1:11434 tanpa systemd (lihat /tmp/ollama.log)"
 fi
 
 # ── Langkah 3 — verifikasi endpoint hidup ────────────────────────────────────
@@ -121,7 +137,13 @@ SWAP
 ZRAM
 fi
 
-# ── Langkah 7 — konfigurasi backend (PENTING) ────────────────────────────────
+# ── Langkah 7 — hangatkan model di memori agar selalu siap & instan ───────────
+info "Menghangatkan model $MODEL di RAM (Keep-Alive: Selalu Siap) ..."
+curl -fsS -m 30 "$OLLAMA_URL/api/generate" \
+  -d "{\"model\":\"$MODEL\",\"prompt\":\"\",\"keep_alive\":-1}" >/dev/null 2>&1 || true
+jalan "Model $MODEL siap dan tetap berada di memori RAM (tanpa jeda cold-start)"
+
+# ── Langkah 8 — konfigurasi backend (PENTING) ────────────────────────────────
 cat <<EOF
 
 $(jalan "SELESAI. Ringkasan:")
