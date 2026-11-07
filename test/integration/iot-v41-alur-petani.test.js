@@ -17,7 +17,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const { startServer, craftToken, bearer } = require('./_server');
 const { lewati } = require('./_isolasi');
-const { q } = require('../../src/db');
+const { q, pool } = require('../../src/db');
 
 let srv;
 let tokAdmin;
@@ -68,6 +68,7 @@ after(async () => {
     await q("UPDATE penampung_states SET mode_pemeliharaan = false, status_lock = false, lock_alasan = NULL, kejadian_dosis_hari = 0, volume_ab_hari_ml = 0, volume_ph_hari_ml = 0");
   }
   if (srv) await srv.stop();
+  await pool.end();
 });
 
 test('Langkah 1 — Pengaturan Alat: Tombol [Simpan & kirim ke alat] menghitung T_putar & menolak batas terbalik', { skip: lewati }, async () => {

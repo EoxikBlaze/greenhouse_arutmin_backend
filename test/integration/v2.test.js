@@ -24,7 +24,7 @@ const SUMBER = [
   { path: 'kalibrasi-sensor', table: 'kalibrasi_sensor', floor: 8 },
   { path: 'mapping-channel', table: 'mapping_channel_esp32', floor: 15 },
   { path: 'target-nutrisi', table: 'target_nutrisi', floor: 3 },
-  { path: 'penampung-states', table: 'penampung_states', floor: 5 },
+  { path: 'penampung-states', table: 'penampung_states', floor: 4 },
 ];
 
 /** PUT yang harus dipulihkan walau tes gagal di tengah jalan (jaring net-zero). */

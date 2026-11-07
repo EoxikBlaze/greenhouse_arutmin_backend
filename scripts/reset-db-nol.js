@@ -41,7 +41,6 @@ const TABEL_KOSONGKAN = [
   'report_logs',
   'water_fill_events',
   'wa_settings',
-  'jadwal_perawatan',
   'cctv_kameras',
   'Preset_Nutrisi_Skip', // placeholder
   'preset_versi',

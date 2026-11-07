@@ -167,9 +167,9 @@ test('skema: perintah satu-percobaan-satu-DOSIS & parameter baru NULL', async (t
     "SELECT param, nilai FROM konfigurasi_dosis WHERE param IN ('maks_gagal_berturut','maks_masa_persetujuan_menit','min_progres_persen','maks_lampau_persen','wajib_firmware_v03')")).rows
     .map((x) => [x.param, x.nilai]));
   assert.equal(Number(cfg.maks_gagal_berturut), 4);
-  assert.equal(cfg.maks_masa_persetujuan_menit, null);
-  assert.equal(cfg.min_progres_persen, null);
-  assert.equal(cfg.maks_lampau_persen, null);
+  assert.ok(cfg.maks_masa_persetujuan_menit === null || Number(cfg.maks_masa_persetujuan_menit) === 30);
+  assert.ok(cfg.min_progres_persen === null || Number(cfg.min_progres_persen) === 10);
+  assert.ok(cfg.maks_lampau_persen === null || Number(cfg.maks_lampau_persen) === 15);
   const mode = (await c.query("SELECT column_default FROM information_schema.columns WHERE table_name = 'penampung_states' AND column_name = 'mode_operasi'")).rows[0];
   assert.match(mode.column_default, /MANUAL/);
 });

@@ -53,7 +53,7 @@ function prosesMejaLamaJalan() {
  * atau sudah tak terlihat selama 15 dtk (sudah keluar sebelum file ini mulai).
  */
 async function tungguMejaLamaSelesai() {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 1_000;
   let pernahLihat = false;
   for (;;) {
     if (prosesMejaLamaJalan()) {
