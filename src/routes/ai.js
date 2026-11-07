@@ -770,7 +770,7 @@ router.post('/langkah-selanjutnya', async (req, res, next) => {
  * prompt sebagai DATA MENTAH. Ollama mati / timeout → jawaban aturan (heuristik),
  * request tidak pernah 500 hanya karena AI tidak tersedia. */
 const BATAS_PESAN = 600;
-const BATAS_RIWAYAT = 8;
+const BATAS_RIWAYAT = 20;
 const BATAS_JAWABAN = 1500;
 
 function validasiChat(req, res) {
@@ -865,7 +865,7 @@ async function panggilOllamaChat(messages) {
   }
 }
 
-const wajah = (extra) => ({ tabel: [], tautan: [], model: null, fallback_karena: null, generated_at: new Date().toISOString(), ...extra });
+const wajah = (extra) => ({ tabel: [], tautan: [], saran_pertanyaan: [], model: null, fallback_karena: null, generated_at: new Date().toISOString(), ...extra });
 
 router.post('/chat', async (req, res, next) => {
   try {
@@ -887,7 +887,12 @@ router.post('/chat', async (req, res, next) => {
         guard.catatPelanggaran(req.user);
         console.warn('[ai-guard] ditolak', { user: (req.user && (req.user.username || req.user.sub)) || '?', kategori: cek.kategori, cuplikan: v.pesan.slice(0, 60) });
       }
-      return res.json(wajah({ jawaban: guard.pesanTolak(cek.jenis), sumber: 'tolak', alasan: cek.jenis }));
+      return res.json(wajah({
+        jawaban: guard.pesanTolak(cek.jenis),
+        sumber: 'tolak',
+        alasan: cek.jenis,
+        saran_pertanyaan: guard.SARAN_PERTANYAAN,
+      }));
     }
 
     // salam/terima kasih: balasan tetap, tanpa DB/LLM
@@ -949,11 +954,8 @@ router.post('/chat', async (req, res, next) => {
       }
       const e = diagnosaEkstrak(s.teks);
       const rendah = guard.normalisasi(e.teks + ' ' + JSON.stringify(e.tabel));
-      // kata UTUH (dulu substring: "ec" cocok dgn "secara", "air" dgn "fair" → hampir semua jawaban lolos)
-      const kata = new Set(rendah.split(/[^a-z0-9]+/).filter(Boolean));
-      const bertopik = KATA_DOMAIN.some((k) => kata.has(k));
-      // model kecil bisa tetap menjawab hal lain walau diminta menolak → buang bila jawabannya keluar topik / berbahaya
-      const sebab = !e.teks ? 'kosong' : !bertopik ? 'tanpa_kata_domain'
+      // Pengaman secukupnya: tolak bila kosong, kata eksplisit luar topik terlarang, berbahaya, atau memuat kode
+      const sebab = !e.teks ? 'kosong'
         : guard.luarTopik(rendah) ? 'kata_luar_topik'
         : guard.deteksi(e.teks).includes('berbahaya') ? 'berbahaya'
         : guard.adaKode(s.teks) ? 'kode'
@@ -974,7 +976,12 @@ router.post('/chat', async (req, res, next) => {
     }
     // AI hidup tetapi jawabannya di luar bidang → tolak jelas (bukan "saran alert" yang membingungkan)
     if (fallbackKarena === 'output_tidak_sah') {
-      return res.json(wajah({ jawaban: guard.pesanTolak('topik'), sumber: 'tolak', alasan: 'keluaran_luar_topik' }));
+      return res.json(wajah({
+        jawaban: guard.pesanTolak('topik'),
+        sumber: 'tolak',
+        alasan: 'keluaran_luar_topik',
+        saran_pertanyaan: guard.SARAN_PERTANYAAN,
+      }));
     }
     const h = heuristik(data);
     let tabelFallback = [];

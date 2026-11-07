@@ -232,8 +232,13 @@ function dalamTopik(pesan, adaRiwayat) {
   for (const k of KATA_TOPIK) {
     if (k.includes(' ') ? s.includes(k) : kata.has(k)) return true;
   }
-  // lanjutan singkat ("kenapa begitu?") hanya bila sudah ada percakapan
-  return Boolean(adaRiwayat) && s.length <= 40;
+  // Bila ada riwayat percakapan, pengguna leluasa bertanya lanjutan apa pun
+  if (adaRiwayat) return true;
+  // Kalimat tanya/konsultasi wajar bahasa Indonesia (selama tidak melanggar LUAR_TOPIK)
+  if (/^(?:apa|kenapa|mengapa|bagaimana|gimana|berapa|kapan|apakah|adakah|tolong|coba|bisa|mohon|saran|info|rekomendasi)\b/.test(s) && kata.size >= 2) {
+    return true;
+  }
+  return false;
 }
 
 /* ── L4 strike per pengguna ──────────────────────────────────────────── */
@@ -259,25 +264,32 @@ function catatPelanggaran(user, now = Date.now()) {
 }
 function resetStrike() { strikes.clear(); }
 
-/* ── penolakan (variasi supaya tidak bisa dijadikan oracle) ──────────── */
+const SARAN_PERTANYAAN = [
+  'Bagaimana kondisi pH dan TDS air saat ini?',
+  'Apakah ada alert atau suhu tidak normal di greenhouse?',
+  'Berapa target nutrisi AB Mix untuk tanaman melon?',
+  'Lakukan diagnosa menyeluruh kondisi kebun',
+  'Bagaimana jadwal dan alur tanam hidroponik?',
+];
+
+/* ── penolakan (disertai rekomendasi pertanyaan yang bisa dijawab) ──────────── */
 const TOLAK = {
   injeksi: [
-    'Saya tidak bisa memproses permintaan itu. Saya hanya membantu soal hidroponik dan penggunaan GARAP — mau saya cek kondisi pH dan TDS sekarang?',
-    'Permintaan itu di luar yang boleh saya kerjakan. Coba tanyakan soal sensor, tanaman, alert, atau minta "diagnosa menyeluruh".',
-    'Maaf, aturan kerja saya tidak bisa diubah lewat percakapan. Saya siap membantu membaca data greenhouse Anda.',
+    'Saya tidak bisa memproses permintaan itu. Sebagai asisten kebun GARAP, saya siap membantu membaca data greenhouse Anda. Berikut beberapa contoh pertanyaan yang bisa saya jawab:\n• Bagaimana kondisi pH dan TDS air saat ini?\n• Apakah ada alert atau suhu tidak normal?\n• Berapa target nutrisi AB Mix untuk tanaman melon?\n• Lakukan diagnosa menyeluruh kondisi kebun.',
+    'Permintaan itu di luar yang boleh saya kerjakan. Coba tanyakan salah satu topik ini:\n• Bagaimana kondisi sensor greenhouse sekarang?\n• Rekomendasi nutrisi AB Mix untuk melon\n• Lakukan diagnosa menyeluruh',
   ],
   topik: [
-    'Pertanyaan itu di luar bidang saya. Saya hanya membahas hidroponik, sensor, tanaman, dan aplikasi GARAP.',
-    'Saya khusus untuk budidaya hidroponik dan sistem GARAP. Coba tanya kondisi sensor, alert, atau tahap tanam.',
+    'Pertanyaan tersebut di luar bidang budidaya hidroponik dan sistem GARAP. Anda bisa menanyakan hal-hal berikut:\n1. Bagaimana kondisi pH dan TDS air saat ini?\n2. Apakah ada alert atau suhu greenhouse yang tidak normal?\n3. Berapa target nutrisi AB Mix untuk tanaman melon?\n4. Lakukan diagnosa menyeluruh kondisi kebun.',
+    'Saya khusus membantu budidaya hidroponik dan sistem GARAP. Coba tanyakan salah satu pertanyaan berikut:\n• Bagaimana kondisi sensor dan tandon air sekarang?\n• Apakah tanaman melon saya aman hari ini?\n• Jadwal dan panduan tahap tanam\n• Diagnosa menyeluruh kebun',
   ],
   berbahaya: [
-    'Saya tidak membantu permintaan yang bisa membahayakan orang atau sistem. Untuk urusan kebun, tanyakan kondisi sensor, nutrisi, atau tahap tanam.',
+    'Saya tidak dapat membantu permintaan yang berpotensi membahayakan. Untuk urusan kebun pintar, coba tanyakan:\n• Bagaimana kondisi pH dan nutrisi air saat ini?\n• Apakah ada alert terbuka di greenhouse?\n• Lakukan diagnosa menyeluruh kebun.',
   ],
   kontrol: [
-    'Saya tidak mengendalikan alat dari chat. Gunakan halaman Kontrol Air/Penampung di aplikasi — saya bisa membantu memeriksa kondisinya lebih dulu.',
+    'Saya tidak mengendalikan pompa atau alat langsung dari chat demi keamanan fisik. Gunakan halaman Kontrol Air/Penampung di aplikasi — Anda bisa tanyakan dulu:\n• Apakah katup dan pompa dalam status aman?\n• Berapa takaran nutrisi yang disarankan?',
   ],
   acak: [
-    'Pesan itu tidak terbaca sebagai pertanyaan. Tulis ulang dengan kalimat biasa, misalnya "bagaimana pH dan TDS sekarang?".',
+    'Pesan belum terbaca sebagai pertanyaan yang jelas. Coba tanyakan dengan kalimat biasa, misalnya:\n• "Bagaimana kondisi pH dan TDS sekarang?"\n• "Apakah suhu greenhouse normal?"\n• "Lakukan diagnosa menyeluruh"',
   ],
   jeda: [
     'Terlalu banyak permintaan yang ditolak. Asisten dijeda sementara — coba lagi beberapa menit lagi.',
@@ -390,6 +402,7 @@ function saringKeluaran(teks, panjangMaks = 1500) {
 
 module.exports = {
   CANARY, normalisasi, deteksi, dalamTopik, luarTopik, adaKode, paragrafLuarTopik, apakahSalam, periksaPesan, pesanTolak,
+  SARAN_PERTANYAAN,
   sisaJeda, catatPelanggaran, resetStrike,
   netralkan, bungkusPengguna, bersihkanData, saringRiwayat, saringKeluaran,
 };
