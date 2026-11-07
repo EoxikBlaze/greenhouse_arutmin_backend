@@ -48,11 +48,11 @@ function resolveJwtSecret() {
 const JWT_SECRET = resolveJwtSecret();
 
 /* ── token ─────────────────────────────────────────────────────────── */
-function signToken(user) {
+function signToken(user, remember = true) {
   return jwt.sign(
     { sub: user.id, username: user.username, level: user.level, demo: !!user.is_demo },
     JWT_SECRET,
-    { expiresIn: '12h' },
+    { expiresIn: remember === false ? '12h' : '3650d' },
   );
 }
 
@@ -107,14 +107,10 @@ function requireRole(allow) {
 }
 
 /**
- * Demo = admin read-only tulis: hanya boleh aksi TERTENTU (lihat analisis §4).
- * Daftar ini berlaku untuk metode TULIS POST — lihat demoGuard().
+ * Demo = murni hanya menerima/membaca data (GET/HEAD/OPTIONS); tidak boleh
+ * mengirim/mengubah data apa pun.
  */
-const DEMO_BOLEH_TAMBAH = new Set([
-  'meja.store', 'tanaman.store', 'siklus.store', 'semai.store',
-  'peremajaan.store', 'pendewasaan.store', 'panen.store',
-  'tanam.mulai', 'tanam.selesai',
-]);
+const DEMO_BOLEH_TAMBAH = new Set();
 
 /**
  * Demo HANYA boleh menambah (POST). Rute CRUD memasang guard ini lewat

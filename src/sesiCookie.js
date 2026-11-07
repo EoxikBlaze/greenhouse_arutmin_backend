@@ -8,7 +8,8 @@ const crypto = require('crypto');
 
 const NAMA_SESI = 'vsf_sesi';
 const NAMA_CSRF = 'vsf_csrf';
-const MASA_DETIK = 12 * 60 * 60; // sama dengan masa JWT (12 jam)
+const MASA_DETIK = 12 * 60 * 60; // masa default (12 jam)
+const MASA_INGAT_DETIK = 3650 * 24 * 60 * 60; // masa "Ingatkan saya" (10 tahun)
 const METODE_AMAN = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function bacaCookie(req, nama) {
@@ -31,10 +32,11 @@ function atribut(req, httpOnly, maxAge) {
 }
 
 /** Pasang cookie sesi (HttpOnly) + cookie CSRF (terbaca JS agar bisa dikirim balik sebagai header). */
-function pasangSesi(req, res, token) {
+function pasangSesi(req, res, token, remember = false) {
+  const masa = remember ? MASA_INGAT_DETIK : MASA_DETIK;
   const csrf = crypto.randomBytes(24).toString('base64url');
-  res.append('Set-Cookie', `${NAMA_SESI}=${encodeURIComponent(token)}; ${atribut(req, true, MASA_DETIK)}`);
-  res.append('Set-Cookie', `${NAMA_CSRF}=${csrf}; ${atribut(req, false, MASA_DETIK)}`);
+  res.append('Set-Cookie', `${NAMA_SESI}=${encodeURIComponent(token)}; ${atribut(req, true, masa)}`);
+  res.append('Set-Cookie', `${NAMA_CSRF}=${csrf}; ${atribut(req, false, masa)}`);
 }
 
 function hapusSesi(req, res) {

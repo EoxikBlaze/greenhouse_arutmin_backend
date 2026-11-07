@@ -44,10 +44,11 @@ router.post('/login', async (req, res, next) => {
       after: { username: user.username, level: user.level, ingat: !!remember },
     };
 
-    // Web: token hanya di cookie HttpOnly (tidak ada di body, tidak terjangkau JS). Klien lain: token di body.
-    const token = signToken(user);
+    // Web/Mobile: mendukung Bearer token berumur panjang (default 10 tahun) maupun cookie HttpOnly.
+    const ingat = remember !== false;
+    const token = signToken(user, ingat);
     const lewatCookie = req.body?.sesi === 'cookie';
-    if (lewatCookie) sesiCookie.pasangSesi(req, res, token);
+    if (lewatCookie) sesiCookie.pasangSesi(req, res, token, ingat);
     json(res, 200, {
       status: true,
       message: 'Login berhasil.',
