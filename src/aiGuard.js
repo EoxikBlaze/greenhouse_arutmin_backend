@@ -195,14 +195,15 @@ function adaKode(teks) {
   return /```|\bdef \w+\s*\(|\bfunction\s*\w*\s*\(|\bprint\s*\(|^\s*(?:import|from) \w+|\bconsole\.log\b|<\/?\w+[^>]*>|\bSELECT\b.+\bFROM\b/im.test(String(teks || ''));
 }
 
-const KATA_INGGRIS_UMUM = /\b(?:the|is|are|was|were|and|with|from|this|that|your|have|has|been|for|not|you|should|would|could|can|will|temperature|levels?|currently|reading|status|growth|solution|based|according|hello|here|please|about|these|those|which|their|there)\b/gi;
-const PEMBUKA_INGGRIS = /^(?:here (?:is|are)|based on|the (?:current|sensor|water|plants?)|hello|sure|certainly|i can|according to|as an ai|in order to|to (?:adjust|increase|decrease|maintain))\b/i;
+const KATA_INGGRIS_UMUM = /\b(?:the|is|are|was|were|and|with|from|this|that|your|have|has|been|for|not|you|should|would|could|can|will|temperature|levels?|currently|reading|status|growth|solution|based|according|hello|here|please|about|these|those|which|their|there|sorry|assist|help)\b/gi;
+const PEMBUKA_INGGRIS = /^(?:sorry|i (?:am sorry|cannot|can't)|here (?:is|are)|based on|the (?:current|sensor|water|plants?)|hello|sure|certainly|i can|according to|as an ai|in order to|to (?:adjust|increase|decrease|maintain))\b/i;
+const REFUSAL_INGGRIS = /\b(?:sorry|cannot assist|can't assist|unable to assist|as an ai language model)\b/i;
 
 /** Deteksi apakah keluaran model berbahasa Inggris. */
 function apakahBahasaInggris(teks) {
   if (!teks || typeof teks !== 'string') return false;
   const str = teks.trim();
-  if (PEMBUKA_INGGRIS.test(str)) return true;
+  if (PEMBUKA_INGGRIS.test(str) || REFUSAL_INGGRIS.test(str)) return true;
   const cocok = str.match(KATA_INGGRIS_UMUM) || [];
   if (cocok.length >= 4) {
     const kataIndo = str.match(/\b(?:dan|yang|di|ke|dari|ini|itu|untuk|dengan|pada|adalah|sudah|bisa|tidak|saat|air|suhu|tanaman|kebun|kondisi|nilai)\b/gi) || [];
