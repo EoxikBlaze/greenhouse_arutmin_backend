@@ -205,6 +205,10 @@ const DOMAIN_KUAT = new Set([
   'plant', 'talang', 'aerasi', 'aerator', 'botol', 'kalibrasi', 'probe', 'iot', 'esp32', 'tandon',
   'melon', 'buah', 'bunga', 'sulur', 'tunas', 'hama', 'kutu', 'thrips', 'jamur', 'layu', 'kuning', 'busuk', 'rontok',
   'abmix', 'liter', 'sirkulasi', 'kuras', 'sayur', 'sayuran',
+  // Istilah hortikultura & budidaya spesifik agar tidak memicu false positive
+  'pertumbuhan', 'perawatan', 'rockwool', 'netpot', 'flushing', 'kalsium', 'magnesium', 'npk', 'unsur', 'hara',
+  'kepekatan', 'ventilasi', 'exhaust', 'kipas', 'penyinaran', 'substrat', 'pestisida', 'fungisida', 'insektisida',
+  'pruning', 'topping', 'pangkas', 'penyerbukan', 'lebah', 'kematangan', 'brix', 'bobot',
 ]);
 
 /** true bila ada paragraf panjang (≥ 15 kata) tanpa satu pun kata domain kuat — tanda selundupan topik lain. */

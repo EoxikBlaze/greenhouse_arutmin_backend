@@ -905,6 +905,12 @@ router.post('/chat', async (req, res, next) => {
           ? 'Wa\'alaikumsalam! Saya asisten kebun GARAP. Ada yang bisa saya bantu terkait kondisi tanaman melon atau sensor greenhouse hari ini?'
           : 'Halo! Saya asisten kebun GARAP yang siap membantu budidaya Anda. Tanyakan kondisi sensor (pH, TDS, suhu), status tanaman melon, alert, atau ketik "Diagnosa menyeluruh" untuk pemeriksaan lengkap.',
         sumber: 'sapaan',
+        saran_pertanyaan: [
+          'Diagnosa menyeluruh',
+          'Bagaimana kondisi pH dan TDS sekarang?',
+          'Tampilkan tabel sensor terbaru',
+          'Apa langkah selanjutnya?',
+        ],
       }));
     }
 
@@ -913,11 +919,26 @@ router.post('/chat', async (req, res, next) => {
     // jalur deterministik: diagnosa menyeluruh & tabel (angka langsung dari DB, tanpa LLM)
     // angka yang disebut pengguna di luar ambang → jawaban pasti dari data, bukan tebakan model
     const fakta = cekAngkaPengguna(v.pesan, data.ambang);
-    if (fakta) return res.json(wajah({ jawaban: fakta, sumber: 'data' }));
+    if (fakta) return res.json(wajah({
+      jawaban: fakta,
+      sumber: 'data',
+      saran_pertanyaan: [
+        'Lakukan diagnosa menyeluruh',
+        'Tampilkan tabel sensor terbaru',
+        'Apa langkah selanjutnya?',
+      ],
+    }));
 
     const niat = diag.deteksiNiat(guard.normalisasi(v.pesan));
     if (niat) {
       const h = await diag.jawabNiat(niat, data, guard.normalisasi(v.pesan));
+      const saranNiat = niat === 'diagnosa'
+        ? ['Bagaimana cara atur pH?', 'Berapa target TDS melon?', 'Tampilkan tabel sensor terbaru', 'Langkah selanjutnya']
+        : niat === 'sensor'
+        ? ['Lakukan diagnosa menyeluruh', 'Berapa batas aman suhu air?', 'Apa saran langkah selanjutnya?', 'Status penampung air']
+        : niat === 'tahap'
+        ? ['Berapa lama fase semai melon?', 'Kapan melon siap panen?', 'Target nutrisi melon', 'Diagnosa menyeluruh']
+        : ['Diagnosa menyeluruh', 'Tampilkan tabel sensor terbaru', 'Apa saran langkah selanjutnya?'];
       const gambarNiat = niat === 'diagnosa'
         ? [
             { url: '/panduan/beranda.png', judul: 'Layar Beranda (Status Umum Kebun)', kenapa: 'Menampilkan ringkasan sensor pH/TDS dan peringatan aktif saat ini.' },
@@ -933,6 +954,7 @@ router.post('/chat', async (req, res, next) => {
         tabel: h.tabel,
         status: h.status,
         gambar: gambarNiat,
+        saran_pertanyaan: saranNiat,
         tautan: panduan.tautanUntuk(niat, peranPengguna(req)),
         sumber: niat === 'diagnosa' ? 'diagnosa' : 'data',
       }));
@@ -948,6 +970,12 @@ router.post('/chat', async (req, res, next) => {
         jawaban: pd.jawaban,
         tabel: pd.tabel,
         gambar: pd.gambar || [],
+        saran_pertanyaan: [
+          'Bagaimana cara input data bibit?',
+          'Langkah selanjutnya apa?',
+          'Tampilkan kondisi sensor',
+          'Diagnosa menyeluruh',
+        ],
         tautan: panduan.tautanUntuk(kunciPanduan, peranPengguna(req)),
         sumber: 'panduan',
       }));
@@ -962,6 +990,12 @@ router.post('/chat', async (req, res, next) => {
         gambar: [
           { url: '/panduan/beranda.png', judul: 'Layar Beranda (Status Umum Kebun)', kenapa: 'Menampilkan ringkasan sensor pH/TDS dan peringatan aktif saat ini.' },
           { url: '/panduan/sensor.png', judul: 'Layar Sensor (Telemetri Realtime)', kenapa: 'Memperlihatkan grafik pergerakan nutrisi dan suhu air secara detail.' },
+        ],
+        saran_pertanyaan: [
+          'Bagaimana cara atur pH?',
+          'Berapa target TDS melon?',
+          'Tampilkan tabel sensor terbaru',
+          'Status penampung dan dosing',
         ],
         tautan: panduan.tautanUntuk('diagnosa', peranPengguna(req)),
         sumber: 'diagnosa',
@@ -1005,7 +1039,17 @@ router.post('/chat', async (req, res, next) => {
     }
 
     if (jawaban) {
-      return res.json(wajah({ jawaban, tabel: tabelLlm, sumber: 'ollama', model: config.aiModel }));
+      return res.json(wajah({
+        jawaban,
+        tabel: tabelLlm,
+        sumber: 'ollama',
+        model: config.aiModel,
+        saran_pertanyaan: [
+          'Lakukan diagnosa menyeluruh',
+          'Tampilkan tabel sensor terbaru',
+          'Apa langkah selanjutnya?',
+        ],
+      }));
     }
     // AI hidup tetapi jawabannya di luar bidang → tolak jelas (bukan "saran alert" yang membingungkan)
     if (fallbackKarena === 'output_tidak_sah') {
@@ -1022,7 +1066,14 @@ router.post('/chat', async (req, res, next) => {
     return res.json(wajah({
       // sampai di sini hanya bila AI lokal mati / timeout / balasannya rusak
       jawaban: `Asisten AI lokal sedang tidak bisa dihubungi, jadi berikut saran berbasis aturan dari data terbaru. ${h.keputusan}.`,
-      tabel: tabelFallback, sumber: 'heuristik', fallback_karena: fallbackKarena,
+      tabel: tabelFallback,
+      sumber: 'heuristik',
+      fallback_karena: fallbackKarena,
+      saran_pertanyaan: [
+        'Lakukan diagnosa menyeluruh',
+        'Tampilkan tabel sensor',
+        'Status penampung dan dosing',
+      ],
     }));
   } catch (e) { return next(e); }
 });
