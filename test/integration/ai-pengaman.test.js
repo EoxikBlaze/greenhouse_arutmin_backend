@@ -470,3 +470,16 @@ test('HTTP: SOP pH & preset nutrisi dijawab dari data tanpa memanggil LLM', asyn
     assert.ok(b.body.tabel[0].baris.every((r) => r[0] === 'Selada'), JSON.stringify(b.body.tabel[0].baris));
   }
 });
+
+test('unit & HTTP: model menjawab bahasa Inggris → dideteksi dan ditolak dari keluaran', async () => {
+  assert.equal(guard.apakahBahasaInggris('Here is the status of your water and nutrients'), true);
+  assert.equal(guard.apakahBahasaInggris('Based on the sensor data, the water temperature is 25 degrees'), true);
+  assert.equal(guard.apakahBahasaInggris('Kondisi air saat ini memiliki pH 6.5 dan TDS 1200 ppm'), false);
+
+  mock.state.balas = 'The current water temperature is 26 degrees and pH level is 6.5 in the greenhouse.';
+  const res = await kirim(333, 'Bagaimana kondisi pH sekarang?');
+  assert.equal(res.body.sumber, 'tolak');
+  assert.equal(res.body.alasan, 'keluaran_luar_topik');
+  assert.ok(!res.body.jawaban.includes('current water temperature'));
+  assert.ok(!res.body.jawaban.includes('degrees'));
+});
