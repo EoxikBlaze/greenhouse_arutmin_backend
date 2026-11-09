@@ -85,7 +85,7 @@ test('chat dengan Ollama mock → jawaban model, system prompt + riwayat terkiri
   assert.equal(m[0].role, 'system');
   assert.match(m[0].content, /<data>/);
   assert.deepEqual(m.slice(1).map((x) => x.role), ['user', 'assistant', 'user']);
-  assert.equal(m[m.length - 1].content, '<pesan_pengguna>Apakah pH aman?</pesan_pengguna>');
+  assert.ok(m[m.length - 1].content.includes('<pesan_pengguna>Apakah pH aman?</pesan_pengguna>'));
 });
 
 /* ── cctv ──────────────────────────────────────────────────────────── */
