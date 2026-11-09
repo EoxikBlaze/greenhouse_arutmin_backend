@@ -612,7 +612,7 @@ async function panggilOllama(prompt) {
         // think:false — matikan chain-of-thought model reasoning (Ollama ≥0.40):
         // respons cepat & taat format; di Pi pun tetap jauh di bawah timeout 30s.
         model: config.aiModel, prompt, stream: false, think: false, keep_alive: '30m',
-        options: { temperature: 0.2 },
+        options: { temperature: 0.2, num_predict: 250 },
       }),
       signal: ctrl.signal,
     });
@@ -851,7 +851,7 @@ async function panggilOllamaChat(messages) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: config.aiModel, messages, stream: false, think: false, keep_alive: '30m',
-        options: { temperature: 0.3, num_predict: 500 },
+        options: { temperature: 0.2, num_predict: 250 },
       }),
       signal: ctrl.signal,
     });
