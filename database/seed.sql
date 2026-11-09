@@ -35,7 +35,35 @@ INSERT INTO wa_settings (id, aktif, api_key, target, created_at, updated_at) VAL
     (1, FALSE, NULL, '', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
--- 5. WAJIB: samakan sequence dengan max(id) — mencegah semua INSERT balas 500
+-- 5. MEJA TANAMAN — standar hidroponik greenhouse
+INSERT INTO mejas (id_meja, meja, jumlah_lubang, kenaikan_air_cm, created_at, updated_at) VALUES
+    (1, 'Meja 1 (Semai)',         200, 40, now(), now()),
+    (2, 'Meja 2 (Peremajaan)',    150, 40, now(), now()),
+    (3, 'Meja 3 (Pendewasaan A)', 100, 40, now(), now()),
+    (4, 'Meja 4 (Pendewasaan B)', 100, 40, now(), now())
+ON CONFLICT (id_meja) DO NOTHING;
+
+-- 6. JENIS TANAMAN
+INSERT INTO tanamen (id_tanaman, nama_tanaman, id_meja, created_at, updated_at) VALUES
+    (1, 'Melon',          1, now(), now()),
+    (2, 'Selada Romaine', 1, now(), now()),
+    (3, 'Pakcoy Hijau',   1, now(), now())
+ON CONFLICT (id_tanaman) DO NOTHING;
+
+-- 7. SIKLUS TANAM
+INSERT INTO sikluses (id_siklus, id_tanaman, nama_siklus, waktu_siklus, created_at, updated_at) VALUES
+    (1, 1, 'Semai',        10, now(), now()),
+    (2, 1, 'Peremajaan',   15, now(), now()),
+    (3, 1, 'Pendewasaan',  45, now(), now()),
+    (4, 2, 'Semai',         7, now(), now()),
+    (5, 2, 'Peremajaan',   10, now(), now()),
+    (6, 2, 'Pendewasaan',  25, now(), now()),
+    (7, 3, 'Semai',         7, now(), now()),
+    (8, 3, 'Peremajaan',   10, now(), now()),
+    (9, 3, 'Pendewasaan',  28, now(), now())
+ON CONFLICT (id_siklus) DO NOTHING;
+
+-- 8. WAJIB: samakan sequence dengan max(id) — mencegah semua INSERT balas 500
 --    (penyebab bug yang sudah kita temukan; script ini juga ada di scripts/fix-sequences.sql)
 DO $$
 DECLARE r record; mx bigint;
