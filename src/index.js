@@ -191,6 +191,7 @@ app.use('/monitoring', monitoring.router);             // campur publik/terprote
 const semuaRole = [requireAuth, requireRole('all')];
 const adminDemo = [requireAuth, requireRole(['admin', 'demo'])];
 
+app.use('/api/analitik', ...semuaRole, require('./routes/analitik')); // prediksi panen, saran dosis (teks), ekspor CSV
 app.use('/dashboard', ...semuaRole, dashboard);
 app.use('/tanam', ...semuaRole, tanam);
 app.use('/cctv', ...semuaRole, cctv);
