@@ -3,7 +3,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { q, one } = require('../db');
-const { publicUser, json } = require('../auth');
+const { publicUser, json, lupakanAkun } = require('../auth');
 
 const router = express.Router();
 
@@ -92,6 +92,7 @@ router.post('/password', async (req, res, next) => {
     }
     const hash = await bcrypt.hash(String(baru), 12); // cost 12
     await q('UPDATE users SET password = $1, updated_at = now() WHERE id = $2', [hash, req.user.sub]);
+    lupakanAkun(req.user.sub); // token panjang lama gugur seketika
     // Audit trail — PERISTIWA ganti password tercatat, nilainya TIDAK PERNAH
     // (kunci password dibuang src/audit.js); detail cukup meta.perubahan.
     req.audit = {

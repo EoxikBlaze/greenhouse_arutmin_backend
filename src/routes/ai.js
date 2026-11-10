@@ -28,9 +28,11 @@ const panduan = require('../aiPanduan');
 const diagnosaEkstrak = diag.ekstrakTabelMarkdown;
 
 const { logbookKebun } = require('../aiLogbook');
+const trio = require('../aiTrioKolaborasi');
+const matrixPengetahuan = require('../aiMatrixPengetahuan');
 const router = express.Router();
 
-const AI_TIMEOUT_MS = 30_000;          // kontrak: timeout Ollama 30 detik
+const AI_TIMEOUT_MS = 55_000;          // di bawah batas tunggu klien (60 dtk): server tidak bekerja untuk jawaban yang sudah ditinggal
 const PRIORITAS = ['tinggi', 'sedang', 'rendah'];
 const RANK = { tinggi: 3, sedang: 2, rendah: 1 };
 
@@ -859,8 +861,17 @@ async function panggilOllamaChat(messages) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: config.aiModel, messages, stream: false, think: false, keep_alive: '30m',
-        options: { temperature: 0.2, num_predict: 250 },
+        model: config.aiModel,
+        messages,
+        stream: false,
+        think: false,
+        keep_alive: '30m',
+        options: {
+          temperature: 0.2,
+          num_predict: 250,
+          num_ctx: 2048, // aturan pengaman + <data> + riwayat tidak muat di 512 (terpotong diam-diam)
+          num_thread: 2, // Mode hemat daya termal (2 core saja dari 4 core ARM)
+        },
       }),
       signal: ctrl.signal,
     });
@@ -874,7 +885,7 @@ async function panggilOllamaChat(messages) {
   }
 }
 
-const wajah = (extra) => ({ tabel: [], tautan: [], gambar: [], saran_pertanyaan: [], model: null, fallback_karena: null, generated_at: new Date().toISOString(), ...extra });
+const wajah = (extra) => ({ tabel: [], tautan: [], gambar: [], saran_pertanyaan: [], model: null, fallback_karena: null, kolaborasi: null, generated_at: new Date().toISOString(), ...extra });
 
 router.post('/chat', async (req, res, next) => {
   try {
@@ -975,11 +986,55 @@ router.post('/chat', async (req, res, next) => {
     if (kunciPanduan) {
       const pd = panduan.jawabPanduan(kunciPanduan);
       if (kunciPanduan === 'logbook') pd.jawaban = await logbookKebun();
+      const saranKhusus = {
+        durasi_melon: [
+          'Berapa target PPM nutrisi melon?',
+          'Bagaimana cara polinasi bunga melon?',
+          'Bagaimana cara semai melon?',
+          'Tampilkan kondisi sensor saat ini',
+        ],
+        nutrisi_melon: [
+          'Berapa hari melon siap panen?',
+          'Bagaimana cara mengatasi hama melon?',
+          'Status sensor dan tandon',
+          'Diagnosa menyeluruh',
+        ],
+        polinasi_melon: [
+          'Berapa hari melon siap panen?',
+          'Berapa target PPM melon berbuah?',
+          'Tahap tanam saat ini',
+        ],
+        hama_melon: [
+          'Berapa target PPM nutrisi melon?',
+          'Kondisi sensor kebun sekarang',
+          'Diagnosa menyeluruh',
+        ],
+        durasi_sayuran: [
+          'Berapa hari melon siap panen?',
+          'Berapa target PPM nutrisi sayur?',
+          'Cara semai baru',
+        ],
+        tanaman_buah: [
+          'Berapa PPM nutrisi cabai hidroponik?',
+          'Bagaimana cara mengatasi daun keriting?',
+          'Target nutrisi melon',
+        ],
+        nutrisi_ab_mix: [
+          'Berapa target PPM nutrisi melon?',
+          'Bagaimana cara atur pH tandon?',
+          'Status sensor saat ini',
+        ],
+        media_tanam: [
+          'Berapa hari melon siap panen?',
+          'Target PPM semai melon',
+          'Cara pindah ke meja tanam',
+        ],
+      };
       return res.json(wajah({
         jawaban: pd.jawaban,
         tabel: pd.tabel,
         gambar: pd.gambar || [],
-        saran_pertanyaan: [
+        saran_pertanyaan: saranKhusus[kunciPanduan] || [
           'Bagaimana cara input data bibit?',
           'Langkah selanjutnya apa?',
           'Tampilkan kondisi sensor',
@@ -1008,6 +1063,22 @@ router.post('/chat', async (req, res, next) => {
         ],
         tautan: panduan.tautanUntuk('diagnosa', peranPengguna(req)),
         sumber: 'diagnosa',
+      }));
+    }
+
+    // Jalur Matriks Pengetahuan Cerdas (<2ms, 0% CPU, hemat termal Raspberry Pi)
+    const cocokMatrix = matrixPengetahuan.cariAnalisisCepat(v.pesan);
+    if (cocokMatrix) {
+      return res.json(wajah({
+        jawaban: matrixPengetahuan.formatHasilAnalisis(cocokMatrix),
+        sumber: 'matriks-pengetahuan-cerdas',
+        model: 'engine-ringan-nol-cpu',
+        saran_pertanyaan: [
+          'Bagaimana cara atur pH tandon?',
+          'Berapa target PPM nutrisi melon?',
+          'Tampilkan tabel sensor terbaru',
+          'Lakukan diagnosa menyeluruh',
+        ],
       }));
     }
 
@@ -1045,6 +1116,7 @@ router.post('/chat', async (req, res, next) => {
         console.warn('[ai-guard] keluaran LLM dibuang', { sebab }); // nama pemeriksaan saja, tanpa isi jawaban
       }
     } catch (e) {
+      console.error('[ai-chat-error]', e);
       fallbackKarena = klasifikasiGagal(e);
     }
 
@@ -1083,6 +1155,86 @@ router.post('/chat', async (req, res, next) => {
         'Lakukan diagnosa menyeluruh',
         'Tampilkan tabel sensor',
         'Status penampung dan dosing',
+      ],
+    }));
+  } catch (e) { return next(e); }
+});
+
+/**
+ * POST /api/ai/kolaborasi-trio
+ * Kolaborasi 3 AI spesialis:
+ * 1. AI-1: Analis Sensor & Telemetri (qwen2.5:0.5b)
+ * 2. AI-2: Pakar Agronomi Melon (garap-ai)
+ * 3. AI-3: Dokter Konsultan & Sintesis (qwen2.5:1.5b / trio)
+ */
+let trioBerjalan = false; // satu orkestrasi sekaligus: 3 panggilan model berurutan menghabiskan CPU Pi
+
+router.post('/kolaborasi-trio', async (req, res, next) => {
+  try {
+    const v = validasiChat(req, res);
+    if (!v.ok) return undefined;
+
+    // Pengaman yang sama dengan /chat: jeda pelanggar + periksa pesan SEBELUM DB/LLM
+    const jeda = guard.sisaJeda(req.user);
+    if (jeda > 0) {
+      res.setHeader('Retry-After', String(jeda));
+      return json(res, 429, { message: guard.pesanTolak('jeda') });
+    }
+    const cek = guard.periksaPesan(v.pesan, { riwayatAda: false });
+    if (!cek.ok) {
+      if (cek.jenis === 'injeksi' || cek.jenis === 'acak') guard.catatPelanggaran(req.user);
+      return res.json(wajah({
+        jawaban: guard.pesanTolak(cek.jenis), sumber: 'tolak', alasan: cek.jenis,
+        saran_pertanyaan: guard.SARAN_PERTANYAAN,
+      }));
+    }
+    if (trioBerjalan) {
+      res.setHeader('Retry-After', '30');
+      return json(res, 503, { message: 'Asisten sedang mengerjakan analisis lain. Coba lagi sebentar.' });
+    }
+
+    trioBerjalan = true;
+    let hasilTrio;
+    try {
+      const data = await kumpulData({ id_tanaman: null, id_meja: null });
+      const penampung = await konteksTambahan();
+      hasilTrio = await trio.orkestrasiTrio({ pesan: v.pesan, data, penampung });
+    } catch (e) {
+      return res.json(wajah({
+        jawaban: 'Analisis gabungan belum bisa dijalankan saat ini. Coba "Diagnosa menyeluruh" untuk pemeriksaan dari data sensor.',
+        sumber: 'fallback', fallback_karena: klasifikasiGagal(e),
+      }));
+    } finally {
+      trioBerjalan = false;
+    }
+
+    // Keluaran model tidak pernah dikirim mentah: saring bocoran, bahasa, bahan berbahaya, kode
+    const s = guard.saringKeluaran(hasilTrio.jawaban, BATAS_JAWABAN * 2);
+    if (s.bocor) {
+      guard.catatPelanggaran(req.user);
+      return res.json(wajah({ jawaban: guard.pesanTolak('injeksi'), sumber: 'tolak', alasan: 'bocor' }));
+    }
+    const sebab = guard.apakahBahasaInggris(s.teks) ? 'bahasa_inggris'
+      : guard.deteksi(s.teks).includes('berbahaya') ? 'berbahaya'
+      : guard.adaKode(s.teks) ? 'kode' : null;
+    if (sebab) {
+      console.warn('[ai-guard] keluaran trio dibuang', { sebab });
+      return res.json(wajah({
+        jawaban: 'Analisis gabungan tidak menghasilkan jawaban yang layak. Coba "Diagnosa menyeluruh".',
+        sumber: 'fallback', fallback_karena: 'output_tidak_sah',
+      }));
+    }
+
+    return res.json(wajah({
+      jawaban: s.teks,
+      sumber: 'kolaborasi-3-ai',
+      model: hasilTrio.kolaborasi.tim.map((t) => t.model).join(' + '),
+      kolaborasi: hasilTrio.kolaborasi,
+      saran_pertanyaan: [
+        'Bagaimana cara menaikkan PPM bertahap?',
+        'Kapan waktu terbaik polinasi bunga melon?',
+        'Tampilkan kondisi sensor saat ini',
+        'Lakukan diagnosa menyeluruh',
       ],
     }));
   } catch (e) { return next(e); }

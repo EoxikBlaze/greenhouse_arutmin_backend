@@ -3,7 +3,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { q, one } = require('../db');
-const { publicUser, json } = require('../auth');
+const { publicUser, json, lupakanAkun } = require('../auth');
 const { idValid, notFound } = require('./_id');
 
 const router = express.Router();
@@ -151,6 +151,7 @@ router.put('/:id', async (req, res, next) => {
       `UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length}
        RETURNING id, username, email, level, is_demo, created_at, updated_at`, values);
     if (!row) return notFound(res);
+    lupakanAkun(row.id);
     req.audit = { aksi: 'update', tabel: 'users', row_id: String(row.id), before: lama, after: publicUser(row) };
     res.json({ status: true, message: 'User berhasil diperbarui.', data: publicUser(row) });
   } catch (e) {
@@ -182,6 +183,7 @@ router.delete('/:id', async (req, res, next) => {
       [req.params.id],
     );
     if (!row) return notFound(res);
+    lupakanAkun(row.id);
     req.audit = { aksi: 'delete', tabel: 'users', row_id: String(req.params.id), before: row, after: null };
     res.json({ status: true, message: 'User dihapus.' });
   } catch (e) { next(e); }

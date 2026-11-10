@@ -77,7 +77,11 @@ psql -X -q -v ON_ERROR_STOP=1 "$TPL_URL" -f "$ROOT/scripts/fix-sequences.sql" >"
 # CI: dump membawa sandi contoh; samakan sandi admin template dengan ADMIN_PASSWORD di .env (CI_ATUR_SANDI=1).
 if [ "${CI_ATUR_SANDI:-0}" = "1" ]; then
   ADMIN_PW="$(grep -E '^ADMIN_PASSWORD=' "$ROOT/.env" | cut -d= -f2-)"
-  DATABASE_URL="$TPL_URL" KATA_SANDI="$ADMIN_PW" node scripts/atur-kata-sandi.js --user garap >"$OUT_DIR/template-sandi.log" 2>&1 \
+  # hanya template uji terisolasi: hash langsung (cost 4) agar sandi .env pendek tetap bisa dipakai tes
+  DATABASE_URL="$TPL_URL" KATA_SANDI="$ADMIN_PW" node -e "
+    const b=require('bcryptjs');const {q,pool}=require('./src/db');
+    (async()=>{const r=await q('UPDATE users SET password=\$1 WHERE username=\$2 RETURNING id',[await b.hash(process.env.KATA_SANDI,4),'garap']);
+    if(!r.length)throw new Error('akun garap tidak ada');})().catch(e=>{console.error('GAGAL:',e.message);process.exitCode=1}).finally(()=>pool.end())" >"$OUT_DIR/template-sandi.log" 2>&1 \
     || { echo "❌ atur sandi admin gagal — lihat $OUT_DIR/template-sandi.log"; exit 1; }
 fi
 echo "  migrasi terterap: $(psql -X -At "$TPL_URL" -c 'SELECT count(*) FROM schema_migrations' 2>/dev/null || echo '?')"

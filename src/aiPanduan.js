@@ -48,6 +48,81 @@ const TEKS = {
     '3. Hasilnya masuk hitungan "Tanaman dipanen" di Dashboard dan laporan.',
   ].join('\n'),
 
+  durasi_melon: [
+    'Panduan Masa Tanam Melon Hingga Siap Makan / Panen:',
+    '• Jika Anda mulai menanam melon (semai benih) besok, buah melon rata-rata siap dipanen dan dimakan dalam 60 hingga 75 hari setelah tanam (HST), atau sekitar 2 hingga 2,5 bulan (tergantung varietas seperti Golden Aroma, Inthanon, atau Rock Melon).',
+    '',
+    'Jadwal dan fase pertumbuhannya:',
+    '1. Tahap Semai (Hari ke 1–14): Benih berkecambah di rockwool/tray hingga tumbuh 2–3 helai daun sejati (nutrisi 400–600 PPM).',
+    '2. Tahap Peremajaan / Vegetatif (Hari ke 15–28): Pembentukan batang dan tajuk daun yang kokoh (nutrisi 800–1000 PPM).',
+    '3. Tahap Pembungaan & Polinasi (Hari ke 28–35): Bunga betina mekar di ruas ke-9 s/d 12. Lakukan penyerbukan/polinasi buatan di pagi hari (pukul 07.00–10.00).',
+    '4. Tahap Pembesaran Buah & Netting (Hari ke 35–55): Jaring (net) mulai terbentuk sempurna. Seleksi 1 buah terbaik per pohon dan gantung buah (nutrisi 1200–1800 PPM).',
+    '5. Tahap Pematangan (Hari ke 60–75): Buah mengeluarkan aroma harum khas melon, jaring rapat tebal, tangkai retak melingkar, dan daun bendera menguning. Pada fase ini kurangi penyiraman agar kadar gula (Brix) manis maksimal (12–15+). Melon siap dipetik dan dinikmati!',
+  ].join('\n'),
+
+  nutrisi_melon: [
+    'Panduan Target Nutrisi AB Mix & pH untuk Melon Hidroponik:',
+    '• pH Air Ideal: 5,8 – 6,5 (menjamin penyerapan unsur hara mikro dan makro optimal).',
+    '• Tahap Semai: 400 – 600 PPM (EC 0,8 – 1,2 mS/cm).',
+    '• Tahap Vegetatif / Peremajaan: 800 – 1.000 PPM (EC 1,6 – 2,0 mS/cm).',
+    '• Tahap Pembungaan / Polinasi: 1.000 – 1.200 PPM (EC 2,0 – 2,4 mS/cm).',
+    '• Tahap Pembesaran Buah (Netting): 1.400 – 1.800 PPM (EC 2,8 – 3,6 mS/cm).',
+    '• Tahap Pematangan (10 hari sebelum panen): Turunkan kembali ke 800–1000 PPM dan kurangi air agar rasa buah manis pekat (Brix tinggi).',
+  ].join('\n'),
+
+  polinasi_melon: [
+    'Panduan Polinasi (Penyerbukan) & Pemangkasan Melon:',
+    '1. Penyerbukan Buatan (Polinasi): Dilakukan saat bunga betina (memiliki bakal buah bulat kecil di bawah kelopak) mekar, biasanya di ruas ke-9 hingga ke-12.',
+    '2. Waktu Terbaik: Pagi hari pukul 07.00 – 10.00 saat serbuk sari jantan masih segar dan putik betina reseptif.',
+    '3. Cara: Petik bunga jantan yang mekar sempurna, buang kelopak mahkotanya, lalu oleskan kepala sari jantan ke kepala putik betina secara merata.',
+    '4. Pemangkasan (Pruning): Buang semua tunas air di bawah ruas ke-8. Di atas ruas tempat buah dipelihara, sisakan 2–3 helai daun lalu pangkas pucuk cabangnya.',
+    '5. Seleksi Buah: Setelah bakal buah sebesar telur ayam, pilih 1 buah yang paling bulat simetris dan sehat, lalu buang calon buah lainnya.',
+  ].join('\n'),
+
+  hama_melon: [
+    'Panduan Penanganan Hama, Penyakit, & Daun Keriting/Kuning Hidroponik:',
+    '1. Daun Keriting & Menguning (Melon / Cabai):',
+    '   • Penyebab Utama: Hama pengisap seperti Kutu Kebul (Bemisia tabaci), Thrips, atau Tungau (Mites) yang menyebarkan virus gemini.',
+    '   • Penanganan Segera: Pasang perangkap lekat kuning (yellow sticky trap) di sekitar meja tanam setinggi tajuk tanaman. Semprot minyak nimba (neem oil) 3-5 mililiter/liter air atau pestisida nabati pada sore hari di bagian bawah daun.',
+    '   • Periksa pH & EC: Daun menguning (klorosis) juga bisa disebabkan defisiensi zat besi/magnesium akibat pH air tandon terlalu tinggi (>6.8). Sesuaikan pH ke 5.8–6.5.',
+    '2. Embun Tepung (Powdery Mildew):',
+    '   • Daun tampak bercak serbuk putih kelabu. Jaga sirkulasi udara greenhouse dengan exhaust fan dan semprot fungisida hayati (Trichoderma).',
+    '3. Busuk Akar (Pythium) & Layu:',
+    '   • Akar kecokelatan berbau busuk, tanaman layu saat terik matahari. Solusi: sanitasi instalasi tandon, jaga suhu air di bawah 28°C, dan tambahkan aerasi oksigen terlarut (DO tinggi).',
+  ].join('\n'),
+
+  tanaman_buah: [
+    'Panduan Budidaya Tanaman Buah Hidroponik (Cabai, Tomat, Stroberi):',
+    '• Cabai Hidroponik: Masa panen 75–90 HST. Kebutuhan PPM bertahap: vegetatif 800–1200 PPM, berbunga & berbuah 1500–2000 PPM (pH 5.8–6.5). Pastikan pencahayaan cukup dan pasang perangkap kuning untuk mencegah kutu kebul.',
+    '• Tomat / Tomat Cherry: Masa panen 70–85 HST. Kebutuhan PPM: 1400–2200 PPM (pH 5.5–6.5). Lakukan pemangkasan tunas air (pruning) dan ikat batang rambatan.',
+    '• Stroberi Hidroponik: Masa panen 60–80 HST. Kebutuhan PPM: 800–1200 PPM (pH 5.5–6.2). Suhu lingkungan sejuk (<25°C) sangat mendukung pembungaan dan rasa manis buah.',
+  ].join('\n'),
+
+  nutrisi_ab_mix: [
+    'Panduan Pembuatan & Penggunaan Pupuk AB Mix Hidroponik:',
+    '1. Komposisi: Pekatan A berisi Kalsium Nitrat & Zat Besi (Fe-EDTA). Pekatan B berisi Kalium, Fosfat, Sulfat, Magnesium, dan Unsur Mikro.',
+    '2. ATURAN PENTING: JANGAN PERNAH mencampur pekatan A dan pekatan B dalam keadaan pekat langsung! Jika dicampur pekat, Kalsium akan bereaksi dengan Sulfat membentuk Kalsium Sulfat (endapan putih tidak larut) sehingga nutrisi rusak/tidak bisa diserap tanaman.',
+    '3. Cara Melarutkan ke Tandon: Masukkan air baku ke tandon > tuang pekatan A > aduk hingga rata > baru tuang pekatan B > aduk rata > ukur nilai PPM dan pH dengan TDS meter.',
+  ].join('\n'),
+
+  media_tanam: [
+    'Panduan Media Tanam & Cara Semai Hidroponik:',
+    '1. Rockwool: Potong kubus ukuran 2,5 x 2,5 cm, basahi dengan air baku (air netral tanpa nutrisi) sampai lembap tidak menggenang.',
+    '2. Lubangi sedalam 0,5 cm, masukkan 1 benih per kotak.',
+    '3. Tutup nampan semai di tempat gelap selama 24–48 jam hingga berkecambah (pecah benih/sprout).',
+    '4. Begitu muncul daun kecambah (daun kotiledon), segera kenalkan ke sinar matahari pagi agar tidak kutilang (kurus tinggi langsing).',
+    '5. Setelah daun sejati muncul (biasanya umur 7-10 hari), mulai berikan nutrisi AB Mix 300–500 PPM hingga siap pindah ke meja tanam.',
+  ].join('\n'),
+
+  durasi_sayuran: [
+    'Panduan Masa Panen Sayuran Daun Hidroponik:',
+    '• Selada (Lettuce): 30 – 40 hari setelah tanam (PPM 600–800, pH 5.8–6.5).',
+    '• Pakcoy / Sawi Sendok: 30 – 35 hari setelah tanam (PPM 800–1000, pH 5.8–6.5).',
+    '• Kangkung: 21 – 25 hari setelah tanam (PPM 800–1200, pH 6.0–6.8). Cepat panen!',
+    '• Bayam Hijau / Merah: 25 – 30 hari setelah tanam (PPM 800–1200, pH 6.0–7.0).',
+    '• Seledri: 45 – 60 hari setelah tanam (PPM 800–1200, pH 6.0–6.5).',
+  ].join('\n'),
+
   alat_baru: [
     'Bila alat sensor belum ada atau baru dipasang:',
     '1. Siapkan server (Raspberry Pi) dan pasang aplikasi GARAP.',
@@ -150,6 +225,14 @@ const TEKS = {
 const POLA = [
   ['logbook', /\blog ?book\b|catatan kegiatan|riwayat kegiatan|kegiatan (?:terakhir|minggu ini|hari ini|kemarin)/],
   ['tim', /\b(?:anggota|biodata|bio data|profil tim|susunan tim)\b|\bsiapa\b.{0,20}\b(?:tim|anggota|pembuat|pengembang)\b/],
+  ['durasi_melon', /\b(?:berapa hari|berapa lama|kapan|kapan saja)\b.{0,30}\b(?:siap (?:makan|panen|petik)|panen|bisa makan|bisa dipanen|umur panen|masa tanam)\b|\b(?:siap (?:makan|panen|petik)|panen)\b.{0,30}\b(?:berapa hari|berapa lama|kapan)\b|\b(?:umur|masa|durasi|lama)\b.{0,20}\b(?:panen|tanam|hidup)\b.{0,15}\bmelon\b|\bmelon\b.{0,25}\b(?:berapa hari|berapa lama|kapan|siap makan|siap panen)\b/],
+  ['nutrisi_melon', /\b(?:nutrisi|ppm|tds|ec|ab mix|abmix|pupuk|dosis)\b.{0,25}\b(?:melon|tanaman buah)\b|\bmelon\b.{0,25}\b(?:nutrisi|ppm|tds|ec|ab mix|pupuk)\b|\btarget (?:ppm|nutrisi|tds)\b/],
+  ['polinasi_melon', /\b(?:polinasi|penyerbukan|kawin|kawinkan|bunga betina|bunga jantan)\b|\b(?:pruning|pemangkasan|pangkas|tunas air|seleksi buah)\b/],
+  ['tanaman_buah', /\b(?:cabai|cabe|tomat|stroberi|strawberry)\b/],
+  ['durasi_sayuran', /\b(?:sayur|sayuran|selada|pakcoy|kangkung|bayam|sawi|seledri)\b.{0,25}\b(?:berapa hari|berapa lama|panen|masa tanam)\b|\b(?:berapa hari|berapa lama)\b.{0,25}\b(?:selada|pakcoy|kangkung|bayam|sawi)\b/],
+  ['nutrisi_ab_mix', /\b(?:ab mix|abmix|campur nutrisi|larutan pekatan|pekatan a|pekatan b|cara buat nutrisi|cara melarutkan|endapan)\b/],
+  ['media_tanam', /\b(?:rockwool|rokbul|media tanam|cocopeat|hidroton|netpot|kutilang|pecah benih|biji kecambah)\b/],
+  ['hama_melon', /\b(?:hama|penyakit|kutu kebul|thrips|tungau|ulat|jamur|keriting|kuning|menguning|embun tepung|busuk akar|pythium|layu)\b/],
   ['input_data', /\b(?:cara|langkah|bagaimana|gimana|panduan|urutan)\b.{0,25}\b(?:input|masukkan|memasukkan|mengisi|isi|tambah|menambah)\b.{0,20}\bdata\b|\binput data\b|\bisi data\b/],
   ['fitur', /\b(?:semua|seluruh|daftar|apa saja)\b.{0,20}\b(?:fitur|menu|halaman)\b|\b(?:fitur|menu)\b.{0,20}\b(?:aplikasi|website|web|garap|lengkap)\b|\bjelaskan (?:semua )?fitur\b/],
   ['saklar', /\bsaklar\b/],
@@ -192,6 +275,14 @@ const HALAMAN = {
 };
 
 const TAUTAN_TOPIK = {
+  durasi_melon: ['tanam', 'semai', 'pendewasaan', 'panen'],
+  nutrisi_melon: ['dosing', 'sensor', 'tanam'],
+  polinasi_melon: ['tanam', 'pendewasaan'],
+  hama_melon: ['peringatan', 'tanam', 'sensor'],
+  durasi_sayuran: ['tanam', 'semai', 'panen'],
+  tanaman_buah: ['tanam', 'sensor', 'dosing'],
+  nutrisi_ab_mix: ['dosing', 'sensor', 'nutrisiManual'],
+  media_tanam: ['semai', 'tanam'],
   alur: ['dashboard', 'tanam', 'sensor', 'peringatan'],
   semai: ['tanam', 'semai', 'tanaman'],
   pindah_tahap: ['tanam', 'semai', 'peremajaan', 'pendewasaan'],
@@ -242,6 +333,67 @@ function deteksiPanduan(pesanTernormalisasi) {
  * Menyertakan gambar nyata dan alasan petani diarahkan ke layar tersebut agar
  * orang awam/petani tidak bingung dan tahu persis ke mana harus melangkah. */
 const GAMBAR = {
+  durasi_melon: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Layar Kebun Saya & Siklus Tanam',
+      kenapa: 'Petani memantau hitungan hari melon (Hari ke-X) dan kemajuan fase pertumbuhan dari semai hingga siap panen.',
+    },
+  ],
+  nutrisi_melon: [
+    {
+      url: '/panduan/dosing.png',
+      judul: 'Pengaturan Target Nutrisi & Kenaikan Harian',
+      kenapa: 'Petani melihat target PPM dan menaikkan dosis AB Mix harian sesuai fase tanaman.',
+    },
+    {
+      url: '/panduan/sensor.png',
+      judul: 'Pantauan Telemetri TDS & pH Realtime',
+      kenapa: 'Melihat bacaan sensor nutrisi saat ini di tandon greenhouse.',
+    },
+  ],
+  polinasi_melon: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Layar Tahap Pendewasaan & Buah',
+      kenapa: 'Mencatat tanggal penyerbukan bunga betina di ruas ke-9 s/d 12 dan seleksi calon buah.',
+    },
+  ],
+  hama_melon: [
+    {
+      url: '/panduan/beranda.png',
+      judul: 'Peringatan & Status Kebun',
+      kenapa: 'Memeriksa deteksi anomali suhu/kelembaban yang berpotensi memicu timbulnya hama dan jamur.',
+    },
+  ],
+  durasi_sayuran: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Siklus Tanaman Sayuran',
+      kenapa: 'Memantau waktu panen cepat sayuran daun.',
+    },
+  ],
+  tanaman_buah: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Layar Kebun Saya & Tanaman Buah',
+      kenapa: 'Memilih komoditas budidaya dan target siklus tanam cabai, tomat, dan melon.',
+    },
+  ],
+  nutrisi_ab_mix: [
+    {
+      url: '/panduan/sensor.png',
+      judul: 'Layar Telemetri & Sensor Nutrisi',
+      kenapa: 'Memantau kenaikan PPM larutan nutrisi secara langsung di tandon.',
+    },
+  ],
+  media_tanam: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Layar Semai & Pembibitan',
+      kenapa: 'Pencatatan batch semai awal sebelum dipindahkan ke meja tanam.',
+    },
+  ],
   alur: [
     {
       url: '/panduan/beranda.png',

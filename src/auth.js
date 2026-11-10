@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
 const { q, one } = require('./db');
+const cache = require('./cache');
 const sesiCookie = require('./sesiCookie');
 
 /* ── JWT_SECRET — wajib eksplisit (S10: gagal-loud, bukan fallback) ── *
@@ -48,12 +49,37 @@ function resolveJwtSecret() {
 const JWT_SECRET = resolveJwtSecret();
 
 /* ── token ─────────────────────────────────────────────────────────── */
+/** Sidik sandi: ikut di token panjang; ganti sandi → sidik berubah → token lama gugur. */
+function sidikSandi(hashSandi) {
+  return crypto.createHash('sha256').update(String(hashSandi || '')).digest('hex').slice(0, 16);
+}
+
 function signToken(user, remember = true) {
   return jwt.sign(
-    { sub: user.id, username: user.username, level: user.level, demo: !!user.is_demo },
+    { sub: user.id, username: user.username, level: user.level, demo: !!user.is_demo, pv: sidikSandi(user.password) },
     JWT_SECRET,
     { expiresIn: remember === false ? '12h' : '3650d' },
   );
+}
+
+/** Buang cache cek akun (dipanggil saat sandi/level berubah atau akun dihapus) → pencabutan seketika. */
+function lupakanAkun(id) { cache.set(`auth-user:${id}`, null, 0); }
+
+const MASA_PENDEK_DETIK = 12 * 60 * 60;
+
+/**
+ * Token berumur panjang ("Ingat saya", 10 tahun) tidak boleh dipercaya dari klaimnya saja:
+ * akun yang dihapus, diturunkan levelnya, atau sudah ganti sandi harus langsung kehilangan akses.
+ * Token ≤ 12 jam tetap stateless seperti semula.
+ * shortcut: hasil cek di-cache 30 dtk, jadi pencabutan berlaku paling lambat 30 dtk kemudian.
+ */
+async function tokenPanjangMasihSah(payload) {
+  if (typeof payload.iat !== 'number' || payload.exp - payload.iat <= MASA_PENDEK_DETIK) return true;
+  const u = await cache.remember(`auth-user:${payload.sub}`, 30_000, async () => (
+    (await one('SELECT level, is_demo, password FROM users WHERE id = $1', [payload.sub])) || null
+  ));
+  return Boolean(u) && u.level === payload.level && !!u.is_demo === !!payload.demo
+    && payload.pv === sidikSandi(u.password);
 }
 
 function verifyToken(token) {
@@ -77,17 +103,21 @@ function json(res, status, body) {
  * Wajib login: Authorization Bearer (Flutter/alat) atau cookie HttpOnly vsf_sesi (browser).
  * Lewat cookie, metode yang mengubah data wajib membawa X-CSRF-Token yang cocok dengan cookie vsf_csrf.
  */
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : null;
-  const token = bearer || sesiCookie.bacaCookie(req, sesiCookie.NAMA_SESI);
-  const payload = token && verifyToken(token);
-  if (!payload) return json(res, 401, { message: 'Tidak terautentikasi.' });
-  if (!bearer && !sesiCookie.csrfCocok(req)) {
-    return json(res, 403, { message: 'Permintaan ditolak (token CSRF tidak cocok). Muat ulang halaman.', kode: 'csrf_tidak_cocok' });
-  }
-  req.user = payload;
-  next();
+async function requireAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const bearer = header.startsWith('Bearer ') ? header.slice(7) : null;
+    const token = bearer || sesiCookie.bacaCookie(req, sesiCookie.NAMA_SESI);
+    const payload = token && verifyToken(token);
+    if (!payload || !(await tokenPanjangMasihSah(payload))) {
+      return json(res, 401, { message: 'Tidak terautentikasi.' });
+    }
+    if (!bearer && !sesiCookie.csrfCocok(req)) {
+      return json(res, 403, { message: 'Permintaan ditolak (token CSRF tidak cocok). Muat ulang halaman.', kode: 'csrf_tidak_cocok' });
+    }
+    req.user = payload;
+    return next();
+  } catch (e) { return next(e); }
 }
 
 /**
@@ -239,6 +269,7 @@ module.exports = {
   signToken,
   verifyToken,
   requireAuth,
+  lupakanAkun,
   requireRole,
   demoGuard,
   requireApiKey,
