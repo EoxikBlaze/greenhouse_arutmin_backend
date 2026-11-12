@@ -16,6 +16,7 @@ const { requireApiKey, requireAuth, verifyToken, json } = require('../auth');
 const sesiCookie = require('../sesiCookie');
 const { queryParam } = require('./_id');
 const { tanggalErrors } = require('./_validate');
+const { FISIK } = require('../sanitySensor');
 
 const router = express.Router();
 const api = express.Router();
@@ -176,7 +177,9 @@ function sensorErrors(data) {
     if (v === undefined || v === null || v === '') continue;
     const ok = typeof v === 'number' ? Number.isFinite(v)
       : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v));
-    if (!ok) errors[k] = [`Field ${k} harus berupa angka.`];
+    if (!ok) { errors[k] = [`Field ${k} harus berupa angka.`]; continue; }
+    const [min, max] = FISIK[k];
+    if (Number(v) < min || Number(v) > max) errors[k] = [`Field ${k} di luar rentang yang mungkin (${min} sampai ${max}).`];
   }
   for (const k of ['solenoid_state']) {
     const v = data[k];

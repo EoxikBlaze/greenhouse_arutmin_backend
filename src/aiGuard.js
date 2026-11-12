@@ -69,7 +69,9 @@ const POLA = [
   ['override', new RegExp(`\\b(?:ignore|disregard|forget|abaikan|lupakan)\\b.{0,25}${KATA_SEBELUM}`)],
   ['override', /\b(?:new|baru|updated?|revisi)\s+(?:instruction|instruksi|rule|aturan|prompt|perintah)s?\b/],
   ['override', /\b(?:mulai sekarang|from now on|starting now|mulai saat ini)\b.{0,60}\b(?:kamu|anda|you|jawab|answer|respond|selalu|always)\b/],
+  ['override', /\b(?:aturan|rule|instruksi|larangan)\s*(?:nomor|no\.?|ke)?\s*-?\s*\d+\b.{0,30}\b(?:dicabut|dihapus|dibatalkan|tidak berlaku|tak berlaku|gugur|revoked|void|removed|lifted)\b/],
   // bocorkan prompt
+  ['bocor_prompt', /\b(?:terjemahkan|translate|alih ?bahasakan|parafrase\w*|paraphrase|tulis ulang|rewrite)\b.{0,40}\b(?:aturan|instruksi|prompt|rules?|instructions?|(?:teks|kalimat|pesan|text|message) (?:di ?atas|sebelumnya|above))/],
   ['bocor_prompt', /\b(?:system|sistem|developer|pengembang|hidden|tersembunyi|initial|awal|internal|original|asli)\s*(?:prompt|message|pesan|instruction|instruksi|rule|aturan)s?\b/],
   ['bocor_prompt', /\b(?:reveal|show|print|repeat|display|leak|dump|recite|output|tampilkan|tunjukkan|bocorkan|ulangi|ulang|sebutkan|cetak|tuliskan|salin|copy|bacakan|beritahu|katakan)\b.{0,40}\b(?:prompt|instruksi|instruction|aturan|rules?|konfigurasi|configuration|pengaturan awal|tag data|isi data|kata[- ]kata di atas|text above|words above)/],
   ['bocor_prompt', /\b(?:what|apa)\b.{0,15}\b(?:your|kamu|anda|mu)\b.{0,20}\b(?:instruction|instruksi|rule|aturan|prompt|programmed|diprogram|dilarang|forbidden)/],
@@ -191,6 +193,15 @@ function luarTopik(teks) {
 /* ── pemeriksa KELUARAN (daftar kata terlarang tak pernah lengkap → cek struktur jawaban) ── */
 
 /** Jawaban berisi kode (aturan 7 prompt). Uji 23 Okt 2026: model menulis kalkulator Python lengkap. */
+/** Bahan dapur / kimia rumah tangga yang tidak boleh disarankan untuk larutan (aturan 9 prompt, ditegakkan di sini
+ *  karena model kecil tidak selalu patuh). Kalimat yang MELARANG bahan itu tidak dihitung. */
+const BAHAN_DAPUR = /\b(?:cuka|soda kue|baking soda|penyedap|micin|msg|agar-agar|jeruk nipis|air jeruk|lemon|pemutih|bayclin|kaporit|amonia|deterjen|sabun cuci|garam dapur|air aki|bensin|minyak tanah)\b/;
+const KATA_LARANG = /\b(?:jangan|tidak boleh|tak boleh|dilarang|hindari|bukan|tanpa|tidak disarankan|tidak dianjurkan)\b/;
+function saranBahanDapur(teks) {
+  return String(teks || '').toLowerCase().split(/[.!?\n;]+/)
+    .some((k) => BAHAN_DAPUR.test(k) && !KATA_LARANG.test(k));
+}
+
 function adaKode(teks) {
   return /```|\bdef \w+\s*\(|\bfunction\s*\w*\s*\(|\bprint\s*\(|^\s*(?:import|from) \w+|\bconsole\.log\b|<\/?\w+[^>]*>|\bSELECT\b.+\bFROM\b/im.test(String(teks || ''));
 }
@@ -425,5 +436,5 @@ module.exports = {
   CANARY, normalisasi, deteksi, dalamTopik, luarTopik, adaKode, apakahBahasaInggris, paragrafLuarTopik, apakahSalam, periksaPesan, pesanTolak,
   SARAN_PERTANYAAN,
   sisaJeda, catatPelanggaran, resetStrike,
-  netralkan, bungkusPengguna, bersihkanData, saringRiwayat, saringKeluaran,
+  saranBahanDapur, netralkan, bungkusPengguna, bersihkanData, saringRiwayat, saringKeluaran,
 };

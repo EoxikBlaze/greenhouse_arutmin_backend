@@ -35,7 +35,10 @@ function bukaBroker(p = 0) {
   return new Promise((r) => s.listen(p, '127.0.0.1', () => r({ b, s, port: s.address().port })));
 }
 const tutupBroker = async (x) => { await new Promise((r) => x.b.close(r)); await new Promise((r) => x.s.close(r)); };
-const bacaanUji = () => q("SELECT id FROM monitorings WHERE id > $1 AND tds BETWEEN 7700 AND 7799", [awalMon]);
+const bacaanUji = () => q("SELECT id FROM monitorings WHERE id > $1 AND tds BETWEEN 4700 AND 4799", [awalMon]);
+// Hitung per nilai tds: hitungan total ikut naik oleh sisa antrean tes banjir (300 pesan sah yang masih disimpan),
+// sehingga "ditolak" harus dibuktikan lewat nilai milik pesan itu sendiri.
+const adaTds = async (tds) => (await q('SELECT id FROM monitorings WHERE id > $1 AND tds = $2', [awalMon, tds])).length;
 
 before(async () => {
   // Saklar otomasi ON: tes ini menguji pagar volume/kejadian lewat sumber 'otomasi' (default produksi = OFF)
@@ -62,7 +65,7 @@ after(async () => {
   await q('DELETE FROM perintah_aktuator WHERE id > $1 AND perangkat_kode = ANY($2)', [awalPerintah, [A, B]]);
   await q('DELETE FROM dosing_events WHERE id > $1 AND id_meja = $2', [awalEvent, meja]);
   await q('DELETE FROM alert_logs WHERE id > $1 AND id_meja = $2', [awalAlert, meja]);
-  await q('DELETE FROM monitorings WHERE id > $1 AND tds BETWEEN 7700 AND 7799', [awalMon]);
+  await q('DELETE FROM monitorings WHERE id > $1 AND tds BETWEEN 4700 AND 4799', [awalMon]);
   await q('DELETE FROM penampung_states WHERE id_meja = $1', [meja]);
   await q('DELETE FROM mejas WHERE id_meja = $1', [meja]);
   await q('DELETE FROM api_keys WHERE perangkat_kode = ANY($1)', [[S, A, B]]);
@@ -91,7 +94,7 @@ test('S5: broker mati lalu hidup lagi di port yang sama → jembatan & perangkat
   assert.ok(await sampai(() => akt.connected, 15000), 'klien perangkat tersambung ulang');
 
   await akt.publishAsync(`garap/${A}/status`, JSON.stringify({ online: true }));   // firmware mengirim ulang status setelah sambung
-  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 7701, ph: 6.1, waterTemp: 25 }));
+  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 4701, ph: 6.1, waterTemp: 25 }));
   assert.ok(await sampai(async () => (await bacaanUji()).length), 'bacaan setelah broker hidup kembali tersimpan');
 
   await q("INSERT INTO perintah_aktuator (perangkat_kode, tipe, parameter, sumber, kedaluwarsa_pada) VALUES ($1,'STOP','{}','sistem', now() + interval '60 seconds')", [A]);
@@ -150,9 +153,9 @@ test('S5: payload sampah (bukan JSON, array, null, angka, terlalu besar, biner, 
   const sebelumMon = (await bacaanUji()).length;
   const sebelumPerintah = (await q('SELECT status FROM perintah_aktuator WHERE perangkat_kode = $1', [A])).map((r) => r.status).join(',');
   const sampah = [
-    '{rusak', '[1,2,3]', 'null', '42', '"teks"', '', 'x'.repeat(5000), JSON.stringify({ tds: 7702, pad: 'y'.repeat(5000) }),
+    '{rusak', '[1,2,3]', 'null', '42', '"teks"', '', 'x'.repeat(5000), JSON.stringify({ tds: 4702, pad: 'y'.repeat(5000) }),
     Buffer.from([0xff, 0xfe, 0x00, 0x01]), JSON.stringify({ tds: 'bukan-angka' }), 
-    JSON.stringify({ tds: 7704, id_meja: 'abc' }), JSON.stringify({ tds: 7705, id_meja: 999999999 }),
+    JSON.stringify({ tds: 4704, id_meja: 'abc' }), JSON.stringify({ tds: 4705, id_meja: 999999999 }),
     '{"__proto__":{"admin":true},"constructor":{"prototype":{"x":1}},"tds":"bukan-angka"}',   // prototype pollution + nilai tak valid
   ];
   // catatan: pH 99 SENGAJA tersimpan (bacaan mustahil dipertahankan agar aturan "3× berturut-turut → LOCK sensor" bisa bekerja)
@@ -162,7 +165,7 @@ test('S5: payload sampah (bukan JSON, array, null, angka, terlalu besar, biner, 
     await akt.publishAsync(`garap/${A}/hasil`, m);
   }
   for (const t of ['garap/../data', 'garap/uji-ket-sensor/data/ekstra', 'garap//data', 'garap/UJI-KET-SENSOR/data', 'garap/uji ket/data', 'garap/server/data', 'lain/uji-ket-sensor/data', 'garap/#']) {
-    await sen.publishAsync(t.replace('#', 'x'), JSON.stringify({ tds: 7707, ph: 6.1, waterTemp: 25 })).catch(() => {});
+    await sen.publishAsync(t.replace('#', 'x'), JSON.stringify({ tds: 4707, ph: 6.1, waterTemp: 25 })).catch(() => {});
   }
   const galatSebelum = peringatan.filter((w) => JSON.stringify(w).includes('gagal diproses')).length;
   await sen.publishAsync(`garap/${S}/status`, '{rusak');
@@ -183,7 +186,7 @@ test('S5: payload sampah (bukan JSON, array, null, angka, terlalu besar, biner, 
   assert.equal(j.client.connected, true, 'jembatan tetap hidup');
 
   // masih berfungsi normal setelah dibanjiri sampah
-  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 7708, ph: 6.1, waterTemp: 25 }));
+  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 4708, ph: 6.1, waterTemp: 25 }));
   assert.ok(await sampai(async () => (await bacaanUji()).length === sebelumMon + 1));
   await sen.endAsync(true); await akt.endAsync(true);
 });
@@ -192,7 +195,7 @@ test('S5: banjir 300 bacaan sensor sekaligus → jembatan tetap responsif; setia
   const sen = await klien(S);
   const sebelum = (await bacaanUji()).length;
   const t0 = Date.now();
-  await Promise.all(Array.from({ length: 300 }, (_, i) => sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 7710 + (i % 80) + (i >= 80 ? 0 : 0), ph: 5.5 + (i % 10) / 10, waterTemp: 20 + (i % 15), humidity: 30 + (i % 50) }))));
+  await Promise.all(Array.from({ length: 300 }, (_, i) => sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 4710 + (i % 80) + (i >= 80 ? 0 : 0), ph: 5.5 + (i % 10) / 10, waterTemp: 20 + (i % 15), humidity: 30 + (i % 50) }))));
   assert.ok(await sampai(async () => (await bacaanUji()).length > sebelum, 15000), 'bacaan mulai tersimpan');
   await tunggu(3000);
   const tersimpan = (await bacaanUji()).length - sebelum;
@@ -215,23 +218,22 @@ test('S5: kunci dicabut / perangkat dinonaktifkan saat jalan → pesannya diabai
   const sen = await klien(S);
   await q("UPDATE api_keys SET aktif = false, dicabut_pada = now() WHERE perangkat_kode = $1 AND dicabut_pada IS NULL", [S]);
   await tunggu(700);                                          // cache jembatan 400 ms (produksi: 30 dtk)
-  const n0 = (await bacaanUji()).length;
-  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 7791, ph: 6.1, waterTemp: 25 }));
+  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 4791, ph: 6.1, waterTemp: 25 }));
   await tunggu(1200);
-  assert.equal((await bacaanUji()).length, n0, 'kunci dicabut → bacaan ditolak');
+  assert.equal(await adaTds(4791), 0, 'kunci dicabut → bacaan ditolak');
   assert.ok(peringatan.some((w) => JSON.stringify(w).includes('tak sah')));
 
   await q("UPDATE api_keys SET aktif = true, dicabut_pada = NULL WHERE perangkat_kode = $1", [S]);
   await q('UPDATE perangkat SET aktif = false WHERE kode = $1', [S]);
   await tunggu(700);
-  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 7792, ph: 6.1, waterTemp: 25 }));
+  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 4792, ph: 6.1, waterTemp: 25 }));
   await tunggu(1200);
-  assert.equal((await bacaanUji()).length, n0, 'perangkat dinonaktifkan → ditolak');
+  assert.equal(await adaTds(4792), 0, 'perangkat dinonaktifkan → ditolak');
 
   await q('UPDATE perangkat SET aktif = true WHERE kode = $1', [S]);
   await tunggu(700);
-  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 7793, ph: 6.1, waterTemp: 25 }));
-  assert.ok(await sampai(async () => (await bacaanUji()).length === n0 + 1), 'pulih setelah diaktifkan lagi');
+  await sen.publishAsync(`garap/${S}/data`, JSON.stringify({ tds: 4793, ph: 6.1, waterTemp: 25 }));
+  assert.ok(await sampai(async () => (await adaTds(4793)) === 1), 'pulih setelah diaktifkan lagi');
   await sen.endAsync(true);
 });
 
@@ -240,15 +242,14 @@ test('S5: kunci dicabut / perangkat dinonaktifkan saat jalan → pesannya diabai
    Dengan Mosquitto sungguhan hal itu sudah diuji ditolak (27 Okt). Tes ini hanya mencakup lapisan jembatan. */
 test('S5: penyamaran — sensor mengirim ke topik hasil/perintah, aktuator ke topik data, laporan untuk perintah milik aktuator lain → diabaikan', async () => {
   const sen = await klien(S); const akt = await klien(A);
-  const n0 = (await bacaanUji()).length;
-  await akt.publishAsync(`garap/${A}/data`, JSON.stringify({ tds: 7794, ph: 6.1, waterTemp: 25 }));          // aktuator bukan sensor
+  await akt.publishAsync(`garap/${A}/data`, JSON.stringify({ tds: 4794, ph: 6.1, waterTemp: 25 }));          // aktuator bukan sensor
   const milikB = (await one(
     `INSERT INTO perintah_aktuator (perangkat_kode, tipe, parameter, sumber, status, dikirim_pada, kedaluwarsa_pada)
      VALUES ($1,'STOP','{}','sistem','dikirim', now(), now() + interval '60 seconds') RETURNING id`, [B])).id;
   await akt.publishAsync(`garap/${A}/hasil`, JSON.stringify({ id: Number(milikB), status: 'selesai', hasil: {} }));  // A melapor perintah B
   await sen.publishAsync(`garap/${S}/hasil`, JSON.stringify({ id: Number(milikB), status: 'selesai', hasil: {} })); // sensor melapor hasil
   await tunggu(1500);
-  assert.equal((await bacaanUji()).length, n0);
+  assert.equal(await adaTds(4794), 0, 'aktuator tidak boleh menulis bacaan sensor');
   const st = (await one('SELECT status FROM perintah_aktuator WHERE id = $1', [milikB])).status;
   assert.equal(st, 'dikirim', 'laporan dari perangkat lain / sensor tidak boleh menyelesaikan perintah milik aktuator B');
   await sen.endAsync(true); await akt.endAsync(true);

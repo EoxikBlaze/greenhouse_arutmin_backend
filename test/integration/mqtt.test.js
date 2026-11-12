@@ -45,7 +45,7 @@ before(async () => {
 
 after(async () => {
   if (j) await j.berhenti();
-  await q('DELETE FROM monitorings WHERE id > $1 AND tds = 777 AND ph = 6.11', [awalMon]);
+  await q('DELETE FROM monitorings WHERE id > $1 AND tds = 777', [awalMon]);
   await q('DELETE FROM api_keys WHERE perangkat_kode = ANY($1)', [[S, A, T]]);
   await q('DELETE FROM perangkat WHERE kode = ANY($1)', [[S, A, T]]); // perintah_aktuator ikut terhapus (CASCADE)
   await new Promise((r) => broker.close(r));
@@ -86,6 +86,8 @@ test('sensor → data tersimpan; data tak valid, peran salah, dan perangkat tanp
   await t.publishAsync(`garap/${T}/data`, JSON.stringify({ ph: 6.11, tds: 777, waterTemp: 31 }));  // tak punya kunci aktif
   await tunggu(800);
   assert.equal((await bacaanUji()).length, 1, 'hanya bacaan sah yang tersimpan');
+  // bacaanUji() hanya menghitung ph = 6.11, jadi pH 99 harus dicek sendiri (dulu lolos tersimpan tanpa ketahuan)
+  assert.equal((await q('SELECT id FROM monitorings WHERE id > $1 AND ph = 99', [awalMon])).length, 0, 'pH mustahil tidak boleh tersimpan');
   await Promise.all([s.endAsync(), a.endAsync(), t.endAsync()]);
 });
 
