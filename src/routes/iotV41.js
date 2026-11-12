@@ -19,6 +19,8 @@
 const express = require('express');
 const { q, one, pool } = require('../db');
 const aktuator = require('../aktuator');
+const config = require('../config');
+const teganganPh = require('../teganganPh');
 const saklarSvc = require('../saklar');
 const { requireAuth, requireRole, demoGuard, json } = require('../auth');
 const {
@@ -214,6 +216,7 @@ router.get('/state', async (_req, res, next) => {
         ec_ms: ecMsSekarang,
         ec_us: ecUsSekarang,
         ph: phSekarang,
+        ph_volt: teganganPh.terbaru(),
         suhu_air: terbaru?.water_temp ?? null,
         suhu_ruang: terbaru?.air_temp ?? null,
         rh: terbaru?.humidity ?? null,
@@ -460,6 +463,54 @@ router.post('/pemeliharaan', ...writeGuard, async (req, res, next) => {
   }
 });
 
+/** Antre perintah kalibrasi ke alat (disimpan di NVS ESP32). Gagal antre tidak membatalkan simpanan server. */
+async function kirimKeAlat(req, perintah) {
+  try {
+    const p = await aktuator.buatPerintah({ ...perintah, sumber: 'pengguna', userId: Number(req.user.sub) || null, ttlDetik: 600 });
+    return { id: p.id, ket: 'dikirim ke alat, menunggu konfirmasi alat' };
+  } catch (e) {
+    if (!(e && e.status)) throw e;
+    return { id: null, ket: `BELUM dikirim ke alat (${e.message})` };
+  }
+}
+
+/**
+ * Uji pompa untuk kalibrasi laju: pompa SUNGGUHAN menyala `detik` detik. Bukan DOSIS (gerbang dosis tidak disentuh).
+ * Pagar: UJI_POMPA_DIIZINKAN=1 di .env, admin, mode pemeliharaan aktif, satu uji pada satu waktu, E-STOP menolak.
+ * Balasan 202 = diantre, BUKAN pompa sudah jalan; hasil datang dari alat (GET /api/aktuator/perintah).
+ */
+router.post('/uji-pompa', ...writeGuard, async (req, res, next) => {
+  try {
+    if (!config.ujiPompaDiizinkan) {
+      return json(res, 423, { kode: 'uji_pompa_dikunci', message: 'Uji pompa dari aplikasi dikunci. Admin server harus mengisi UJI_POMPA_DIIZINKAN=1 di .env lalu memulai ulang layanan.' });
+    }
+    const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const pemeliharaan = (await q('SELECT 1 FROM penampung_states WHERE mode_pemeliharaan LIMIT 1', [])).length > 0;
+    if (!pemeliharaan) return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan sebelum menyalakan pompa uji.' });
+    const jalan = await q("SELECT id FROM perintah_aktuator WHERE tipe = 'UJI_POMPA' AND status IN ('menunggu','dikirim') LIMIT 1", []);
+    if (jalan.length) return json(res, 409, { kode: 'uji_pompa_berjalan', message: 'Masih ada uji pompa yang belum selesai. Tunggu atau tekan STOP.' });
+    let perintah;
+    try {
+      perintah = await aktuator.buatPerintah({
+        tipe: 'UJI_POMPA', parameter: { pompa: b.pompa, detik: b.detik }, sumber: 'pengguna',
+        userId: Number(req.user.sub) || null, alasan: 'Uji pompa kalibrasi', ttlDetik: 60,
+      });
+    } catch (e) {
+      if (e && e.status) return json(res, e.status, { message: e.message, ...(e.errors ? { errors: e.errors } : {}) });
+      throw e;
+    }
+    await q(
+      `INSERT INTO kalibrasi_log (sensor, lulus, catatan, oleh_user_id, oleh_label)
+       VALUES ('pulsa_peristaltik', true, $1, $2, $3)`,
+      [`[UJI POMPA] ${perintah.parameter.pompa} ${perintah.parameter.detik} detik diantre (id ${perintah.id})`, Number(req.user.sub) || null, req.user.username || null],
+    ).catch(() => {});
+    return res.status(202).json({
+      status: true, antre: true, dikonfirmasi: false, id_perintah: perintah.id,
+      message: `Uji pompa ${perintah.parameter.pompa} ${perintah.parameter.detik} detik masuk antrean. Pompa BELUM dipastikan jalan: tunggu laporan alat.`,
+    });
+  } catch (e) { next(e); }
+});
+
 router.post('/kalibrasi-pompa', ...writeGuard, async (req, res, next) => {
   const client = await pool.connect();
   try {
@@ -484,9 +535,12 @@ router.post('/kalibrasi-pompa', ...writeGuard, async (req, res, next) => {
     ).catch(() => {});
     await client.query('COMMIT');
 
+    const alat = await kirimKeAlat(req, { tipe: 'KALIBRASI', parameter: { [`laju_${hasil.pompa}`]: hasil.laju }, alasan: `Laju pompa ${hasil.pompa.toUpperCase()}` });
+
     return res.status(201).json({
       status: true,
-      message: `Laju Pompa ${hasil.pompa.toUpperCase()} disimpan: ${hasil.ml} mL ÷ ${hasil.detik} detik = ${String(hasil.laju).replace('.', ',')} mL/detik.`,
+      id_perintah: alat.id,
+      message: `Laju Pompa ${hasil.pompa.toUpperCase()} disimpan di server: ${hasil.ml} mL ÷ ${hasil.detik} detik = ${String(hasil.laju).replace('.', ',')} mL/detik; ${alat.ket}.`,
       data: hasil,
     });
   } catch (e) {
@@ -528,9 +582,14 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
         [sensor, baris?.konstanta ?? null, logTerakhir.konstanta_lama, Number(req.user.sub) || null, req.user.username || null],
       );
       await client.query('COMMIT');
+      // Alat hanya menyimpan SATU nilai lama per sensor; balik kedua kali berturut-turut tidak mundur lebih jauh di alat.
+      const alat = sensor === 'ph'
+        ? await kirimKeAlat(req, { tipe: 'BALIK_KALIBRASI', parameter: { sensor: 'ph' }, alasan: 'Balik kalibrasi pH' })
+        : { id: null, ket: 'BELUM dikirim ke alat (kalibrasi EC belum tersambung)' };
       return res.json({
         status: true,
-        message: `Kalibrasi ${sensor.toUpperCase()} dikembalikan ke nilai sebelumnya.`,
+        id_perintah: alat.id,
+        message: `Kalibrasi ${sensor.toUpperCase()} di server dikembalikan ke nilai sebelumnya; ${alat.ket}.`,
         data: logTerakhir.konstanta_lama,
       });
     }
@@ -573,7 +632,17 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
       return json(res, 422, { message: 'Kedua titik buffer pH (4,0 dan 7,0) wajib diambil dan berbeda minimal 0,3 pH.', errors: { baca4: ['Periksa bacaan buffer 4,0 dan 7,0.'] } });
     }
     const konstantaLamaPh = baris?.konstanta || { PH_BACA_4: 4.0, PH_BACA_7: 7.0, PH_SLOPE: 1.0 };
-    const konstantaBaru = { PH_BACA_4: baca4, PH_BACA_7: baca7, PH_SLOPE: Math.round(((7.0 - 4.0) / (baca7 - baca4)) * 10000) / 10000 };
+    // Tegangan probe di tiap buffer (dari alat, kondisi.ph_volt). Tanpa keduanya, kalibrasi hanya tercatat di server.
+    const adaVolt = b.volt4 !== undefined && b.volt7 !== undefined;
+    const volt4 = Number(b.volt4); const volt7 = Number(b.volt7);
+    if (adaVolt && !(teganganPh.sah(volt4) && teganganPh.sah(volt7) && Math.abs(volt4 - volt7) >= 0.05)) {
+      await client.query('ROLLBACK');
+      return json(res, 422, { message: 'Tegangan probe pH tidak sah: kedua titik harus 0–5 V dan berselisih minimal 0,05 V. Periksa probe dan larutan buffer.', errors: { volt4: ['Periksa tegangan buffer 4,0 dan 7,0.'] } });
+    }
+    const konstantaBaru = {
+      PH_BACA_4: baca4, PH_BACA_7: baca7, PH_SLOPE: Math.round(((7.0 - 4.0) / (baca7 - baca4)) * 10000) / 10000,
+      ...(adaVolt ? { PH_V4: volt4, PH_V7: volt7 } : {}),
+    };
     if (baris) {
       await client.query(
         'UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = CURRENT_TIMESTAMP, hasil_ukur = $2, konstanta = coalesce(konstanta, \'{}\'::jsonb) || $3::jsonb WHERE sensor = $1',
@@ -586,9 +655,13 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
       [baca4, baca7, konstantaLamaPh, konstantaBaru, `Kalibrasi pH 2-titik (buffer 4,0 -> ${baca4}; buffer 7,0 -> ${baca7})`, Number(req.user.sub) || null, req.user.username || null],
     );
     await client.query('COMMIT');
+    const alat = adaVolt
+      ? await kirimKeAlat(req, { tipe: 'KALIBRASI', parameter: { ph_v7: volt7, ph_v4: volt4 }, alasan: 'Kalibrasi pH dua titik' })
+      : { id: null, ket: 'BELUM dikirim ke alat (alat belum mengirim tegangan probe; perlu firmware yang mengirim ph_volt)' };
     return res.status(201).json({
       status: true,
-      message: 'Kalibrasi pH dua titik (buffer 4,0 & 7,0) disimpan di server. Belum dikirim ke alat (jalur perintah ke alat belum tersedia).',
+      id_perintah: alat.id,
+      message: `Kalibrasi pH dua titik (buffer 4,0 & 7,0) disimpan di server; ${alat.ket}.`,
       data: konstantaBaru,
     });
   } catch (e) {

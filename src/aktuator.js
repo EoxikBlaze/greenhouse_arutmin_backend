@@ -18,7 +18,12 @@ const BATAS_WAJIB = {
   BILAS: ['maks_ml_bilas_per_perintah'],
 };
 
-const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT'];
+const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT', 'UJI_POMPA', 'KALIBRASI', 'BALIK_KALIBRASI'];
+/** Nama pompa di firmware (NAMA_OUT). ISI_AIR sengaja tidak ada: punya perintah sendiri. */
+const POMPA_UJI = ['A', 'B', 'PH_UP', 'PH_DOWN'];
+/** Batas firmware: UJI_POMPA menolak > 120 dtk; laju pompa 0–500 mL/dtk. */
+const UJI_POMPA_DETIK = [5, 120];
+const LAJU_KALIBRASI = ['laju_a', 'laju_b', 'laju_ph_up', 'laju_ph_down'];
 /** DAFTAR-IZIN pengiriman (containment DOSIS): hanya tipe ini yang boleh di-dequeue/dikirim, cocok PERSIS.
  *  Sengaja bukan daftar-tolak: varian tulisan DOSIS (tab, newline, huruf/Unicode lain) dan tipe tak dikenal tetap tertahan. */
 const TIPE_DIKIRIM = TIPE.filter((t) => t !== 'DOSIS');
@@ -164,13 +169,39 @@ function validasiPerintah(tipe, p, cfg) {
       if (!Number.isInteger(k) || k < 1 || k > 64) err.katup = ['katup harus bilangan bulat 1–64.'];
       else out.katup = k;
     }
+  } else if (tipe === 'UJI_POMPA') {
+    const pompa = String(body.pompa || '').toUpperCase();
+    if (!POMPA_UJI.includes(pompa)) err.pompa = [`pompa harus salah satu dari ${POMPA_UJI.join(', ')}.`];
+    else out.pompa = pompa;
+    const detik = angka(body.detik);
+    if (!Number.isFinite(detik) || detik < UJI_POMPA_DETIK[0] || detik > UJI_POMPA_DETIK[1]) err.detik = [`detik harus ${UJI_POMPA_DETIK[0]}–${UJI_POMPA_DETIK[1]}.`];
+    else out.detik = bulat1(detik);
+  } else if (tipe === 'KALIBRASI') {
+    // Laju pompa dan tegangan pH. Faktor EC belum dikirim: titik server (µS/cm, dua titik) ≠ firmware (satu faktor TDS).
+    for (const k of LAJU_KALIBRASI) {
+      if (body[k] === undefined) continue;
+      const v = angka(body[k]);
+      if (!Number.isFinite(v) || v <= 0 || v > 500) err[k] = [`${k} harus > 0 dan ≤ 500 mL/detik.`];
+      else out[k] = Math.round(v * 100) / 100;
+    }
+    // pH: tegangan probe di buffer 7,0 dan 4,0, wajib sepasang (batas sama dengan firmware: selisih ≥ 0,05 V).
+    if (body.ph_v7 !== undefined || body.ph_v4 !== undefined) {
+      const v7 = angka(body.ph_v7); const v4 = angka(body.ph_v4);
+      const sah = (v) => Number.isFinite(v) && v > 0 && v < 5;
+      if (!sah(v7) || !sah(v4) || Math.abs(v4 - v7) < 0.05) err.ph_v7 = ['ph_v7 dan ph_v4 wajib sepasang, 0–5 V, dan berselisih ≥ 0,05 V.'];
+      else { out.ph_v7 = Math.round(v7 * 10000) / 10000; out.ph_v4 = Math.round(v4 * 10000) / 10000; }
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.laju = [`isi minimal satu dari ${LAJU_KALIBRASI.join(', ')} atau pasangan ph_v7/ph_v4.`];
+  } else if (tipe === 'BALIK_KALIBRASI') {
+    if (body.sensor !== 'ph') err.sensor = ['sensor harus ph (EC belum tersambung ke alat).'];
+    else out.sensor = 'ph';
   }
   if (Object.keys(err).length) throw new PerintahDitolak(422, 'Data tidak valid.', err);
   return out;
 }
 
 /** Perintah yang menambah risiko (butuh pagar penuh & ditolak saat E-STOP). */
-const berisiko = (tipe, param) => tipe === 'DOSIS' || tipe === 'BILAS' || tipe === 'SAMPLING'
+const berisiko = (tipe, param) => tipe === 'DOSIS' || tipe === 'BILAS' || tipe === 'SAMPLING' || tipe === 'UJI_POMPA'
   || (tipe === 'ISI_AIR' && param.aksi === 'MULAI');
 
 /**
@@ -192,6 +223,7 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
       }
     }
     const param = validasiPerintah(tipe, parameter, cfg);
+    if (tipe === 'UJI_POMPA' && sumber !== 'pengguna') throw new PerintahDitolak(403, 'Uji pompa hanya boleh diminta pengguna, bukan otomasi atau AI.');
 
     const dev = (await client.query('SELECT kode, peran FROM perangkat WHERE kode = $1', [perangkat])).rows[0];
     if (!dev || !['aktuator', 'gabungan'].includes(dev.peran)) throw new PerintahDitolak(404, 'Perangkat aktuator tidak ditemukan.');
@@ -213,7 +245,7 @@ async function buatPerintah({ tipe, parameter, sumber = 'pengguna', userId = nul
       const antre = Number((await client.query(
         "SELECT count(*) FROM perintah_aktuator WHERE perangkat_kode = $1 AND status IN ('menunggu','dikirim')", [perangkat])).rows[0].count);
       if (antre >= 10) throw new PerintahDitolak(429, 'Antrean perintah penuh (maks 10). Tunggu perintah sebelumnya selesai.');
-      const meja = (await client.query('SELECT 1 FROM mejas WHERE id_meja = $1', [param.penampung])).rows[0];
+      const meja = tipe === 'UJI_POMPA' || (await client.query('SELECT 1 FROM mejas WHERE id_meja = $1', [param.penampung])).rows[0];
       if (!meja) throw new PerintahDitolak(404, 'Penampung (meja) tidak ditemukan.');
     }
 

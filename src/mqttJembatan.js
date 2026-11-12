@@ -30,6 +30,8 @@ const CACHE_MS = 30_000;
 const PERINGATAN_DOSIS_MS = 60_000;
 let peringatanDosisTerakhir = 0;
 
+const teganganPh = require('./teganganPh');
+
 const TIPE_BOLEH = new Set(TIPE_DIKIRIM);
 
 /** Batas dispatch legacy (lapis kedua): hanya tipe pada DAFTAR-IZIN (cocok persis) yang diterbitkan.
@@ -141,6 +143,7 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
     if (jenis === 'data') {
       if (p.peran !== 'sensor' && p.peran !== 'gabungan') return;   // gabungan = satu ESP32 sensor + aktuator
       const d = bacaJson(buf);
+      teganganPh.catat(d && d.ph_volt);
       const gagal = await simpanBacaan(d, kode, null);
       if (gagal) log.warn('[mqtt] bacaan sensor ditolak', { kode, galat: gagal.errors ? Object.keys(gagal.errors) : 'kosong' });
       return;

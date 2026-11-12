@@ -27,6 +27,8 @@ module.exports = {
   aiModel: process.env.AI_MODEL || 'qwen2.5:1.5b',
   aiOllamaUrl: String(process.env.AI_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, ''),
   /* Broker MQTT lokal untuk 2 ESP32 (src/mqttJembatan.js). Kosong = jembatan MQTT mati, HTTP tetap jalan. */
+  /* Uji pompa dari aplikasi (kalibrasi laju). Bawaan MATI: pompa sungguhan menyala. Nyalakan sadar di .env: UJI_POMPA_DIIZINKAN=1. */
+  ujiPompaDiizinkan: process.env.UJI_POMPA_DIIZINKAN === '1',
   mqttUrl: process.env.MQTT_URL || '',
   mqttUser: process.env.MQTT_USER || '',
   mqttPass: process.env.MQTT_PASS || '',
