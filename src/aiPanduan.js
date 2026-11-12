@@ -156,16 +156,8 @@ const TEKS = {
   saklar: [
     'Cara memakai Saklar:',
     '1. Admin buka menu Saklar. Tiap aktuator (Nutrisi A+B, pH Up, pH Down, Pengenceran, Isi air) punya tombol ON/OFF.',
-    '2. OFF = otomasi (preset, jadwal) tidak boleh menyalakan aktuator itu. Nutrisi Manual tetap boleh (override manual).',
+    '2. OFF = otomasi (preset, jadwal) tidak boleh menyalakan aktuator itu.',
     '3. Setiap perubahan tercatat di Catatan Aktivitas (siapa, kapan, dari/ke) dan tampil di Dashboard.',
-  ].join('\n'),
-
-  nutrisi_manual: [
-    'Cara memakai Nutrisi Manual:',
-    '1. Admin buka menu Nutrisi Manual, pilih zat (Nutrisi A, Nutrisi B, pH Up, pH Down).',
-    '2. Isi volume (mL) atau durasi (detik), lalu tekan Dosing.',
-    '3. Server memeriksa batas per sekali dosing, jeda minimum, jatah harian, LOCK, dan E-STOP.',
-    '4. Saat ini pompa dari aplikasi masih DIKUNCI: permintaan yang lolos dicatat "gagal" dan tidak ada pompa menyala. Tambahkan nutrisi secara manual di lapangan.',
   ].join('\n'),
 
   uji_lab: [
@@ -191,7 +183,7 @@ const TEKS = {
     '2. Telemetri & Sensor: Grafik pantauan langsung pH air, nutrisi TDS/EC, suhu air tandon, serta suhu & kelembaban udara greenhouse.',
     '3. Kebun Saya & Tahap Tanam: Mengelola siklus hidup tanaman melon dari semai, peremajaan, pendewasaan, hingga panen.',
     '4. Dosing & Naik Harian: Mengatur preset target nutrisi per tahap, kenaikan target harian otomatis, dan rekomendasi pupuk AB Mix.',
-    '5. Saklar & Nutrisi Manual: Mengatur izin pompa ON/OFF dan pencatatan suntik nutrisi manual.',
+    '5. Saklar: Mengatur izin pompa ON/OFF.',
     '6. Kalibrasi & Ambang Sensor: Menyesuaikan akurasi sensor dengan cairan standar serta batas peringatan bahaya.',
     '7. Peringatan, Data Uji Lab, CCTV & Asisten AI: Deteksi masalah otomatis, pencatatan brix (rasa manis), pantauan kamera kebun, dan konsultasi cerdas dengan AI lokal Qwen.',
   ].join('\n'),
@@ -225,7 +217,7 @@ const TEKS = {
 const POLA = [
   ['logbook', /\blog ?book\b|catatan kegiatan|riwayat kegiatan|kegiatan (?:terakhir|minggu ini|hari ini|kemarin)/],
   ['tim', /\b(?:anggota|biodata|bio data|profil tim|susunan tim)\b|\bsiapa\b.{0,20}\b(?:tim|anggota|pembuat|pengembang)\b/],
-  ['durasi_melon', /\b(?:berapa hari|berapa lama|kapan|kapan saja)\b.{0,30}\b(?:siap (?:makan|panen|petik)|panen|bisa makan|bisa dipanen|umur panen|masa tanam)\b|\b(?:siap (?:makan|panen|petik)|panen)\b.{0,30}\b(?:berapa hari|berapa lama|kapan)\b|\b(?:umur|masa|durasi|lama)\b.{0,20}\b(?:panen|tanam|hidup)\b.{0,15}\bmelon\b|\bmelon\b.{0,25}\b(?:berapa hari|berapa lama|kapan|siap makan|siap panen)\b/],
+  ['durasi_melon', /\b(?:berapa hari|berapa lama|kapan|kapan saja)\b.{0,30}\b(?:(?:siap|bisa|sudah|boleh|dapat)\s+(?:di\s*)?(?:makan|panen|petik)|panen|umur panen|masa tanam|matang)\b|\b(?:(?:siap|bisa|sudah)\s+(?:di\s*)?(?:makan|panen|petik)|panen)\b.{0,30}\b(?:berapa hari|berapa lama|kapan)\b|\b(?:umur|masa|durasi|lama)\b.{0,20}\b(?:panen|tanam|hidup)\b.{0,15}\bmelon\b|\bmelon\b.{0,25}\b(?:berapa hari|berapa lama|kapan|(?:siap|bisa|sudah|boleh)\s+(?:di\s*)?(?:makan|panen|petik)|matang)\b|\b(?:ciri|tanda)\b.{0,20}\bmelon\b.{0,25}\b(?:matang|panen|siap|petik|makan)\b/],
   ['nutrisi_melon', /\b(?:nutrisi|ppm|tds|ec|ab mix|abmix|pupuk|dosis)\b.{0,25}\b(?:melon|tanaman buah)\b|\bmelon\b.{0,25}\b(?:nutrisi|ppm|tds|ec|ab mix|pupuk)\b|\btarget (?:ppm|nutrisi|tds)\b/],
   ['polinasi_melon', /\b(?:polinasi|penyerbukan|kawin|kawinkan|bunga betina|bunga jantan)\b|\b(?:pruning|pemangkasan|pangkas|tunas air|seleksi buah)\b/],
   ['tanaman_buah', /\b(?:cabai|cabe|tomat|stroberi|strawberry)\b/],
@@ -236,7 +228,6 @@ const POLA = [
   ['input_data', /\b(?:cara|langkah|bagaimana|gimana|panduan|urutan)\b.{0,25}\b(?:input|masukkan|memasukkan|mengisi|isi|tambah|menambah)\b.{0,20}\bdata\b|\binput data\b|\bisi data\b/],
   ['fitur', /\b(?:semua|seluruh|daftar|apa saja)\b.{0,20}\b(?:fitur|menu|halaman)\b|\b(?:fitur|menu)\b.{0,20}\b(?:aplikasi|website|web|garap|lengkap)\b|\bjelaskan (?:semua )?fitur\b/],
   ['saklar', /\bsaklar\b/],
-  ['nutrisi_manual', /\bnutrisi manual\b|\bdosing manual\b|\bmanual dosing\b/],
   ['uji_lab', /\buji lab\b|\bhasil lab\b|\bbrix\b/],
   ['fase', /\bfase\b|sudah sampai (?:mana|fase)|sampai (?:mana|fase)|status (?:proyek|pengembangan)|progres (?:proyek|pengembangan)/],
   ['keputusan', /\bkeputusan\b|belum diputuskan|menunggu (?:pemilik|keputusan)/],
@@ -268,7 +259,6 @@ const HALAMAN = {
   kalibrasi: { to: '/kalibrasi', label: 'Kalibrasi', izin: ADMIN },
   dosing: { to: '/dosing', label: 'Dosing', izin: ADMIN },
   saklar: { to: '/saklar', label: 'Saklar', izin: ADMIN },
-  nutrisiManual: { to: '/dosing-manual', label: 'Nutrisi Manual', izin: ADMIN },
   data: { to: '/data', label: 'Data', izin: ADMIN },
   pengaturanAlat: { to: '/pengaturan-alat', label: 'Pengaturan Alat', izin: ADMIN },
   mqtt: { to: '/mqtt-diagnostik', label: 'Diagnostik MQTT', izin: ADMIN },
@@ -281,7 +271,7 @@ const TAUTAN_TOPIK = {
   hama_melon: ['peringatan', 'tanam', 'sensor'],
   durasi_sayuran: ['tanam', 'semai', 'panen'],
   tanaman_buah: ['tanam', 'sensor', 'dosing'],
-  nutrisi_ab_mix: ['dosing', 'sensor', 'nutrisiManual'],
+  nutrisi_ab_mix: ['dosing', 'sensor'],
   media_tanam: ['semai', 'tanam'],
   alur: ['dashboard', 'tanam', 'sensor', 'peringatan'],
   semai: ['tanam', 'semai', 'tanaman'],
@@ -290,7 +280,6 @@ const TAUTAN_TOPIK = {
   alat_baru: ['sensor', 'ambang', 'kalibrasi', 'pengaturanAlat', 'mqtt'],
   dosing: ['dosing', 'saklar', 'peringatan'],
   saklar: ['saklar'],
-  nutrisi_manual: ['nutrisiManual', 'saklar'],
   uji_lab: ['data'],
   input_data: ['tanam', 'tanaman', 'ambang', 'dosing', 'data'],
   fitur: ['dashboard', 'sensor', 'tanam', 'peringatan', 'dosing', 'saklar', 'kalibrasi', 'data'],

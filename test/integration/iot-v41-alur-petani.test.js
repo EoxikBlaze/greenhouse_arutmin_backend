@@ -239,14 +239,6 @@ test('Langkah 4 — Saklar & Mode: Toggle saklar dan Tombol [Simpan & kirim ke a
   assert.equal(matikanAb.body.data.saklar_ab, 0);
   assert.equal(matikanAb.body.data.mode_isi, 'manual');
 
-  // 4b. Dosing Manual A+B DIKUNCI (423) apa pun status saklarnya
-  const tolakAb = await request(srv.base)
-    .post('/iot-v41/dosing-manual')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'dosing_ab', ppm: 50 });
-  assert.equal(tolakAb.status, 423);
-  assert.equal(tolakAb.body.kode, 'eksekusi_diblokir');
-
   // 4c. Nyalakan kembali semua saklar & mode isi otomatis
   const nyalakanSemua = await request(srv.base)
     .put('/iot-v41/saklar')
@@ -263,33 +255,11 @@ test('Langkah 4 — Saklar & Mode: Toggle saklar dan Tombol [Simpan & kirim ke a
   assert.equal(nyalakanSemua.body.data.mode_isi, 'otomatis');
 });
 
-test('Langkah 6 — Dosing Manual: Tombol [Kirim dosing A + B], [Kirim koreksi pH], dan [STOP — matikan semua pompa]', { skip: lewati }, async () => {
-  // Reset hitungan harian langsung di DB (halaman Kuras sudah dihapus) supaya mulai dari 0
-  await q("UPDATE penampung_states SET mode_pemeliharaan = false, status_lock = false, lock_alasan = NULL, kejadian_dosis_hari = 0, volume_ab_hari_ml = 0, volume_ph_hari_ml = 0");
-
+test('Langkah 6 — STOP: tombol [STOP — matikan semua pompa]; rute dosing manual sudah dihapus', { skip: lewati }, async () => {
   const sebelum = (await request(srv.base).get('/iot-v41/state').set(bearer(tokAdmin))).body.kondisi;
 
-  // 6a. Dosing A+B: dikunci, tidak ada hitungan yang berubah
-  const dosAb = await request(srv.base)
-    .post('/iot-v41/dosing-manual')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'dosing_ab', ppm: 50 });
-  assert.equal(dosAb.status, 423);
-  assert.equal(dosAb.body.kode, 'eksekusi_diblokir');
-  assert.doesNotMatch(JSON.stringify(dosAb.body), /dikirim/);
-
-  // 6b. Koreksi pH: dikunci
-  const dosPh = await request(srv.base)
-    .post('/iot-v41/dosing-manual')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'dosis_ph', arah: 'up', ml: 5 });
-  assert.equal(dosPh.status, 423);
-
-  // 6c. STOP: benar-benar diantre (202) dan TIDAK mengaku pompa sudah mati
-  const stopRes = await request(srv.base)
-    .post('/iot-v41/dosing-manual')
-    .set(bearer(tokAdmin))
-    .send({ aksi: 'stop' });
+  // 6a. STOP: benar-benar diantre (202) dan TIDAK mengaku pompa sudah mati
+  const stopRes = await request(srv.base).post('/iot-v41/stop').set(bearer(tokAdmin)).send({});
   assert.equal(stopRes.status, 202);
   assert.equal(stopRes.body.antre, true);
   assert.equal(stopRes.body.dikonfirmasi, false);
@@ -298,16 +268,18 @@ test('Langkah 6 — Dosing Manual: Tombol [Kirim dosing A + B], [Kirim koreksi p
   const baris = await q('SELECT tipe, status FROM perintah_aktuator WHERE id = $1', [stopRes.body.id_perintah]);
   assert.equal(baris[0].tipe, 'STOP');
 
-  // 6d. Tidak ada perintah DOSIS dan hitungan harian tidak berubah
+  // 6b. Tidak ada perintah DOSIS dan hitungan harian tidak berubah
   const dosis = await q("SELECT count(*)::int AS n FROM perintah_aktuator WHERE tipe = 'DOSIS'");
   assert.equal(dosis[0].n, 0);
   const sesudah = (await request(srv.base).get('/iot-v41/state').set(bearer(tokAdmin))).body.kondisi;
   assert.equal(sesudah.hit_ec, sebelum.hit_ec);
   assert.equal(sesudah.hit_ph, sebelum.hit_ph);
 
-  // 6e. aksi tak dikenal → 422
-  const aneh = await request(srv.base).post('/iot-v41/dosing-manual').set(bearer(tokAdmin)).send({ aksi: 'meledak' });
-  assert.equal(aneh.status, 422);
+  // 6c. Rute dosing manual sudah tidak ada
+  for (const body of [{ zat: 'nutrisi_a', volume_ml: 5 }, { aksi: 'dosing_ab', ppm: 50 }]) {
+    assert.equal((await request(srv.base).post('/iot-v41/dosing-manual').set(bearer(tokAdmin)).send(body)).status, 404);
+  }
+  assert.equal((await request(srv.base).get('/iot-v41/dosing-manual/riwayat').set(bearer(tokAdmin))).status, 404);
 });
 
 
@@ -319,8 +291,6 @@ test('Langkah 7 — Kuras dihapus: aksi kuras_mulai/air_diganti ditolak; toggle 
   const on = await request(srv.base).post('/iot-v41/pemeliharaan').set(bearer(tokAdmin)).send({ aksi: 'pemeliharaan', aktif: true });
   assert.equal(on.status, 200);
   assert.equal(on.body.pemeliharaan, true);
-  const tolak = await request(srv.base).post('/iot-v41/dosing-manual').set(bearer(tokAdmin)).send({ aksi: 'dosing_ab', ppm: 50 });
-  assert.equal(tolak.status, 423);
   const off = await request(srv.base).post('/iot-v41/pemeliharaan').set(bearer(tokAdmin)).send({ aksi: 'pemeliharaan', aktif: false });
   assert.equal(off.status, 200);
   assert.equal(off.body.pemeliharaan, false);
@@ -379,7 +349,7 @@ test('Keselamatan v4.1: saklar bawaan mati, parameter NULL tidak dibaca sebagai 
   // petani tidak boleh membaca maupun menulis rute v4.1
   const petani = craftToken({ sub: 2, username: 'p', level: 'petani', demo: false }, { expiresIn: '10m' });
   assert.equal((await request(srv.base).get('/iot-v41/state').set(bearer(petani))).status, 403);
-  assert.equal((await request(srv.base).post('/iot-v41/dosing-manual').set(bearer(petani)).send({ aksi: 'stop' })).status, 403);
+  assert.equal((await request(srv.base).post('/iot-v41/stop').set(bearer(petani)).send({})).status, 403);
   // tanpa token
-  assert.equal((await request(srv.base).post('/iot-v41/dosing-manual').send({ aksi: 'stop' })).status, 401);
+  assert.equal((await request(srv.base).post('/iot-v41/stop').send({})).status, 401);
 });

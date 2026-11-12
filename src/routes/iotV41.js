@@ -18,10 +18,8 @@
  */
 const express = require('express');
 const { q, one, pool } = require('../db');
-const { EKSEKUSI_DIIZINKAN } = require('../gerbangDosis');
 const aktuator = require('../aktuator');
 const saklarSvc = require('../saklar');
-const manual = require('../dosingManual');
 const { requireAuth, requireRole, demoGuard, json } = require('../auth');
 const {
   BAWAAN_V41,
@@ -646,68 +644,37 @@ router.post('/pulihkan', ...writeGuard, async (req, res, next) => {
 });
 
 /**
- * Dosing manual dari aplikasi.
- *  - `stop`: benar-benar mengantre perintah STOP lewat jalur aktuator yang sama (STOP lolos containment).
- *    Balasan 202 = diantre, BUKAN pompa sudah mati; konfirmasi datang dari aktuator.
- *  - `dosing_ab` / `dosis_ph`: DIKUNCI (423). Tidak ada hitungan harian yang berubah dan tidak ada perintah dibuat.
- *    Keputusan 3 Nov 2026: tahap awal hanya saran; pengaju tidak menyetujui sendiri; eksekusi lewat alur persetujuan 3C.
+ * STOP semua pompa dari aplikasi: mengantre perintah STOP lewat jalur aktuator (STOP lolos containment).
+ * Balasan 202 = diantre, BUKAN pompa sudah mati; konfirmasi datang dari aktuator.
  */
-router.post('/dosing-manual', ...writeGuard, async (req, res, next) => {
+router.post('/stop', ...writeGuard, async (req, res, next) => {
   try {
-    const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const aksi = String(b.aksi || '').toLowerCase();
-
-    // Nutrisi Manual berbasis zat: {zat, volume_ml | durasi_detik}. Pagar + pencatatan di src/dosingManual.js.
-    if (b.zat !== undefined) {
-      try {
-        const r = await manual.dosingManual(b, req.user);
-        return json(res, r.status, r.body);
-      } catch (e) {
-        if (e instanceof manual.ManualDitolak) return json(res, e.status, { message: e.message, kode: e.kode, ...(e.errors ? { errors: e.errors } : {}) });
-        throw e;
-      }
-    }
-
-    if (aksi === 'stop') {
-      let perintah;
-      try {
-        perintah = await aktuator.buatPerintah({
-          tipe: 'STOP', parameter: {}, sumber: 'pengguna', userId: Number(req.user.sub) || null,
-          alasan: 'STOP dari halaman Dosing Manual', ttlDetik: 120,
-        });
-      } catch (e) {
-        if (e && e.status) return json(res, e.status, { message: e.message });
-        throw e;
-      }
-      await manual.batalkanBerjalan();
-      await q(
-        `INSERT INTO kalibrasi_log (sensor, lulus, catatan, oleh_user_id, oleh_label)
-         VALUES ('pulsa_peristaltik', true, $1, $2, $3)`,
-        [`[PERINTAH MANUAL] STOP diantre (id ${perintah && perintah.id ? perintah.id : '?'}); menunggu konfirmasi aktuator`, Number(req.user.sub) || null, req.user.username || null],
-      ).catch(() => {});
-      return res.status(202).json({
-        status: true,
-        antre: true,
-        dikonfirmasi: false,
-        id_perintah: perintah && perintah.id ? perintah.id : null,
-        message: 'Perintah STOP masuk antrean. Pompa BELUM dipastikan mati: tunggu konfirmasi aktuator, dan gunakan tombol darurat fisik bila perlu.',
+    let perintah;
+    try {
+      perintah = await aktuator.buatPerintah({
+        tipe: 'STOP', parameter: {}, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+        alasan: 'STOP dari aplikasi', ttlDetik: 120,
       });
+    } catch (e) {
+      if (e && e.status) return json(res, e.status, { message: e.message });
+      throw e;
     }
-
-    if (aksi === 'dosing_ab' || aksi === 'dosis_ph') {
-      return json(res, 423, {
-        kode: 'eksekusi_diblokir',
-        eksekusi_diizinkan: EKSEKUSI_DIIZINKAN,
-        message: 'Dosing dari aplikasi dikunci. Aplikasi hanya memberi saran: tambahkan nutrisi atau pH secara manual, lalu catat. Tidak ada perintah yang dibuat dan hitungan harian tidak berubah.',
-      });
-    }
-
-    return json(res, 422, { message: 'Aksi dosing manual tidak dikenal.', errors: { aksi: ['Pilih stop, dosing_ab, atau dosis_ph.'] } });
+    await q(
+      `UPDATE dosing_events SET hasil = 'dibatalkan', selesai_pada = now(), alasan_akhir = 'dibatalkan_pengguna', updated_at = now()
+        WHERE pemicu = 'USER_MANUAL' AND hasil = 'berjalan'`, []);
+    await q(
+      `INSERT INTO kalibrasi_log (sensor, lulus, catatan, oleh_user_id, oleh_label)
+       VALUES ('pulsa_peristaltik', true, $1, $2, $3)`,
+      [`[PERINTAH MANUAL] STOP diantre (id ${perintah && perintah.id ? perintah.id : '?'}); menunggu konfirmasi aktuator`, Number(req.user.sub) || null, req.user.username || null],
+    ).catch(() => {});
+    return res.status(202).json({
+      status: true,
+      antre: true,
+      dikonfirmasi: false,
+      id_perintah: perintah && perintah.id ? perintah.id : null,
+      message: 'Perintah STOP masuk antrean. Pompa BELUM dipastikan mati: tunggu konfirmasi aktuator, dan gunakan tombol darurat fisik bila perlu.',
+    });
   } catch (e) { next(e); }
-});
-
-router.get('/dosing-manual/riwayat', async (_req, res, next) => {
-  try { res.json({ status: true, data: await manual.riwayat(), batas: await manual.batas() }); } catch (e) { next(e); }
 });
 
 router.post('/mqtt-uji', ...writeGuard, async (req, res, next) => {

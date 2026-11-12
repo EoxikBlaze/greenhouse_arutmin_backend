@@ -83,7 +83,6 @@ test('topik baru: logbook, tim, saklar, nutrisi manual, uji lab terdeteksi; daft
   assert.equal(deteksiPanduan('siapa saja anggota tim'), 'tim');
   assert.equal(deteksiPanduan('bio data anggota'), 'tim');
   assert.equal(deteksiPanduan('cara pakai saklar'), 'saklar');
-  assert.equal(deteksiPanduan('gimana nutrisi manual'), 'nutrisi_manual');
   assert.equal(deteksiPanduan('catat hasil uji lab'), 'uji_lab');
   assert.equal(deteksiPanduan('cara menyemai melon'), 'semai');
   assert.equal(deteksiPanduan('bagaimana cara menanam'), 'semai');
@@ -94,4 +93,18 @@ test('topik baru: logbook, tim, saklar, nutrisi manual, uji lab terdeteksi; daft
   assert.match(TEKS.semai, /Persiapan/);
   assert.match(TEKS.input_data, /Input Jenis Tanaman/);
   assert.match(TEKS.fitur, /Dashboard/);
+});
+
+test('variasi frasa panen melon (termasuk spasi "di makan") cocok ke durasi_melon', () => {
+  for (const t of [
+    'kapan melon bisa di makan',
+    'kapan melon bisa dimakan?',
+    'melon kapan bisa di panen',
+    'kapan melon siap petik?',
+    'ciri melon matang dan siap panen',
+    'berapa lama melon bisa di panen',
+  ]) {
+    assert.equal(kunci(t), 'durasi_melon', t);
+  }
+  assert.match(TEKS.durasi_melon, /60 hingga 75 hari/);
 });
