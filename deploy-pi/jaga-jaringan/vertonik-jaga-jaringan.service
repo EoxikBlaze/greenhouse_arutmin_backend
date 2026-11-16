@@ -1,0 +1,7 @@
+[Unit]
+Description=Vertonik: nyalakan hotspot Pi bila Wi-Fi hilang
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vertonik-jaga-jaringan

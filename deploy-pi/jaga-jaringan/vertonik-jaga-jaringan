@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# ============================================================================
+# vertonik-jaga-jaringan — dijalankan systemd timer tiap 60 dtk DI Raspberry Pi.
+# Bila wlan0 TIDAK tersambung ke Wi-Fi apa pun selama BATAS_GAGAL pemeriksaan berturut-turut,
+# nyalakan profil hotspot 'vertonik-hotspot' (dibuat oleh: sudo vertonik-hotspot cadangan) supaya ESP32
+# (preset SSID hotspot Pi, gateway 10.42.0.1) bisa tersambung lagi.
+#
+# Yang TIDAK dilakukan (sengaja):
+#   - Internet putus tetapi Wi-Fi router masih tersambung → TIDAK pindah hotspot: ESP32 masih menjangkau Pi lewat LAN,
+#     data tetap masuk PostgreSQL lokal di Pi (server tidak butuh internet).
+#   - Tidak otomatis kembali dari hotspot ke Wi-Fi klien (satu radio: Pi tak bisa memindai sambil jadi AP dengan andal).
+#     Kembali: sudo vertonik-hotspot mati  (atau reboot; NetworkManager memilih Wi-Fi tersimpan lebih dulu).
+# Pasang: sudo bash pasang.sh   ·   Log: journalctl -u vertonik-jaga-jaringan
+# ============================================================================
+set -euo pipefail
+
+IFACE="${HOTSPOT_IF:-wlan0}"
+CON="vertonik-hotspot"
+BATAS_GAGAL="${BATAS_GAGAL:-3}"                      # 3 × 60 dtk tanpa Wi-Fi → hotspot
+STATE=/var/lib/vertonik/jaga-jaringan-gagal
+
+command -v nmcli >/dev/null || { echo "nmcli tidak ada (NetworkManager wajib)"; exit 0; }
+mkdir -p "$(dirname "$STATE")"
+
+aktif="$(nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v d="$IFACE" '$2 == d {print $1; exit}')"
+
+if [ -n "$aktif" ]; then
+  echo 0 > "$STATE"
+  exit 0                                              # klien Wi-Fi atau hotspot sudah aktif
+fi
+
+gagal=$(( $(cat "$STATE" 2>/dev/null || echo 0) + 1 ))
+echo "$gagal" > "$STATE"
+echo "$IFACE tanpa sambungan ($gagal/$BATAS_GAGAL)"
+[ "$gagal" -lt "$BATAS_GAGAL" ] && exit 0
+
+if ! nmcli -t -f NAME connection show | grep -qx "$CON"; then
+  echo "Profil $CON belum ada. Jalankan sekali: sudo vertonik-hotspot cadangan"
+  exit 0
+fi
+echo "Menyalakan hotspot $CON agar ESP32 bisa tersambung lagi"
+nmcli connection up "$CON" && echo 0 > "$STATE"

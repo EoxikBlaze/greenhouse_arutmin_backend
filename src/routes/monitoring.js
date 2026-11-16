@@ -80,12 +80,38 @@ function berurutan(kunci, fn) {
   return jalan;
 }
 
-async function saveSensorRows(data, { idMeja = null } = {}) {
+/** Batas umur bacaan antrean firmware (ESP32 menyimpan maks. beberapa jam di RAM). */
+const UMUR_BACAAN_MAKS_DETIK = 86_400;
+
+/**
+ * umur_detik dari firmware: berapa detik lalu bacaan diambil (antrean saat Pi tak terjangkau).
+ * @returns {number|undefined} 0 = bacaan segar/tidak dikirim, undefined = tidak sah
+ */
+function umurBacaanDetik(v) {
+  if (v === undefined || v === null || v === '') return 0;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= UMUR_BACAAN_MAKS_DETIK ? n : undefined;
+}
+
+async function saveSensorRows(data, { idMeja = null, umurDetik = 0 } = {}) {
+  // Bacaan antrean: waktu aslinya = sekarang − umur. Disisipkan apa adanya (tanpa anti-duplikat/"sentuh"
+  // bacaan terakhir) supaya tidak tampak sebagai bacaan segar dan tidak memperpanjang status online.
+  if (umurDetik > 0) return simpanBacaanAntrean(data, idMeja, umurDetik);
   // Kirim bersamaan untuk penampung yang sama dulu menggandakan baris (snapshot CTE sama → NOT EXISTS lolos
   // di semua permintaan; terukur 4–20 baris dari 20 kiriman identik). Diurutkan PER PENAMPUNG: antrean di
   // proses (tidak menghabiskan pool saat banjir) + kunci advisory di transaksi (aman bila >1 proses).
   // Penampung lain tidak saling menunggu.
   return berurutan(idMeja == null ? 'tanpa-meja' : String(idMeja), () => simpanTerkunci(data, idMeja));
+}
+
+async function simpanBacaanAntrean(data, idMeja, umurDetik) {
+  const nz = (v) => (v === '' || v === undefined ? null : v);
+  await q(
+    `INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at)
+     VALUES ($1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric,$6::bigint,
+             now() - make_interval(secs => $7), now() - make_interval(secs => $7))`,
+    [nz(data.waterTemp), nz(data.ph), nz(data.tds), nz(data.airTemp), nz(data.humidity), idMeja, umurDetik]);
+  return 'AUTO';
 }
 
 async function simpanTerkunci(data, idMeja) {
@@ -406,4 +432,4 @@ api.post('/notif-hardware', requireApiKey, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-module.exports = { router, api, saveSensorRows, sensorErrors, panjangSensorErrors, thresholdsMap, latestSensorPayload };
+module.exports = { router, api, saveSensorRows, umurBacaanDetik, sensorErrors, panjangSensorErrors, thresholdsMap, latestSensorPayload };

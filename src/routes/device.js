@@ -32,19 +32,50 @@ function bersihkanStatus(ekstra = {}) {
     rssi: bulat(ekstra.rssi, -32768, 32767),
     uptime: bulat(ekstra.uptime, 0, 2147483647),
     estop: typeof ekstra.estop === 'boolean' ? ekstra.estop : null,
+    // gabungan-0.7+: pelampung, asal E-STOP, dan tombol RESET. Bukan boolean = tidak dilaporkan (tetap NULL, bukan "aman").
+    floatBawahRendah: typeof ekstra.float_bawah_rendah === 'boolean' ? ekstra.float_bawah_rendah : null,
+    floatAtasPenuh: typeof ekstra.float_atas_penuh === 'boolean' ? ekstra.float_atas_penuh : null,
+    estopFisik: typeof ekstra.estop_fisik === 'boolean' ? ekstra.estop_fisik : null,
+    reset: ekstra.peristiwa === 'reset',
   };
+}
+
+/** Peringatan yang wajib terlihat di web (tabel alert_logs → halaman Peringatan & banner keselamatan). */
+async function catatPeringatanAlat(kode, ekstra, estopFisikLama) {
+  const baris = [];
+  if (ekstra.estopFisik === true && estopFisikLama !== true) {
+    baris.push(['estop_fisik', `Tombol E-STOP fisik ditekan pada ${kode}; semua pompa dimatikan alat`, 'critical']);
+  } else if (ekstra.estopFisik === false && estopFisikLama === true) {
+    baris.push(['estop_fisik', `E-STOP fisik pada ${kode} sudah dilepas`, 'info']);
+  }
+  if (ekstra.reset) baris.push(['tombol_reset', `Tombol RESET fisik ditekan pada ${kode}`, 'warning']);
+  for (const [type, value, severity] of baris) {
+    await q(`INSERT INTO alert_logs (type, value, severity, locked, created_at, updated_at)
+             VALUES ($1, $2, $3, false, now(), now())`, [type, value.slice(0, 100), severity]);
+  }
 }
 
 async function tandaiTerlihat(kode, ip, mentah = {}) {
   if (!kode) return;
   const ekstra = bersihkanStatus(mentah);
-  await q(
-    `UPDATE perangkat SET terakhir_terlihat = now(),
+  // CTE `lama` membaca snapshot SEBELUM UPDATE → transisi E-STOP fisik bisa dicatat sekali saja.
+  const r = await one(
+    `WITH lama AS (SELECT estop_fisik FROM perangkat WHERE kode = $1)
+     UPDATE perangkat SET terakhir_terlihat = now(),
             ip_terakhir = COALESCE($2, ip_terakhir),
             versi_firmware = COALESCE($3, versi_firmware), rssi = COALESCE($4, rssi),
-            uptime_detik = COALESCE($5, uptime_detik), estop_aktif = COALESCE($6, estop_aktif)
-      WHERE kode = $1`,
-    [kode, ip ? String(ip).slice(0, 45) : null, ekstra.firmware ?? null, ekstra.rssi ?? null, ekstra.uptime ?? null, ekstra.estop ?? null]);
+            uptime_detik = COALESCE($5, uptime_detik), estop_aktif = COALESCE($6, estop_aktif),
+            float_bawah_rendah = COALESCE($7, float_bawah_rendah),
+            float_atas_penuh = COALESCE($8, float_atas_penuh),
+            level_diperbarui_pada = CASE WHEN $7::boolean IS NULL AND $8::boolean IS NULL THEN level_diperbarui_pada ELSE now() END,
+            estop_fisik = COALESCE($9, estop_fisik),
+            estop_diperbarui_pada = CASE WHEN $9::boolean IS NULL THEN estop_diperbarui_pada ELSE now() END,
+            reset_terakhir_pada = CASE WHEN $10::boolean THEN now() ELSE reset_terakhir_pada END
+      WHERE kode = $1
+      RETURNING (SELECT estop_fisik FROM lama) AS estop_fisik_lama`,
+    [kode, ip ? String(ip).slice(0, 45) : null, ekstra.firmware ?? null, ekstra.rssi ?? null, ekstra.uptime ?? null, ekstra.estop ?? null,
+      ekstra.floatBawahRendah, ekstra.floatAtasPenuh, ekstra.estopFisik, ekstra.reset]);
+  if (r) await catatPeringatanAlat(kode, ekstra, r.estop_fisik_lama);
 }
 
 const sensorGuard = requireKunci('sensor:tulis');
@@ -76,10 +107,17 @@ async function simpanBacaan(data, kode, ip) {
   const pen = await penampungBacaan(data.id_meja);
   const errs = { ...mon.sensorErrors(data), ...mon.panjangSensorErrors(data), ...(pen.errors || {}) };
   if (Object.keys(errs).length) return { kode: 422, errors: errs };
-  await mon.saveSensorRows(data, { idMeja: pen.idMeja });
+  const umur = mon.umurBacaanDetik(data.umur_detik);
+  if (umur === undefined) return { kode: 422, errors: { umur_detik: ['umur_detik harus bilangan bulat 0–86400.'] } };
+  await mon.saveSensorRows(data, { idMeja: pen.idMeja, umurDetik: umur });
+  // Bacaan antrean (dikirim ulang setelah sambungan pulih) bukan keadaan sekarang: pelampung/E-STOP tidak diperbarui.
   await tandaiTerlihat(kode, ip, {
     firmware: typeof data.firmware === 'string' ? data.firmware.slice(0, 40) : null,
     rssi: Number.isFinite(Number(data.rssi)) ? Math.round(Number(data.rssi)) : null,
+    ...(umur > 0 ? {} : {
+      float_bawah_rendah: data.float_bawah_rendah, float_atas_penuh: data.float_atas_penuh,
+      estop_fisik: data.estop_fisik, peristiwa: data.peristiwa,
+    }),
   });
   return null;
 }

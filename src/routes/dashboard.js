@@ -6,7 +6,41 @@ const cache = require('../cache');
 const { thresholdsMap } = require('./monitoring');
 const saklar = require('../saklar');
 
+const { statusEstop } = require('../aktuator');
+const { EKSEKUSI_DIIZINKAN } = require('../gerbangDosis');
+
 const router = express.Router();
+
+/** RESET fisik dianggap "baru" selama ini — cukup lama untuk terlihat di banner, tidak menempel selamanya. */
+const RESET_BARU_DETIK = 300;
+
+/**
+ * GET /dashboard/keselamatan — status E-STOP (server & fisik) dan tombol RESET untuk banner di semua halaman.
+ * Ringan (2 query), tanpa cache: E-STOP harus terlihat secepatnya. Nilai null = alat belum pernah melaporkan.
+ */
+router.get('/keselamatan', async (_req, res, next) => {
+  try {
+    const [es, alat] = await Promise.all([
+      statusEstop(),
+      one(`SELECT kode, estop_aktif, estop_fisik, estop_diperbarui_pada, reset_terakhir_pada, terakhir_terlihat,
+                  extract(epoch FROM now() - reset_terakhir_pada)::int AS reset_umur_detik
+             FROM perangkat WHERE peran IN ('gabungan', 'aktuator') ORDER BY (peran = 'gabungan') DESC, kode LIMIT 1`),
+    ]);
+    res.json({
+      estop_server: es.nilai === '1',
+      estop_server_sejak: es.nilai === '1' ? es.diubah_pada ?? null : null,
+      perangkat: alat?.kode ?? null,
+      estop_alat: alat?.estop_aktif ?? null,
+      estop_fisik: alat?.estop_fisik ?? null,
+      estop_diperbarui_pada: alat?.estop_diperbarui_pada ?? null,
+      reset_terakhir_pada: alat?.reset_terakhir_pada ?? null,
+      reset_baru: alat?.reset_umur_detik != null && alat.reset_umur_detik <= RESET_BARU_DETIK,
+      terakhir_terlihat: alat?.terakhir_terlihat ?? null,
+      // Kebijakan kode (gerbangDosis.js), hanya dibaca: web tidak bisa mengubahnya.
+      eksekusi_dosing_diizinkan: EKSEKUSI_DIIZINKAN === true,
+    });
+  } catch (e) { next(e); }
+});
 
 router.get('/', async (req, res, next) => {
   try {

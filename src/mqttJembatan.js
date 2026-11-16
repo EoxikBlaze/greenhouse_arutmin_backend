@@ -136,6 +136,8 @@ function mulai({ url, username, password, log = console, cacheMs = CACHE_MS } = 
         rssi: Number.isFinite(Number(d.rssi)) ? Math.round(Number(d.rssi)) : null,
         uptime: Number.isFinite(Number(d.uptime)) ? Math.max(0, Math.round(Number(d.uptime))) : null,
         estop: typeof d.estop === 'boolean' ? d.estop : null,
+        // status retained: keadaan saja (pelampung, E-STOP fisik). Peristiwa RESET hanya lewat topik data (tidak retained).
+        float_bawah_rendah: d.float_bawah_rendah, float_atas_penuh: d.float_atas_penuh, estop_fisik: d.estop_fisik,
       });
       return;
     }

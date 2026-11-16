@@ -18,7 +18,9 @@ const BATAS_WAJIB = {
   BILAS: ['maks_ml_bilas_per_perintah'],
 };
 
-const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT', 'UJI_POMPA', 'KALIBRASI', 'BALIK_KALIBRASI'];
+const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT', 'UJI_POMPA', 'KALIBRASI', 'BALIK_KALIBRASI', 'JADWAL'];
+/** JADWAL = waktu operasi yang disimpan permanen di NVS ESP32 (bukan aktuasi). Rentang = batas keras firmware gabungan-0.7. */
+const JADWAL_RENTANG = { interval_sensor_detik: [5, 60], jeda_ab_detik: [60, 600], isi_air_maks_detik: [60, 600] };
 /** Nama pompa di firmware (NAMA_OUT). ISI_AIR sengaja tidak ada: punya perintah sendiri. */
 const POMPA_UJI = ['A', 'B', 'PH_UP', 'PH_DOWN'];
 /** Batas firmware: UJI_POMPA menolak > 120 dtk; laju pompa 0–500 mL/dtk. */
@@ -192,6 +194,14 @@ function validasiPerintah(tipe, p, cfg) {
       else { out.ph_v7 = Math.round(v7 * 10000) / 10000; out.ph_v4 = Math.round(v4 * 10000) / 10000; }
     }
     if (!Object.keys(out).length && !Object.keys(err).length) err.laju = [`isi minimal satu dari ${LAJU_KALIBRASI.join(', ')} atau pasangan ph_v7/ph_v4.`];
+  } else if (tipe === 'JADWAL') {
+    for (const [k, [min, maks]] of Object.entries(JADWAL_RENTANG)) {
+      if (body[k] === undefined) continue;
+      const v = angka(body[k]);
+      if (!Number.isInteger(v) || v < min || v > maks) err[k] = [`${k} harus bilangan bulat ${min}–${maks} detik.`];
+      else out[k] = v;
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.jadwal = [`isi minimal satu dari ${Object.keys(JADWAL_RENTANG).join(', ')}.`];
   } else if (tipe === 'BALIK_KALIBRASI') {
     if (body.sensor !== 'ph') err.sensor = ['sensor harus ph (EC belum tersambung ke alat).'];
     else out.sensor = 'ph';
@@ -455,7 +465,7 @@ async function statusEstop() {
 }
 
 module.exports = {
-  TIPE, TIPE_DIKIRIM, LARUTAN, PERANGKAT_AKTUATOR, PerintahDitolak,
+  TIPE, TIPE_DIKIRIM, LARUTAN, JADWAL_RENTANG, PERANGKAT_AKTUATOR, PerintahDitolak,
   bacaKonfig, validasiPerintah, buatPerintah, ambilPerintah, laporHasil, kategoriVolume, rapikanAntrean, resetEstop, statusEstop,
   kunciPenampung, bukaKunci, KEJADIAN_BASI_MENIT,
 };

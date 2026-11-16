@@ -15,6 +15,7 @@
  *  - POST /iot-v41/kalibrasi-dua-titik catat kalibrasi 2 titik EC (1413 & 12880 µS/cm) / pH (4,0 & 7,0)
  *                                      atau balik ke kalibrasi sebelumnya
  *  - POST /iot-v41/pulihkan            kirim paket pemulihan parameter + 6 arsip kalibrasi ke papan BARU
+ *  - POST /iot-v41/jadwal-alat         kirim jadwal operasi (timing_operasi) ke ESP32 → disimpan di NVS (bukan aktuasi)
  */
 const express = require('express');
 const { q, one, pool } = require('../db');
@@ -22,6 +23,7 @@ const aktuator = require('../aktuator');
 const config = require('../config');
 const teganganPh = require('../teganganPh');
 const saklarSvc = require('../saklar');
+const { SENSOR_BASI_DETIK } = require('../sanitySensor');
 const { requireAuth, requireRole, demoGuard, json } = require('../auth');
 const {
   BAWAAN_V41,
@@ -65,8 +67,10 @@ async function muatKonfigV41(runner = q) {
   for (const r of timingRows.rows ?? timingRows) {
     if (r.nilai !== null && r.nilai !== undefined) peta[r.param] = Number(r.nilai);
   }
+  const belumDiatur = new Set();
   const ambil = (kunciDb, kunciBawaan, bulat = false) => {
     const v = peta[kunciDb];
+    if (!Number.isFinite(v)) belumDiatur.add(kunciBawaan);
     const pakai = Number.isFinite(v) ? v : BAWAAN_V41[kunciBawaan];
     return bulat ? Math.round(pakai) : pakai;
   };
@@ -116,21 +120,31 @@ async function muatKonfigV41(runner = q) {
     _pemeliharaan_param: peta.mode_pemeliharaan_v41 === 1,
     _hit_ec_param: Number.isFinite(peta.hit_ec_hari_v41) ? Math.round(peta.hit_ec_hari_v41) : 0,
     _vol_ph_param: Number.isFinite(peta.vol_ph_hari_v41) ? Number(peta.vol_ph_hari_v41) : 0,
+    // kunci yang TIDAK ada di database → nilainya bawaan kode, bukan pengaturan tersimpan (ditandai di web)
+    _belum_diatur: [...belumDiatur],
   };
 }
 
 router.get('/state', async (_req, res, next) => {
   try {
-    const [rawParams, states, bacaan5, perangkatRows, arsipKal, wc] = await Promise.all([
+    const [rawParams, states, bacaan5, perangkatRows, arsipKal, wc, jadwalAlat] = await Promise.all([
       muatKonfigV41(q),
       q('SELECT * FROM penampung_states ORDER BY id_meja LIMIT 5').catch(() => []),
-      q('SELECT ph, tds, ec_ms_cm, water_temp, air_temp, humidity, created_at FROM monitorings ORDER BY created_at DESC LIMIT 5').catch(() => []),
-      q('SELECT kode, nama, peran, versi_firmware, terakhir_terlihat, estop_aktif FROM perangkat ORDER BY kode').catch(() => []),
+      // Kolom monitorings bernama "waterTemp"/"airTemp" — dulu query memakai water_temp/air_temp, gagal, lalu .catch
+      // menelannya sehingga EC/pH di halaman v4.1 selalu 0. Galat kini tidak disembunyikan.
+      q(`SELECT ph, tds, ec_ms_cm, "waterTemp" AS water_temp, "airTemp" AS air_temp, humidity, created_at,
+                COALESCE(updated_at, created_at) AS dikonfirmasi_pada
+           FROM monitorings ORDER BY created_at DESC, id DESC LIMIT 5`),
+      q(`SELECT kode, nama, peran, versi_firmware, terakhir_terlihat, estop_aktif,
+                float_bawah_rendah, float_atas_penuh, level_diperbarui_pada
+           FROM perangkat ORDER BY kode`),
       q('SELECT id, sensor, dilakukan_pada, nilai_ref, bacaan_sebelum, bacaan_sesudah, lulus, konstanta_lama, konstanta_baru, catatan, oleh_label FROM kalibrasi_log ORDER BY dilakukan_pada DESC, id DESC LIMIT 12').catch(() => []),
       one('SELECT * FROM water_controls ORDER BY id LIMIT 1').catch(() => null),
+      one(`SELECT id, status, parameter, hasil, dibuat_pada, selesai_pada FROM perintah_aktuator
+            WHERE tipe = 'JADWAL' ORDER BY dibuat_pada DESC, id DESC LIMIT 1`),
     ]);
 
-    const { _pemeliharaan_param, _hit_ec_param, _vol_ph_param, ...params } = rawParams;
+    const { _pemeliharaan_param, _hit_ec_param, _vol_ph_param, _belum_diatur, ...params } = rawParams;
     const stUtama = states[0] || {};
     const pemeliharaan = states.length > 0 ? states.some((s) => s.mode_pemeliharaan === true) : Boolean(_pemeliharaan_param);
     const terkunci = states.some((s) => s.status_lock === true);
@@ -141,20 +155,26 @@ router.get('/state', async (_req, res, next) => {
 
     const terbaru = bacaan5[0] || null;
     const terlama = bacaan5[bacaan5.length - 1] || null;
-    const ecSekarang = terbaru?.tds != null ? Math.round(Number(terbaru.tds)) : 0;
-    const ecMsSekarang = terbaru?.ec_ms_cm != null
-      ? Number(terbaru.ec_ms_cm)
-      : ecSekarang > 0 ? Math.round((ecSekarang / 500) * 100) / 100 : 0;
-    const ecUsSekarang = Math.round(ecMsSekarang * 1000);
-    const phSekarang = terbaru?.ph != null ? Number(terbaru.ph) : 0;
+    // Bacaan basi (> SENSOR_BASI_DETIK) atau tidak dikirim = null, BUKAN 0: angka nol akan terbaca sebagai larutan kosong.
+    const umurDetik = terbaru ? Math.round((Date.now() - new Date(terbaru.dikonfirmasi_pada).getTime()) / 1000) : null;
+    const segar = umurDetik != null && umurDetik <= SENSOR_BASI_DETIK;
+    const ecSekarang = segar && terbaru.tds != null ? Math.round(Number(terbaru.tds)) : null;
+    // ESP32 hanya mengirim TDS (ppm, skala 500). EC mS/cm dihitung dari TDS kecuali kolom ec_ms_cm terisi.
+    const ecMsSekarang = !segar ? null
+      : terbaru.ec_ms_cm != null ? Number(terbaru.ec_ms_cm)
+        : ecSekarang != null ? Math.round((ecSekarang / 500) * 100) / 100 : null;
+    const ecUsSekarang = ecMsSekarang != null ? Math.round(ecMsSekarang * 1000) : null;
+    const phSekarang = segar && terbaru.ph != null ? Number(terbaru.ph) : null;
 
     const daftarEcPpm = bacaan5.map((b) => (b.tds != null ? Number(b.tds) : NaN));
     const daftarEcUs = bacaan5.map((b) => (b.ec_ms_cm != null ? Number(b.ec_ms_cm) * 1000 : b.tds != null ? Number(b.tds) * 2 : NaN));
     const daftarPh = bacaan5.map((b) => (b.ph != null ? Number(b.ph) : NaN));
 
-    const stabilEc = cekStabilitasSensor(daftarEcPpm, 'ec_ppm');
-    const stabilEcUs = cekStabilitasSensor(daftarEcUs, 'ec_us');
-    const stabilPh = cekStabilitasSensor(daftarPh, 'ph');
+    // Data basi tidak boleh tampil "stabil — siap diambil": kestabilan hanya dinilai dari bacaan segar.
+    const kosong5 = bacaan5.map(() => NaN);
+    const stabilEc = cekStabilitasSensor(segar ? daftarEcPpm : kosong5, 'ec_ppm');
+    const stabilEcUs = cekStabilitasSensor(segar ? daftarEcUs : kosong5, 'ec_us');
+    const stabilPh = cekStabilitasSensor(segar ? daftarPh : kosong5, 'ph');
 
     const cekGantiAir = deteksiAirDiganti({
       ec_lama_ppm: terlama?.tds,
@@ -172,7 +192,7 @@ router.get('/state', async (_req, res, next) => {
     const hitPh = volPhHari > 0 ? Math.min(5, Math.ceil(volPhHari / Math.max(1, params.batas_ml_ph_efektif))) : 0;
 
     const pratinjau = hitungPratinjauDosis({
-      ec_sekarang: ecSekarang,
+      ec_sekarang: ecSekarang ?? 0,
       ec_setpoint: targetEc,
       persen_dosing: params.persen_dosing,
       max_ppm_dosing: params.max_ppm_dosing,
@@ -198,6 +218,9 @@ router.get('/state', async (_req, res, next) => {
       .map((r) => [r.param, r.nilai === null ? null : Number(r.nilai)]));
 
     res.json({
+      params_belum_diatur: _belum_diatur,
+      // Bukti jadwal di NVS ESP32 = perintah JADWAL terakhir berstatus 'selesai' (laporan alat), bukan isi database.
+      jadwal_alat: jadwalAlat ?? null,
       params: {
         ...params,
         ec_setpoint: targetEc,
@@ -210,21 +233,25 @@ router.get('/state', async (_req, res, next) => {
       },
       kondisi: {
         status: pemeliharaan ? 'PEMELIHARAAN' : terkunci ? 'PERINGATAN' : targetEc === 0 ? 'TIDUR' : 'NORMAL',
-        float_bawah: wc?.valve_state === 'OPEN' ? 0 : 1,
-        float_atas: 0,
+        // Pelampung dari laporan ESP32 (perangkat.float_*); null = belum pernah dilaporkan. Dulu ditebak dari katup.
+        float_bawah: papanUtama?.float_bawah_rendah == null ? null : (papanUtama.float_bawah_rendah ? 0 : 1),
+        float_atas: papanUtama?.float_atas_penuh == null ? null : (papanUtama.float_atas_penuh ? 1 : 0),
+        level_diperbarui_pada: papanUtama?.level_diperbarui_pada ?? null,
         ec_ppm: ecSekarang,
         ec_ms: ecMsSekarang,
         ec_us: ecUsSekarang,
         ph: phSekarang,
         ph_volt: teganganPh.terbaru(),
-        suhu_air: terbaru?.water_temp ?? null,
-        suhu_ruang: terbaru?.air_temp ?? null,
-        rh: terbaru?.humidity ?? null,
+        suhu_air: segar ? terbaru.water_temp ?? null : null,
+        suhu_ruang: segar ? terbaru.air_temp ?? null : null,
+        rh: segar ? terbaru.humidity ?? null : null,
+        umur_detik: umurDetik,
+        basi: !segar,
         hit_ec: hitEc,
         hit_encer: hitEncer,
         hit_ph: hitPh,
         hit_isi: 0,
-        updated_at: terbaru?.created_at ?? null,
+        updated_at: terbaru?.dikonfirmasi_pada ?? null,
       },
       stabilitas: {
         ec: { ...stabilEc, sebaran_us: stabilEcUs.sebaran },
@@ -293,34 +320,37 @@ router.put('/pengaturan', ...writeGuard, async (req, res, next) => {
   try {
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const err = {};
-    const angka = (k, min, max, bulat = false) => {
+    // Sebagian (PATCH-gaya): hanya kunci yang dikirim divalidasi & disimpan. Web kini hanya mengirim penampung &
+    // waktu kerja (batas aman/dosis dipindah ke Parameter & Keamanan); klien lama yang mengirim semua tetap sah.
+    const KOLOM = [
+      ['volume_l', 0, 50000, true, 'konfigurasi_dosis', 'volume_efektif_l', 'L', 'Volume efektif penampung portable'],
+      ['talang_jumlah', 0, 500, true, 'konfigurasi_dosis', 'jumlah_talang', 'talang', 'Jumlah talang meja'],
+      ['talang_debit', 0, 100, false, 'konfigurasi_dosis', 'debit_per_talang_lpm', 'L/menit', 'Debit aliran per talang'],
+      ['persen_dosing', 50, 90, true, 'konfigurasi_dosis', 'persen_ronde_dosis', '%', 'Dosis per ronde = persen dari kekurangan'],
+      ['max_ppm_dosing', 50, 300, true, 'konfigurasi_dosis', 'maks_ppm_per_suntikan', 'ppm', 'Batas kenaikan EC per suntikan'],
+      ['batas_ec_bawah', 0, 5000, true, 'konfigurasi_dosis', 'batas_ec_bawah_ppm', 'ppm', 'Batas aman EC bawah'],
+      ['batas_ec_atas', 0, 5000, true, 'konfigurasi_dosis', 'batas_ec_atas_ppm', 'ppm', 'Batas aman EC atas'],
+      ['batas_ph_bawah', 3, 9, false, 'konfigurasi_dosis', 'batas_ph_bawah', 'pH', 'Batas aman pH bawah'],
+      ['batas_ph_atas', 3, 9, false, 'konfigurasi_dosis', 'batas_ph_atas', 'pH', 'Batas aman pH atas'],
+      ['ph_maks_ml', 0, 200, true, 'konfigurasi_dosis', 'ph_maks_ml', 'mL', 'Batas mL per koreksi pH'],
+      ['monitoring_menit', 10, 120, true, 'timing_operasi', 'monitoring_menit', 'menit', 'Waktu tunggu larutan berputar merata sebelum baca ulang'],
+      ['jeda_ab_menit', 1, 10, true, 'timing_operasi', 'jeda_ab_menit', 'menit', 'Jeda aman antara suntikan Pompa A dan Pompa B'],
+      ['jeda_ec_menit', 1, 240, true, 'timing_operasi', 'jeda_ec_menit', 'menit', 'Jeda tenang antar tindakan penjagaan EC'],
+      ['pemeliharaan_maks_menit', 5, 360, true, 'timing_operasi', 'pemeliharaan_maks_menit', 'menit', 'Batas waktu otomatis mode pemeliharaan'],
+    ];
+    const nilai = {};
+    for (const [k, min, max, bulat] of KOLOM) {
+      if (b[k] === undefined) continue;
       const v = Number(b[k]);
-      if (!Number.isFinite(v) || v < min || v > max || (bulat && !Number.isInteger(v))) {
+      if (b[k] === null || b[k] === '' || !Number.isFinite(v) || v < min || v > max || (bulat && !Number.isInteger(v))) {
         err[k] = [`Nilai ${k} harus angka ${bulat ? 'bulat ' : ''}${min}–${max}.`];
-        return null;
-      }
-      return v;
-    };
-
-    const volume_l = angka('volume_l', 0, 50000, true);
-    const talang_jumlah = angka('talang_jumlah', 0, 500, true);
-    const talang_debit = angka('talang_debit', 0, 100, false);
-    const monitoring_menit = angka('monitoring_menit', 10, 120, true);
-    const jeda_ab_menit = angka('jeda_ab_menit', 1, 10, true);
-    const jeda_ec_menit = angka('jeda_ec_menit', 1, 240, true);
-    const persen_dosing = angka('persen_dosing', 50, 90, true);
-    const max_ppm_dosing = angka('max_ppm_dosing', 50, 300, true);
-    const batas_ec_bawah = angka('batas_ec_bawah', 0, 5000, true);
-    const batas_ec_atas = angka('batas_ec_atas', 0, 5000, true);
-    const batas_ph_bawah = angka('batas_ph_bawah', 3, 9, false);
-    const batas_ph_atas = angka('batas_ph_atas', 3, 9, false);
-    const ph_maks_ml = angka('ph_maks_ml', 0, 200, true);
-    const pemeliharaan_maks_menit = angka('pemeliharaan_maks_menit', 5, 360, true);
-
-    if (batas_ec_bawah != null && batas_ec_atas != null && batas_ec_atas > 0 && batas_ec_bawah > batas_ec_atas) {
+      } else nilai[k] = v;
+    }
+    if (!Object.keys(nilai).length && !Object.keys(err).length) err.pengaturan = ['Tidak ada pengaturan yang dikirim.'];
+    if (nilai.batas_ec_bawah != null && nilai.batas_ec_atas != null && nilai.batas_ec_atas > 0 && nilai.batas_ec_bawah > nilai.batas_ec_atas) {
       err.batas_ec_bawah = ['Batas aman EC bawah tidak boleh melebihi batas atas.'];
     }
-    if (batas_ph_bawah != null && batas_ph_atas != null && batas_ph_bawah >= batas_ph_atas) {
+    if (nilai.batas_ph_bawah != null && nilai.batas_ph_atas != null && nilai.batas_ph_bawah >= nilai.batas_ph_atas) {
       err.batas_ph_bawah = ['Batas pH bawah harus lebih kecil dari batas pH atas.'];
     }
     if (Object.keys(err).length) {
@@ -329,21 +359,9 @@ router.put('/pengaturan', ...writeGuard, async (req, res, next) => {
 
     await client.query('BEGIN');
     const run = (t, p) => client.query(t, p);
-    await simpanParam(run, 'konfigurasi_dosis', 'volume_efektif_l', volume_l, 'L', 'Volume efektif penampung portable');
-    await simpanParam(run, 'konfigurasi_dosis', 'jumlah_talang', talang_jumlah, 'talang', 'Jumlah talang meja');
-    await simpanParam(run, 'konfigurasi_dosis', 'debit_per_talang_lpm', talang_debit, 'L/menit', 'Debit aliran per talang');
-    await simpanParam(run, 'konfigurasi_dosis', 'persen_ronde_dosis', persen_dosing, '%', 'Dosis per ronde = persen dari kekurangan');
-    await simpanParam(run, 'konfigurasi_dosis', 'maks_ppm_per_suntikan', max_ppm_dosing, 'ppm', 'Batas kenaikan EC per suntikan');
-    await simpanParam(run, 'konfigurasi_dosis', 'batas_ec_bawah_ppm', batas_ec_bawah, 'ppm', 'Batas aman EC bawah');
-    await simpanParam(run, 'konfigurasi_dosis', 'batas_ec_atas_ppm', batas_ec_atas, 'ppm', 'Batas aman EC atas');
-    await simpanParam(run, 'konfigurasi_dosis', 'batas_ph_bawah', batas_ph_bawah, 'pH', 'Batas aman pH bawah');
-    await simpanParam(run, 'konfigurasi_dosis', 'batas_ph_atas', batas_ph_atas, 'pH', 'Batas aman pH atas');
-    await simpanParam(run, 'konfigurasi_dosis', 'ph_maks_ml', ph_maks_ml, 'mL', 'Batas mL per koreksi pH');
-
-    await simpanParam(run, 'timing_operasi', 'monitoring_menit', monitoring_menit, 'menit', 'Waktu tunggu larutan berputar merata sebelum baca ulang');
-    await simpanParam(run, 'timing_operasi', 'jeda_ab_menit', jeda_ab_menit, 'menit', 'Jeda aman antara suntikan Pompa A dan Pompa B');
-    await simpanParam(run, 'timing_operasi', 'jeda_ec_menit', jeda_ec_menit, 'menit', 'Jeda tenang antar tindakan penjagaan EC');
-    await simpanParam(run, 'timing_operasi', 'pemeliharaan_maks_menit', pemeliharaan_maks_menit, 'menit', 'Batas waktu otomatis mode pemeliharaan');
+    for (const [k, , , , tabel, param, satuan, ket] of KOLOM) {
+      if (k in nilai) await simpanParam(run, tabel, param, nilai[k], satuan, ket);
+    }
     await client.query('COMMIT');
 
     const params = await muatKonfigV41(q);
@@ -712,6 +730,54 @@ router.post('/pulihkan', ...writeGuard, async (req, res, next) => {
       terkirim: false,
       message: 'Paket pemulihan parameter dan 6 catatan kalibrasi terakhir disiapkan di server. BELUM dikirim ke papan pengganti (jalur perintah ke alat belum tersedia); salin manual atau tunggu jalur perintah.',
       data: paket,
+    });
+  } catch (e) { next(e); }
+});
+
+/** Sumber jadwal di timing_operasi → kunci perintah JADWAL (detik). interval sensor belum punya baris di timing_operasi. */
+const SUMBER_JADWAL = [
+  { param: 'jeda_ab_menit', kunci: 'jeda_ab_detik', kali: 60 },
+  { param: 'isi_air_timeout_menit', kunci: 'isi_air_maks_detik', kali: 60 },
+];
+
+/**
+ * POST /iot-v41/jadwal-alat — kirim jadwal operasi (timing_operasi) ke ESP32 untuk disimpan PERMANEN di NVS.
+ * Bukan aktuasi: tidak menyalakan pompa dan tidak menyentuh gerbang dosing. Nilai di luar batas keras
+ * firmware tidak dikirim diam-diam: dijepit ke batas itu dan dilaporkan di `dijepit`.
+ */
+router.post('/jadwal-alat', ...writeGuard, async (req, res, next) => {
+  try {
+    const rows = await q('SELECT param, nilai FROM timing_operasi WHERE param = ANY($1::text[])', [SUMBER_JADWAL.map((x) => x.param)]);
+    const peta = Object.fromEntries(rows.map((r) => [r.param, r.nilai === null ? null : Number(r.nilai)]));
+    const parameter = {};
+    const dijepit = [];
+    const belum = [];
+    for (const { param, kunci, kali } of SUMBER_JADWAL) {
+      const v = peta[param];
+      if (!Number.isFinite(v)) { belum.push(param); continue; }
+      const [min, maks] = aktuator.JADWAL_RENTANG[kunci];
+      const detik = Math.round(v * kali);
+      const pakai = Math.min(maks, Math.max(min, detik));
+      if (pakai !== detik) dijepit.push({ param, diminta_detik: detik, dikirim_detik: pakai });
+      parameter[kunci] = pakai;
+    }
+    if (!Object.keys(parameter).length) {
+      return json(res, 422, { kode: 'jadwal_belum_diatur', message: `Jadwal belum diatur: isi ${belum.join(', ')} di Parameter & Keamanan → Jadwal operasi.` });
+    }
+    let perintah;
+    try {
+      perintah = await aktuator.buatPerintah({
+        tipe: 'JADWAL', parameter, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+        alasan: 'Simpan jadwal operasi ke NVS ESP32', ttlDetik: 300,
+      });
+    } catch (e) {
+      if (e && e.status) return json(res, e.status, { message: e.message, ...(e.errors ? { errors: e.errors } : {}) });
+      throw e;
+    }
+    req.audit = { aksi: 'config_change', tabel: 'perintah_aktuator', row_id: String(perintah.id), after: parameter, meta: { dijepit, belum } };
+    return res.status(202).json({
+      status: true, antre: true, dikonfirmasi: false, id_perintah: perintah.id, parameter, dijepit, belum_diatur: belum,
+      message: 'Jadwal masuk antrean. BELUM tersimpan di alat sampai ESP32 melapor "jadwal_disimpan_nvs".',
     });
   } catch (e) { next(e); }
 });
