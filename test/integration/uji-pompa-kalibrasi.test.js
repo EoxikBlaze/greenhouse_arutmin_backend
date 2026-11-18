@@ -41,11 +41,13 @@ test('validasi murni: UJI_POMPA dan KALIBRASI', () => {
   for (const p of [{ pompa: 'ISI_AIR', detik: 30 }, { pompa: 'A', detik: 4 }, { pompa: 'A', detik: 121 }, { pompa: 'A' }, {}]) {
     assert.throws(() => v('UJI_POMPA', p), (e) => e.status === 422, JSON.stringify(p));
   }
-  assert.deepEqual(v('KALIBRASI', { laju_a: 2.1, laju_ph_down: 0.5, tds_faktor: 3, lain: 1 }), { laju_a: 2.1, laju_ph_down: 0.5 });
+  assert.deepEqual(v('KALIBRASI', { laju_a: 2.1, laju_ph_down: 0.5, tds_faktor: 1.23456, lain: 1 }), { laju_a: 2.1, laju_ph_down: 0.5, tds_faktor: 1.2346 });
   assert.deepEqual(v('KALIBRASI', { ph_v7: 2.51234, ph_v4: 3.05 }), { ph_v7: 2.5123, ph_v4: 3.05 });
+  assert.deepEqual(v('KALIBRASI', { tds_faktor: 1.5 }), { tds_faktor: 1.5 });
   assert.deepEqual(v('BALIK_KALIBRASI', { sensor: 'ph' }), { sensor: 'ph' });
-  assert.throws(() => v('BALIK_KALIBRASI', { sensor: 'ec' }), (e) => e.status === 422);
-  for (const p of [{}, { laju_a: 0 }, { laju_b: 501 }, { laju_a: 'x' }, { ph_v7: 2.5 }, { ph_v7: 2.5, ph_v4: 2.52 }, { ph_v7: 2.5, ph_v4: 9 }, { tds_faktor: 2 }]) {
+  assert.deepEqual(v('BALIK_KALIBRASI', { sensor: 'ec' }), { sensor: 'ec' });
+  assert.throws(() => v('BALIK_KALIBRASI', { sensor: 'suhu' }), (e) => e.status === 422);
+  for (const p of [{}, { laju_a: 0 }, { laju_b: 501 }, { laju_a: 'x' }, { ph_v7: 2.5 }, { ph_v7: 2.5, ph_v4: 2.52 }, { ph_v7: 2.5, ph_v4: 9 }, { tds_faktor: 0.01 }, { tds_faktor: 21 }, { tds_faktor: 'x' }]) {
     assert.throws(() => v('KALIBRASI', p), (e) => e.status === 422, JSON.stringify(p));
   }
   assert.ok(aktuator.TIPE_DIKIRIM.includes('UJI_POMPA') && aktuator.TIPE_DIKIRIM.includes('KALIBRASI'));
@@ -124,4 +126,26 @@ test('kalibrasi pH: tegangan dua titik diantre ke alat; tanpa tegangan hanya ter
   assert.equal(balik.status, 200);
   const b = (await q('SELECT tipe, parameter FROM perintah_aktuator WHERE id = $1', [balik.body.id_perintah]))[0];
   assert.deepEqual([b.tipe, b.parameter], ['BALIK_KALIBRASI', { sensor: 'ph' }]);
+});
+
+test('kalibrasi EC: faktor dua titik dikalikan ke faktor lama & diantre ke alat; balik mengirim BALIK_KALIBRASI', { skip: lewati }, async () => {
+  await bersih();
+  await q(`UPDATE kalibrasi_sensor SET konstanta = '{"TDS_FAKTOR_KOREKSI": 1}'::jsonb WHERE sensor = 'ec'`);
+  const r1 = await request(srv.base).post('/iot-v41/kalibrasi-dua-titik').set(admin).send({ sensor: 'ec', baca1: 1000, baca2: 10000 });
+  assert.equal(r1.status, 201);
+  assert.ok(r1.body.id_perintah, 'harus mengantre perintah KALIBRASI EC ke alat');
+  const p1 = (await q('SELECT tipe, parameter FROM perintah_aktuator WHERE id = $1', [r1.body.id_perintah]))[0];
+  // (1413/1000 + 12880/10000)/2 = (1.413 + 1.288)/2 = 1.3505
+  assert.deepEqual([p1.tipe, p1.parameter], ['KALIBRASI', { tds_faktor: 1.3505 }]);
+
+  // Kalibrasi kedua ketika bacaan sekarang tepat di target harus mempertahankan faktor 1.3505 (tidak reset ke 1.0)
+  const r2 = await request(srv.base).post('/iot-v41/kalibrasi-dua-titik').set(admin).send({ sensor: 'ec', baca1: 1413, baca2: 12880 });
+  assert.equal(r2.status, 201);
+  const p2 = (await q('SELECT tipe, parameter FROM perintah_aktuator WHERE id = $1', [r2.body.id_perintah]))[0];
+  assert.deepEqual([p2.tipe, p2.parameter], ['KALIBRASI', { tds_faktor: 1.3505 }]);
+
+  const balik = await request(srv.base).post('/iot-v41/kalibrasi-dua-titik').set(admin).send({ sensor: 'ec', aksi: 'balik' });
+  assert.equal(balik.status, 200);
+  const b = (await q('SELECT tipe, parameter FROM perintah_aktuator WHERE id = $1', [balik.body.id_perintah]))[0];
+  assert.deepEqual([b.tipe, b.parameter], ['BALIK_KALIBRASI', { sensor: 'ec' }]);
 });

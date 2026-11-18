@@ -2,7 +2,7 @@
 /** Bacaan sensor basi (alat terputus) tidak boleh menghasilkan "tidak ada kondisi kritis" atau saran koreksi larutan. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { heuristik } = require('../src/routes/ai');
+const { heuristik, evaluasiTahap } = require('../src/routes/ai');
 
 const AMBANG = { ph: { min: 5, max: 7, satuan: '' }, tds: { min: 500, max: 1000, satuan: 'ppm' } };
 const dasar = (sensor) => ({ ambang: AMBANG, sensor, alert: { total: 0, terbaru: [] }, tahap: [{ tahap: 'semai', status: 'berjalan' }], panen: null });
@@ -33,4 +33,25 @@ test('bacaan tidak wajar (probe lepas: TDS 20, pH 11) → periksa probe, bukan m
     assert.match(h.keputusan, /periksa probe/i);
     assert.doesNotMatch(h.alasan, /dosis perlu dinaikkan|turunkan ph/i);
   }
+});
+
+test('evaluasiTahap: batch status proses dengan tgl_akhir sama dengan tgl_awal tetap berjalan', () => {
+  const tigaHariLalu = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+  const hasil = evaluasiTahap([
+    {
+      tahap: 'semai',
+      id: 1,
+      status: 'proses',
+      mulai: tigaHariLalu,
+      selesai: tigaHariLalu,
+      id_tanaman: 118,
+      id_meja: 1,
+      nama_tanaman: 'Melon',
+      jumlah: 50,
+    },
+  ], {});
+  assert.equal(hasil[0].status, 'berjalan');
+  assert.equal(hasil[0].jumlah, 50);
+  assert.equal(hasil[0].sisa_hari, null);
+  assert.equal(hasil[0].lewat_durasi, false);
 });

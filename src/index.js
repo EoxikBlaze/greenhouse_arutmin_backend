@@ -345,6 +345,8 @@ loadColumnLengths()
     startServers(); require('./presetDosing').mulai();
     // penjadwal konfirmasi siklus budidaya: default MATI (SIKLUS_PENJADWAL=1), tanpa aktuator
     require('./siklusBudidaya').mulaiPenjadwal().catch((e) => console.error('[SIKLUS] gagal mulai:', e.message));
+    // analisis AI harian 07.00 WIB (hanya baca + simpan laporan/notifikasi); AI_ANALISIS_HARIAN=0 mematikan
+    require('./penjadwalAnalisisHarian').mulai().catch((e) => console.error('[ANALISIS HARIAN] gagal mulai:', e.message));
     // Hangatkan model AI lokal di RAM saat boot awal agar selalu standby & respon instan (AI_WARMUP=1 di .env)
     if (process.env.AI_WARMUP === '1') {
       require('./routes/ai').hangatkanModel();

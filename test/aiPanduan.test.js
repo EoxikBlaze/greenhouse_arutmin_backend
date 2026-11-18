@@ -108,3 +108,42 @@ test('variasi frasa panen melon (termasuk spasi "di makan") cocok ke durasi_melo
   }
   assert.match(TEKS.durasi_melon, /60 hingga 75 hari/);
 });
+
+test('topik kalibrasi MQTT & naik harian terdeteksi; pertanyaan manis/brix tidak dibajak uji_lab', () => {
+  assert.equal(kunci('cara kalibrasi sensor ph dan ec lewat website'), 'kalibrasi');
+  assert.equal(kunci('kalibrasi ec 1413 pakai mqtt'), 'kalibrasi');
+  assert.equal(kunci('dosis nutrisi melon naik harian gimana?'), 'nutrisi_melon');
+  assert.equal(kunci('catat hasil uji lab brix melon'), 'uji_lab');
+  assert.equal(kunci('melon manis atau brix tinggi itu gimana caranya?'), null);
+});
+
+test('SOP semai melon mencakup air bawang merah 1 hari, seleksi apung, kain hitam 2 hari, jemur 2 hari, lalu rockwool', () => {
+  assert.equal(kunci('cara menanam melon'), 'semai');
+  assert.equal(kunci('bagaimana cara menyemai bibit melon?'), 'semai');
+  assert.match(TEKS.semai, /bawang merah/i);
+  assert.match(TEKS.semai, /tenggelam/);
+  assert.match(TEKS.semai, /mengambang/);
+  assert.match(TEKS.semai, /kain hitam.*2 hari/i);
+  assert.match(TEKS.semai, /penjemuran.*2 hari/i);
+  assert.match(TEKS.semai, /rockwool/i);
+});
+
+test('topik juknas/juknis & screenshot: login_akses, alat_iot_k3, langkah_petani dan seluruh GAMBAR ada filenya', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { GAMBAR, gambarKontekstual } = require('../src/aiPanduan');
+  assert.equal(kunci('bagaimana cara membuka website dan login garap?'), 'login_akses');
+  assert.equal(kunci('apa arti lampu pilot dan baris ke-4 lcd pada panel iot?'), 'alat_iot_k3');
+  assert.equal(kunci('apa saja langkah petani harian dari awal sampai panen?'), 'langkah_petani');
+  const dirPanduan = path.join(__dirname, '..', '..', 'react-web-app', 'public');
+  for (const [topik, daftar] of Object.entries(GAMBAR)) {
+    assert.ok(Array.isArray(daftar) && daftar.length > 0, `GAMBAR.${topik} kosong`);
+    for (const g of daftar) {
+      assert.ok(g.url.startsWith('/panduan/'), `${topik}: ${g.url}`);
+      assert.ok(g.judul && g.kenapa, `${topik}: butuh judul & kenapa`);
+      assert.ok(fs.existsSync(path.join(dirPanduan, g.url)), `Berkas screenshot hilang: ${g.url}`);
+    }
+  }
+  assert.ok(gambarKontekstual({ idMatriks: 'semai_bawang_merah_kain_hitam' }).length >= 1);
+  assert.ok(gambarKontekstual({ pesan: 'lampu pilot merah e-stop menyala' }).length >= 1);
+});
