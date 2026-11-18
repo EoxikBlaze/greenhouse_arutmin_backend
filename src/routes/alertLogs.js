@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Peringatan (tabel alert_logs) — mount: app.use('/alert-logs', alertLogs).
- *   GET  /alert-logs?limit=100        semua login; terbaru dulu
+ *   GET  /alert-logs?limit=100        semua login; yang sedang terjadi dulu, lalu terbaru
  *   POST /alert-logs/:id/ack          admin; tandai sudah ditangani (acknowledged)
  */
 const express = require('express');
@@ -16,9 +16,14 @@ router.get('/', async (req, res, next) => {
   try {
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
     const rows = await q(
-      `SELECT id, type, value, severity, locked, acknowledged, acknowledged_at, created_at
-         FROM alert_logs ORDER BY created_at DESC, id DESC LIMIT $1`, [limit]);
-    const total = (await q('SELECT count(*)::int AS n, count(*) FILTER (WHERE NOT acknowledged)::int AS aktif FROM alert_logs'))[0];
+      `SELECT id, type, value, severity, locked, acknowledged, acknowledged_at, created_at, updated_at,
+              kunci_kejadian, selesai_pada,
+              (kunci_kejadian IS NOT NULL AND selesai_pada IS NULL) AS sedang_terjadi
+         FROM alert_logs
+        ORDER BY (kunci_kejadian IS NOT NULL AND selesai_pada IS NULL) DESC, created_at DESC, id DESC LIMIT $1`, [limit]);
+    // aktif = kejadian yang sedang terjadi (ditutup otomatis saat pulih, src/peringatan.js)
+    const total = (await q(`SELECT count(*)::int AS n,
+        count(*) FILTER (WHERE kunci_kejadian IS NOT NULL AND selesai_pada IS NULL)::int AS aktif FROM alert_logs`))[0];
     return json(res, 200, { status: true, data: rows, total: total.n, aktif: total.aktif });
   } catch (e) { return next(e); }
 });

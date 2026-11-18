@@ -351,6 +351,8 @@ loadColumnLengths()
     if (process.env.AI_WARMUP === '1') {
       require('./routes/ai').hangatkanModel();
     }
+    // penilai peringatan tiap 30 dtk (Kontrak MQTT v2.0 §9: web yang menilai); PERINGATAN_OTOMATIS=0 mematikan
+    require('./peringatan').mulai();
     if (config.mqttUrl) {
       require('./mqttJembatan').mulai({ url: config.mqttUrl, username: config.mqttUser || undefined, password: config.mqttPass || undefined });
     }

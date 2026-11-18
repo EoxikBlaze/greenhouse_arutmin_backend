@@ -44,18 +44,7 @@ async function catatPeringatanAlat(kode, info, estopFisikLama) {
     baris.push(['estop_fisik', `E-STOP fisik pada ${kode} sudah dilepas`, 'info']);
   }
   if (info.reset) baris.push(['tombol_reset', `Tombol RESET fisik ditekan pada ${kode}`, 'warning']);
-  if (info.kunci && info.kunci !== '') {
-    const pesanKunci = {
-      FLOAT_ERROR: 'Pelampung error: float atas naik saat float bawah turun',
-      ISI_SERING: 'Pompa isi air terkunci: terdeteksi curiga bocor (>6x isi hari ini)',
-      ISI_TIMEOUT: 'Pompa isi air timeout (>15 menit air belum penuh)',
-      POMPA_KELAMAAN: 'Pompa dimatikan paksa karena menyala melebihi batas waktu aman',
-      SENSOR_RUSAK: 'Sensor rusak atau kabel terlepas',
-      EC_CURIGA: 'EC turun mendadak >40% tanpa pengisian air; dosing ditahan',
-    }[info.kunci] || `Alat terkunci: ${info.kunci}`;
-    const ada = await one("SELECT id FROM alert_logs WHERE type = $1 AND created_at > now() - interval '5 minutes'", [`kunci_${info.kunci.toLowerCase()}`]);
-    if (!ada) baris.push([`kunci_${info.kunci.toLowerCase()}`, pesanKunci, 'critical']);
-  }
+  // Kunci alat (FLOAT_ERROR, SENSOR_RUSAK, …) dinilai src/peringatan.js sebagai kejadian buka/tutup, bukan di sini.
   for (const [type, value, severity] of baris) {
     await q(`INSERT INTO alert_logs (type, value, severity, locked, created_at, updated_at)
              VALUES ($1, $2, $3, false, now(), now())`, [type, value.slice(0, 100), severity]);
@@ -94,7 +83,7 @@ async function tandaiTerlihat(kode, ip, mentah = {}) {
       RETURNING (SELECT estop_fisik FROM lama) AS estop_fisik_lama`,
     [kode, ip ? String(ip).slice(0, 45) : null, ekstra.firmware ?? null, ekstra.rssi ?? null, ekstra.uptime ?? null, ekstra.estop ?? null,
       floatBawahRendah, floatAtasPenuh, estopFisik, reset]);
-  if (r) await catatPeringatanAlat(kode, { estopFisik, reset, kunci }, r.estop_fisik_lama);
+  if (r) await catatPeringatanAlat(kode, { estopFisik, reset }, r.estop_fisik_lama);
 
   const simpanState = async (k, nilai) => {
     if (nilai !== null && nilai !== undefined) {
@@ -110,6 +99,15 @@ async function tandaiTerlihat(kode, ip, mentah = {}) {
   if (pemeliharaan !== null) await simpanState('v6_pemeliharaan', pemeliharaan ? '1' : '0');
   if (targetPpm !== null) await simpanState('v6_target_ppm', targetPpm);
   if (hariSemai !== null) await simpanState('v6_hari_semai', hariSemai);
+  // Field tambahan Kontrak MQTT v2.0 §3.2 yang ditampilkan Dashboard (boolean disimpan '1'/'0').
+  for (const k of ['pompa_isi', 'siap', 'ppm_terlalu_rendah']) {
+    if (typeof mentah[k] === 'boolean') await simpanState(`v6_${k}`, mentah[k] ? '1' : '0');
+  }
+  if (mentah.siap === true) await simpanState('v6_kurang', '');
+  else if (typeof mentah.kurang === 'string') await simpanState('v6_kurang', mentah.kurang);
+  for (const k of ['ph_min', 'ph_max', 'dosing_ab_hari', 'dosing_ph_hari', 'encer_hari', 'isi_hari']) {
+    if (typeof mentah[k] === 'number' && Number.isFinite(mentah[k])) await simpanState(`v6_${k}`, mentah[k]);
+  }
 }
 
 const sensorGuard = requireKunci('sensor:tulis');
@@ -153,6 +151,9 @@ async function simpanBacaan(data, kode, ip) {
       estop_fisik: data.estop_fisik, peristiwa: data.peristiwa,
       level_air: data.level_air, mode: data.mode, kegiatan: data.kegiatan, kunci: data.kunci,
       pemeliharaan: data.pemeliharaan, target_ppm: data.target_ppm, hari_semai: data.hari_semai,
+      pompa_isi: data.pompa_isi, siap: data.siap, kurang: data.kurang, ppm_terlalu_rendah: data.ppm_terlalu_rendah,
+      ph_min: data.ph_min, ph_max: data.ph_max, dosing_ab_hari: data.dosing_ab_hari, dosing_ph_hari: data.dosing_ph_hari,
+      encer_hari: data.encer_hari, isi_hari: data.isi_hari,
     }),
   });
   return null;

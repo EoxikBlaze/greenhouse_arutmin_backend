@@ -31,11 +31,11 @@ test('sanity: NaN / -5 / 14 tidak pernah dianggap wajar; sebab bisa dibaca', () 
 test('sensorErrors: nilai yang mustahil secara fisik ditolak di pintu masuk (batas sama dengan firmware)', () => {
   const { sensorErrors } = require('../src/routes/monitoring');
   for (const d of [{ ph: 99 }, { ph: -3 }, { ph: 14.5 }, { tds: -50 }, { tds: 99999 }, { waterTemp: 500 }, { waterTemp: -127 },
-    { airTemp: 200 }, { humidity: 130 }, { humidity: -1 }, { ph: '99' }]) {
+    { airTemp: 200 }, { humidity: 130 }, { humidity: -1 }, { ph: '99' }, { ec: -0.5 }, { ec: 12 }, { ec: 'x' }]) {
     assert.equal(Object.keys(sensorErrors(d)).length, 1, JSON.stringify(d));
   }
   for (const d of [{ ph: 6.1, tds: 800, waterTemp: 25, airTemp: 31, humidity: 70 }, { ph: 2.5 }, { ph: 9.8, tds: 3000 }, { tds: 0 },
-    { ph: null, tds: '' }, {}]) {
+    { ph: null, tds: '' }, {}, { tds: 1050, ec: 2.1 }]) {
     assert.deepEqual(sensorErrors(d), {}, JSON.stringify(d));
   }
 });

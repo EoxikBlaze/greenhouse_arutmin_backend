@@ -107,10 +107,10 @@ async function saveSensorRows(data, { idMeja = null, umurDetik = 0 } = {}) {
 async function simpanBacaanAntrean(data, idMeja, umurDetik) {
   const nz = (v) => (v === '' || v === undefined ? null : v);
   await q(
-    `INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at)
+    `INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at, ec_ms_cm)
      VALUES ($1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric,$6::bigint,
-             now() - make_interval(secs => $7), now() - make_interval(secs => $7))`,
-    [nz(data.waterTemp), nz(data.ph), nz(data.tds), nz(data.airTemp), nz(data.humidity), idMeja, umurDetik]);
+             now() - make_interval(secs => $7), now() - make_interval(secs => $7), $8::numeric)`,
+    [nz(data.waterTemp), nz(data.ph), nz(data.tds), nz(data.airTemp), nz(data.humidity), idMeja, umurDetik, nz(data.ec)]);
   return 'AUTO';
 }
 
@@ -143,8 +143,8 @@ async function simpanBaris(c, data, idMeja) {
       SELECT id, "waterTemp", ph, tds, "airTemp", humidity
       FROM monitorings WHERE ${cocokMeja} ORDER BY created_at DESC, id DESC LIMIT 1
     ), ins AS (
-      INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at)
-      SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric, $7::bigint, now(), now()
+      INSERT INTO monitorings ("waterTemp", ph, tds, "airTemp", humidity, id_meja, created_at, updated_at, ec_ms_cm)
+      SELECT $1::numeric,$2::numeric,$3::numeric,$4::numeric,$5::numeric, $7::bigint, now(), now(), $8::numeric
       WHERE NOT EXISTS (
         SELECT 1 FROM last WHERE
           "waterTemp" IS NOT DISTINCT FROM $1 AND ph IS NOT DISTINCT FROM $2 AND
@@ -180,7 +180,7 @@ async function simpanBaris(c, data, idMeja) {
     (() => {
       const nz = (v) => (v === '' || v === undefined ? null : v);
       return [nz(data.waterTemp), nz(data.ph), nz(data.tds), nz(data.airTemp),
-        nz(data.humidity), nz(data.solenoid_state), idMeja];
+        nz(data.humidity), nz(data.solenoid_state), idMeja, nz(data.ec)];
     })(),
   );
   return rows[0]?.command ?? 'AUTO';
@@ -196,7 +196,7 @@ async function simpanBaris(c, data, idMeja) {
  * @returns {Record<string,string[]>} errors per-field (kosong = lolos)
  */
 function sensorErrors(data) {
-  const NUM = ['waterTemp', 'ph', 'tds', 'airTemp', 'humidity'];
+  const NUM = ['waterTemp', 'ph', 'tds', 'ec', 'airTemp', 'humidity'];
   const errors = {};
   for (const k of NUM) {
     const v = data[k];
@@ -352,9 +352,9 @@ router.get('/tarik/csv', requireAuth, async (req, res, next) => {
        ORDER BY created_at DESC LIMIT 5000`,
       [dari || null, sampai || null],
     );
-    const lines = ['WAKTU,SUHU AIR (C),PH,TDS (PPM),SUHU UDARA (C),KELEMBAPAN (%)'];
+    const lines = ['WAKTU,SUHU AIR (C),PH,NUTRISI (PPM),EC (MS/CM),SUHU UDARA (C),KELEMBAPAN (%)'];
     for (const r of rows) {
-      lines.push([r.created_at, r.waterTemp, r.ph, r.tds, r.airTemp, r.humidity].join(','));
+      lines.push([r.created_at, r.waterTemp, r.ph, r.tds, r.ec_ms_cm, r.airTemp, r.humidity].join(','));
     }
     res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
     res.setHeader('Content-Disposition', 'attachment; filename="sensor.csv"');
