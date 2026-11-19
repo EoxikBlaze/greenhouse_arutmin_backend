@@ -95,7 +95,7 @@ function rencanaUbah(batch, isian) {
       kurva_mulai_hari: h, kurva_mulai_ppm: kini,
     },
     peringatan: target < kini
-      ? `Target turun dari ${kini} ppm: alat harus mengencerkan, dan hanya bisa bila air tandon SEDANG (bukan PENUH).`
+      ? `Target turun dari ${kini} ppm: alat harus mengencerkan, dan hanya bisa bila air di penampung SEDANG (bukan PENUH).`
       : null,
     target_hari_ini: kini,
   };

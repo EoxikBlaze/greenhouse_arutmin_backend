@@ -24,7 +24,7 @@ const SARAN_PANDUAN = {
   kalibrasi: [
     'Bagaimana cara kerja pompa dosing otomatis GARAP?',
     'Bagaimana cara nutrisi melon Naik Harian?',
-    'Kenapa air tandon berlumut atau berubah keruh?',
+    'Kenapa air di penampung berlumut atau berubah keruh?',
     'Tampilkan kondisi sensor kebun saat ini',
   ],
   polinasi_melon: [
@@ -36,7 +36,7 @@ const SARAN_PANDUAN = {
   hama_melon: [
     'Kenapa daun melon berbintik putih dan menggulung ke atas?',
     'Berapa suhu dan kelembapan ideal untuk melon?',
-    'Kenapa air tandon berlumut atau berbau?',
+    'Kenapa air di penampung berlumut atau berbau?',
     'Bagaimana cara menjaga VPD greenhouse tetap stabil?',
   ],
   semai: [
@@ -61,7 +61,7 @@ const SARAN_PANDUAN = {
     'Bagaimana cara nutrisi melon Naik Harian?',
     'Apa perbedaan PPM dan EC serta cara konversinya?',
     'Bagaimana cara menurunkan pH air yang terlalu tinggi?',
-    'Kenapa air tandon berlumut atau ada endapan?',
+    'Kenapa air di penampung berlumut atau ada endapan?',
   ],
   media_tanam: [
     'Bagaimana cara memulai semai benih melon?',
@@ -196,13 +196,13 @@ const SARAN_MATRIKS = {
     'Bagaimana cara menjaga VPD greenhouse tetap seimbang?',
   ],
   penyakit_gummy_stem: [
-    'Bagaimana cara mencegah busuk akar Pythium di tandon?',
+    'Bagaimana cara mencegah busuk akar Pythium di penampung air?',
     'Berapa suhu dan kelembapan ideal untuk melon?',
-    'Kenapa air tandon berlumut atau berbau?',
+    'Kenapa air di penampung berlumut atau berbau?',
   ],
   penyakit_pythium_akar: [
-    'Kenapa air tandon berlumut atau berbau?',
-    'Berapa suhu air tandon ideal untuk melon?',
+    'Kenapa air di penampung berlumut atau berbau?',
+    'Berapa suhu air di penampung ideal untuk melon?',
     'Bagaimana kompensasi suhu air pada pembacaan sensor EC?',
   ],
   iklim_ideal_melon: [
@@ -224,7 +224,7 @@ const SARAN_MATRIKS = {
   kompensasi_suhu_atc: [
     'Apa perbedaan PPM dan EC serta cara konversinya?',
     'Cara kalibrasi sensor pH dan EC lewat website?',
-    'Berapa suhu air tandon ideal untuk melon?',
+    'Berapa suhu air di penampung ideal untuk melon?',
   ],
   melon_manis_brix: [
     'Bagaimana cara nutrisi melon Naik Harian?',
@@ -238,7 +238,7 @@ const SARAN_MATRIKS = {
     'Bagaimana kompensasi suhu air (ATC) mempengaruhi EC?',
   ],
   sanitasi_tandon_lumut: [
-    'Bagaimana cara mencegah busuk akar Pythium di tandon?',
+    'Bagaimana cara mencegah busuk akar Pythium di penampung air?',
     'Bagaimana cara melarutkan pekatan AB Mix tanpa endapan?',
     'Cara kalibrasi sensor pH dan EC lewat website?',
   ],
@@ -285,7 +285,7 @@ const SARAN_NIAT = {
   ],
   penampung: [
     'Bagaimana cara kerja pompa dosing otomatis GARAP?',
-    'Kenapa air tandon berlumut atau berubah keruh?',
+    'Kenapa air di penampung berlumut atau berubah keruh?',
     'Bagaimana cara nutrisi melon Naik Harian?',
   ],
   tahap: [
@@ -374,7 +374,7 @@ function saranDariKataPesan(pesan) {
   if (/\b(?:kalibrasi|mqtt|esp|alat|sensor|pompa|dosing|tandon)\b/.test(s)) {
     return [
       'Cara kalibrasi sensor pH dan EC lewat website?',
-      'Kenapa air tandon berlumut atau berubah keruh?',
+      'Kenapa air di penampung berlumut atau berubah keruh?',
       'Tampilkan status penampung dan dosing saat ini',
       'Lakukan diagnosa menyeluruh kebun',
     ];

@@ -134,7 +134,7 @@ async function agenSensor(sensor, ambang, pesanPengguna, opsi = {}) {
     const ulasan = await panggilModel('qwen2.5:0.5b', [{ role: 'user', content: prompt }], { num_predict: 80, timeoutMs: opsi.timeoutMs });
     return { ringkasan, ulasan, model: 'qwen2.5:0.5b', status: 'OK' };
   } catch (err) {
-    return { ringkasan, ulasan: `Kondisi fisik tandon terpantau: pH ${tampil(s.ph)}, TDS ${tampil(s.tds)} PPM, Suhu ${tampil(suhu)}°C.`, model: 'rule-sensor', status: 'FALLBACK' };
+    return { ringkasan, ulasan: `Kondisi fisik penampung air terpantau: pH ${tampil(s.ph)}, TDS ${tampil(s.tds)} PPM, Suhu ${tampil(suhu)}°C.`, model: 'rule-sensor', status: 'FALLBACK' };
   }
 }
 
@@ -168,7 +168,7 @@ async function agenAgronomi(pesanPengguna, tahapTanam, ringkasanSensor, opsi = {
       if (err2?.name === 'AbortError') throw err2;
       const { cariKonteksQwen } = require('./aiMelonModul');
       const konteks = cariKonteksQwen(pesanPengguna)
-        || 'Pastikan pH larutan tandon terjaga di 5,8–6,5, TDS sesuai umur fase tanaman melon (Semai 400–600 PPM, Vegetatif 800–1000 PPM, Pembungaan 1000–1200 PPM, Pembesaran 1400–1800 PPM), suhu air <28°C dengan aerasi aktif, serta periksa kebersihan daun dan tandon setiap pagi.';
+        || 'Pastikan pH larutan penampung air terjaga di 5,8–6,5, TDS sesuai umur fase tanaman melon (Semai 400–600 PPM, Vegetatif 800–1000 PPM, Pembungaan 1000–1200 PPM, Pembesaran 1400–1800 PPM), suhu air <28°C dengan aerasi aktif, serta periksa kebersihan daun dan penampung air setiap pagi.';
       return { jawaban: `${kalimatTahap(tahapTanam)} ${konteks}`, model: 'rule-agronomi', status: 'FALLBACK' };
     }
   }

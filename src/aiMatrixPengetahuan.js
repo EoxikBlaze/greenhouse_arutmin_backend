@@ -20,7 +20,7 @@ const MATRIX = [
     analisis: 'Gejala: Daun tua bagian bawah menguning merata dari pucuk ke pangkal daun, pertumbuhan batang melambat, dan warna hijau daun memudar menjadi hijau muda pucat.',
     penyebab: 'Nitrogen adalah unsur mobil (bergerak bebas). Saat media kekurangan N, tanaman menarik cadangan nitrogen dari daun tua untuk disalurkan ke titik tumbuh baru di pucuk.',
     tindakan: [
-      'Cek nilai TDS tandon: bila di bawah ambang fase, naikkan konsentrasi pupuk AB Mix bertahap (+150 s/d 200 PPM).',
+      'Cek nilai TDS penampung air: bila di bawah ambang fase, naikkan konsentrasi pupuk AB Mix bertahap (+150 s/d 200 PPM).',
       'Pastikan pekatan A yang mengandung Kalsium Nitrat (Ca(NO3)2) dilarutkan dalam jumlah seimbang dengan pekatan B.',
       'Bila sistem memakai air baku TDS sangat rendah (<50 PPM), periksa apakah formula AB Mix sudah memenuhi rasio N minimal 150–200 ppm.',
     ],
@@ -30,10 +30,10 @@ const MATRIX = [
     pola: /\b(?:kurang|defisiensi|kekurangan)\b.{0,20}\b(?:fosfor|fosfat|unsur p)\b|\bdaun\b.{0,20}\b(?:keunguan|ungu|kemerahan|gelap kusam)\b/,
     judul: 'Analisis Defisiensi Fosfor (P)',
     analisis: 'Gejala: Daun tua berwarna hijau gelap kusam dengan semburat ungu kemerahan di tepi dan tulang daun bagian bawah. Pertumbuhan akar kerdil dan lambat bercabang.',
-    penyebab: 'Fosfor berperan dalam transfer energi sel (ATP) dan pembentukan membran akar. Kekurangan P sering terjadi saat suhu air tandon terlalu dingin (<18°C) atau pH > 7.0 yang mengikat fosfat menjadi bentuk tidak larut.',
+    penyebab: 'Fosfor berperan dalam transfer energi sel (ATP) dan pembentukan membran akar. Kekurangan P sering terjadi saat suhu air di penampung terlalu dingin (<18°C) atau pH > 7.0 yang mengikat fosfat menjadi bentuk tidak larut.',
     tindakan: [
-      'Periksa pH tandon: turunkan pH ke 5.8–6.2 menggunakan pH Down (Asam Fosfat / H3PO4).',
-      'Jaga suhu air tandon tetap hangat di rentang 22–26°C agar serapan ion H2PO4- optimal.',
+      'Periksa pH penampung air: turunkan pH ke 5.8–6.2 menggunakan pH Down (Asam Fosfat / H3PO4).',
+      'Jaga suhu air di penampung tetap hangat di rentang 22–26°C agar serapan ion H2PO4- optimal.',
       'Tambahkan Monokalium Fosfat (MKP) pada pekatan B bila fase memasuki pembungaan.',
     ],
   },
@@ -46,7 +46,7 @@ const MATRIX = [
     tindakan: [
       'Naikkan rasio pupuk Kalium (Kalium Nitrat / Kalium Sulfat) pada fase pembesaran buah (HST 35–60).',
       'Target PPM fase generatif melon dijaga di 1400–1800 PPM.',
-      'Hindari kelebihan Kalsium atau Magnesium yang terlalu dominan di tandon karena dapat menekan serapan Kalium.',
+      'Hindari kelebihan Kalsium atau Magnesium yang terlalu dominan di penampung air karena dapat menekan serapan Kalium.',
     ],
   },
   {
@@ -66,11 +66,11 @@ const MATRIX = [
     pola: /\b(?:kurang|defisiensi|kekurangan)\b.{0,20}\b(?:magnesium|unsur mg)\b|\b(?:klorosis interveinal|tulang daun hijau sela kuning|daun tua bercak kuning di sela tulang)\b/,
     judul: 'Analisis Defisiensi Magnesium (Mg)',
     analisis: 'Gejala: Daun tua mengalami klorosis interveinal khas — area helaian daun di antara tulang daun berubah kuning cerah, sedangkan tulang-tulang daun tetap berwarna hijau tua tebal.',
-    penyebab: 'Magnesium adalah inti atom klorofil (zat hijau daun). Kekurangan Mg menurunkan kemampuan fotosintesis. Sering dipicu oleh kelebihan Kalium (K) di tandon yang menghambat penyerapan Mg.',
+    penyebab: 'Magnesium adalah inti atom klorofil (zat hijau daun). Kekurangan Mg menurunkan kemampuan fotosintesis. Sering dipicu oleh kelebihan Kalium (K) di penampung air yang menghambat penyerapan Mg.',
     tindakan: [
       'Semprotkan pupuk daun Garam Epsom (Magnesium Sulfat / MgSO4) konsentrasi 2–3 g/L air di pagi hari untuk pemulihan cepat.',
       'Periksa takaran Magnesium Sulfat di pekatan B AB Mix (minimal 15–20% dari total berat pupuk B).',
-      'Pastikan pH tandon berada di rentang 5.8–6.3 agar kation Mg2+ mudah terserap akar.',
+      'Pastikan pH penampung air berada di rentang 5.8–6.3 agar kation Mg2+ mudah terserap akar.',
     ],
   },
   {
@@ -78,11 +78,11 @@ const MATRIX = [
     pola: /\b(?:kurang|defisiensi|kekurangan)\b.{0,20}\b(?:zat besi|unsur fe|besi)\b|\bdaun muda\b.{0,25}\b(?:kuning pucat tulang hijau|memutih|klorosis daun muda)\b/,
     judul: 'Analisis Defisiensi Zat Besi (Fe) & Penguncian pH Tinggi',
     analisis: 'Gejala: Daun-daun pucuk paling muda memucat kekuningan hingga putih krem, namun urat tulang daun halus tetap berwarna hijau (berbeda dengan magnesium yang menyerang daun tua).',
-    penyebab: 'Zat besi mengendap dan tidak larut saat pH tandon naik di atas 6.8. Tanpa kelat yang kuat, Fe2+ teroksidasi menjadi Fe3+ yang tidak dapat diserap tanaman.',
+    penyebab: 'Zat besi mengendap dan tidak larut saat pH penampung air naik di atas 6.8. Tanpa kelat yang kuat, Fe2+ teroksidasi menjadi Fe3+ yang tidak dapat diserap tanaman.',
     tindakan: [
-      'Turunkan pH tandon segera ke 5.8–6.2 dengan menambahkan larutan pH Down.',
+      'Turunkan pH penampung air segera ke 5.8–6.2 dengan menambahkan larutan pH Down.',
       'Gunakan kelat besi Fe-EDDHA (berwarna merah tua pekat) jika air baku Anda memiliki pH basa stabil di atas 7.0 karena Fe-EDTA rusak di pH tinggi.',
-      'Periksa apakah aerasi tandon berlebihan di dekat titik tuang zat besi yang dapat memicu oksidasi.',
+      'Periksa apakah aerasi penampung air berlebihan di dekat titik tuang zat besi yang dapat memicu oksidasi.',
     ],
   },
   {
@@ -92,7 +92,7 @@ const MATRIX = [
     analisis: 'Gejala: Titik tumbuh kuncup pucuk mati menghitam, daun menebal kaku rapuh melengkung, tangkai daun mudah patah, dan kulit buah melon mengalami luka gabus/retak tidak beraturan.',
     penyebab: 'Boron bekerja sama dengan Kalsium dalam pembentukan dinding sel dan pemanjangan tabung serbuk sari bunga saat polinasi.',
     tindakan: [
-      'Pastikan mikronutrien Boron (Asam Borat / H3BO3) ada di pekatan B dengan dosis tepat (0.5–1 ppm murni di tandon).',
+      'Pastikan mikronutrien Boron (Asam Borat / H3BO3) ada di pekatan B dengan dosis tepat (0.5–1 ppm murni di penampung air).',
       'Hati-hati: batas antara defisiensi dan keracunan Boron sangat sempit. Jangan menambah asam borat murni sembarangan tanpa perhitungan teliti.',
     ],
   },
@@ -104,7 +104,7 @@ const MATRIX = [
     penyebab: 'Contoh klasik: Petani menambah Kalium berlebih untuk mengejar manis buah, namun akibatnya daun bawah mendadak klorosis (kurang Mg) dan pucuk terkena tip burn (kurang Ca).',
     tindakan: [
       'Gunakan rasio molar seimbang: K (4–6 mM) : Ca (3–4 mM) : Mg (1.5–2 mM).',
-      'Koreksi ketidakseimbangan dengan mengganti 30% air tandon dengan nutrisi berformula standar.',
+      'Koreksi ketidakseimbangan dengan mengganti 30% air di penampung dengan nutrisi berformula standar.',
     ],
   },
   {
@@ -192,7 +192,7 @@ const MATRIX = [
     tindakan: [
       'Periksa balik (permukaan bawah) daun dengan cermat: bila ada titik halus bergerak/jaring, itu Tungau; bila ada serangga putih kecil beterbangan, itu Kutu Kebul; bila bercak seperti bedak mudah diusap di atas daun, itu Embun Tepung.',
       'Pasang perangkap lekat kuning (Yellow Sticky Trap) dan biru (Blue Sticky Trap) setinggi tajuk melon, lalu semprot Minyak Mimba (Neem Oil) 3–5 ml/L air merata ke bawah daun pada sore hari.',
-      'Stabilkan suhu & ventilasi greenhouse (target VPD 0.8–1.2 kPa), serta pastikan pH tandon 5.8–6.5 dan TDS sesuai umur fase melon agar imunitas tanaman pulih.',
+      'Stabilkan suhu & ventilasi greenhouse (target VPD 0.8–1.2 kPa), serta pastikan pH penampung air 5.8–6.5 dan TDS sesuai umur fase melon agar imunitas tanaman pulih.',
     ],
   },
   {
@@ -224,11 +224,11 @@ const MATRIX = [
     pola: /\b(?:pythium|busuk akar|akar cokelat berlendir|akar bau masam)\b/,
     judul: 'Diagnosa & Solusi Busuk Akar (Pythium Root Rot)',
     analisis: 'Gejala: Perakaran yang semula putih bersih berubah warna menjadi cokelat kehitaman, licin berlendir, mudah mengelupas saat disentuh, dan berbau busuk masam. Tanaman layu parah saat siang terik.',
-    penyebab: 'Spora Pythium berenang bebas di air nutrisi saat suhu air tandon >28°C dan kadar oksigen terlarut (Dissolved Oxygen / DO) turun di bawah 4 mg/L.',
+    penyebab: 'Spora Pythium berenang bebas di air nutrisi saat suhu air di penampung >28°C dan kadar oksigen terlarut (Dissolved Oxygen / DO) turun di bawah 4 mg/L.',
     tindakan: [
-      'Tingkatkan Oksigen Terlarut: Pasang aerator gelembung kuat (blower) atau pipa venturi nozzle di tandon sirkulasi (target DO > 6 mg/L).',
-      'Turunkan suhu air tandon dengan insulasi peredam panas atau letakkan tandon di area paling teduh.',
-      'Sterilisasi air tandon dengan Hidrogen Peroksida (H2O2) 3% dosis 2–3 ml per liter air, sirkulasikan selama 12 jam sebelum menambahkan inokulan Trichoderma.',
+      'Tingkatkan Oksigen Terlarut: Pasang aerator gelembung kuat (blower) atau pipa venturi nozzle di penampung air sirkulasi (target DO > 6 mg/L).',
+      'Turunkan suhu air di penampung dengan insulasi peredam panas atau letakkan penampung air di area paling teduh.',
+      'Sterilisasi air di penampung dengan Hidrogen Peroksida (H2O2) 3% dosis 2–3 ml per liter air, sirkulasikan selama 12 jam sebelum menambahkan inokulan Trichoderma.',
     ],
   },
 
@@ -254,7 +254,7 @@ const MATRIX = [
     tindakan: [
       'Pasang Shading Net (paranet aluminet 40–50%) otomatis yang bisa ditarik pada pukul 11.00–14.00 untuk memantulkan radiasi panas berlebih.',
       'Pastikan roof vent (ventilasi atap) terbuka bebas agar udara panas terangkat ke atas keluar dari greenhouse (efek cerobong alami).',
-      'Jangan membiarkan tandon nutrisi terpapar panas; air yang panas membuat akar kekurangan oksigen.',
+      'Jangan membiarkan penampung air nutrisi terpapar panas; air yang panas membuat akar kekurangan oksigen.',
     ],
   },
 
@@ -264,7 +264,7 @@ const MATRIX = [
     pola: /\b(?:kompensasi suhu|atc|pembacaan ph berubah suhu|sensor melenceng siang malam)\b/,
     judul: 'Analisis Pengaruh Suhu terhadap Sensor pH & TDS (ATC)',
     analisis: 'Fakta Fisik: Tegangan elektroda probe pH (Nernst equation) berubah sekitar 0.03 pH per 1°C kenaikan suhu air. Nilai konduktivitas listrik (EC/TDS) meningkat sekitar 2% per 1°C kenaikan suhu air.',
-    penyebab: 'Bila sensor tidak memiliki Automatic Temperature Compensation (ATC) berbasis sensor DS18B20, pembacaan TDS di siang hari (suhu 30°C) akan tampak lebih tinggi daripada di pagi hari (suhu 24°C) meskipun jumlah pupuk di tandon sama persis.',
+    penyebab: 'Bila sensor tidak memiliki Automatic Temperature Compensation (ATC) berbasis sensor DS18B20, pembacaan TDS di siang hari (suhu 30°C) akan tampak lebih tinggi daripada di pagi hari (suhu 24°C) meskipun jumlah pupuk di penampung air sama persis.',
     tindakan: [
       'Pastikan sensor suhu air DS18B20 terpasang dan terbaca normal di sistem GARAP.',
       'Sistem GARAP secara otomatis mengompensasi pembacaan TDS ke nilai referensi standar 25°C.',
@@ -279,7 +279,7 @@ const MATRIX = [
     penyebab: 'Kegagalan sumber listrik PLN, MCB trip, atau kerusakan mekanis impeller pompa akibat lumut/serat.',
     tindakan: [
       'Prioritas 1: Segera lakukan penyiraman manual darurat menggunakan selang/gembor langsung ke pangkal tanaman melon setiap 30 menit.',
-      'Prioritas 2: Hidupkan sumber daya cadangan (UPS baterai / genset mini) khusus untuk jalur pompa tandon utama.',
+      'Prioritas 2: Hidupkan sumber daya cadangan (UPS baterai / genset mini) khusus untuk jalur pompa penampung air utama.',
       'Prioritas 3: Buka katup pembuangan darurat jika sistem DFT untuk memastikan air menggenang setinggi 2–3 cm di talang sebagai cadangan genangan akar.',
     ],
   },
@@ -287,12 +287,12 @@ const MATRIX = [
     id: 'iklim_ideal_melon',
     pola: /\b(?:suhu|temperatur|kelembapan|kelembaban|iklim|rh)\b.{0,30}\b(?:ideal|optimal|terbaik|standar|anjuran|cocok)\b|\b(?:ideal|optimal)\b.{0,25}\b(?:suhu|kelembapan|kelembaban)\b/,
     judul: 'Standar Iklim Mikro & Suhu Air Ideal untuk Melon Hidroponik',
-    analisis: 'Melon membutuhkan perbedaan suhu siang–malam yang tepat serta suhu air tandon yang sejuk agar akar menyerap oksigen terlarut dan hara AB Mix dengan optimal.',
+    analisis: 'Melon membutuhkan perbedaan suhu siang–malam yang tepat serta suhu air di penampung yang sejuk agar akar menyerap oksigen terlarut dan hara AB Mix dengan optimal.',
     penyebab: 'Suhu terlalu panas (>34°C) menurunkan polinasi dan merontokkan bunga, sedangkan kelembapan malam >85% memicu jamur Embun Tepung dan tip burn.',
     tindakan: [
       'Suhu Udara Greenhouse: Siang hari ideal 26–32°C; Malam hari ideal 20–24°C.',
       'Kelembapan Udara (RH): Fase vegetatif 65–75%; Fase pembesaran & pematangan buah 55–65% agar rasa manis (Brix) tinggi dan bebas jamur.',
-      'Suhu Air Tandon: Jaga di rentang 20–26°C (maksimal 29°C) agar oksigen terlarut tinggi dan mencegah busuk akar Pythium.',
+      'Suhu Air di Penampung: Jaga di rentang 20–26°C (maksimal 29°C) agar oksigen terlarut tinggi dan mencegah busuk akar Pythium.',
     ],
   },
   {
@@ -322,13 +322,13 @@ const MATRIX = [
   {
     id: 'sanitasi_tandon_lumut',
     pola: /\b(?:lumut|berlumut|keruh|kotor|berbau|kuras|bersih\w*|cuci|ganti air)\b.{0,25}\b(?:tandon|toren|air|penampung|bak|pipa|instalasi)\b|\b(?:tandon|toren|air nutrisi)\b.{0,25}\b(?:lumut|berlumut|keruh|kotor|bau|kuras|ganti|usia)\b|\bperpanjang usia larutan\b/,
-    judul: 'SOP Sanitasi Tandon, Lumut, & Penggantian Air Nutrisi',
+    judul: 'SOP Sanitasi Penampung Air, Lumut, & Penggantian Air Nutrisi',
     analisis: 'Lumut tumbuh saat air nutrisi terkena cahaya matahari langsung. Lumut menyumbat pompa/pipa, menurunkan oksigen terlarut (DO), menggeser pH naik drastis di siang hari, dan mencuri hara melon.',
-    penyebab: 'Tutup tandon transparan atau bocor cahaya, serta penumpukan garam pupuk/sisa organik akar bila air tandon tidak dikuras berkala (>14–21 hari).',
+    penyebab: 'Tutup penampung air transparan atau bocor cahaya, serta penumpukan garam pupuk/sisa organik akar bila air di penampung tidak dikuras berkala (>14–21 hari).',
     tindakan: [
-      'Tutup rapat tandon dan talang tanam dengan plastik/penutup kedap cahaya agar lumut tidak dapat berfotosintesis.',
-      'Lakukan penggantian total (kuras & bilas) air tandon tiap 10–14 hari atau setiap kali berpindah fase (Semai → Peremajaan → Pendewasaan) untuk mereset keseimbangan ion hara.',
-      'Saat menguras, bersihkan dasar tandon dan saringan pompa secara fisik (bisa dibilas H2O2 3% ringan), lalu isi air baku baru sebelum meracik ulang AB Mix.',
+      'Tutup rapat penampung air dan talang tanam dengan plastik/penutup kedap cahaya agar lumut tidak dapat berfotosintesis.',
+      'Lakukan penggantian total (kuras & bilas) air di penampung tiap 10–14 hari atau setiap kali berpindah fase (Semai → Peremajaan → Pendewasaan) untuk mereset keseimbangan ion hara.',
+      'Saat menguras, bersihkan dasar penampung air dan saringan pompa secara fisik (bisa dibilas H2O2 3% ringan), lalu isi air baku baru sebelum meracik ulang AB Mix.',
     ],
   },
   {
@@ -348,11 +348,11 @@ const MATRIX = [
     pola: /\b(?:ujung daun|pucuk daun|tepi daun)\b.{0,25}\b(?:kering|mengering|terbakar|melengkung|gosong)\b/,
     judul: 'Analisis Ujung/Tepi Daun Melon Mengering (Tip Burn / Over-EC)',
     analisis: 'Ujung daun muda mengering/melengkung menandakan Tip Burn (defisiensi Kalsium lokal), sedangkan tepi daun tua yang mengering seperti terbakar menandakan TDS/EC terlalu pekat atau kekurangan Kalium.',
-    penyebab: 'Kelembapan malam terlalu tinggi (>85%) membuat pengangkutan Kalsium terhenti, atau larutan tandon terlalu pekat dibanding daya serap air tanaman saat terik.',
+    penyebab: 'Kelembapan malam terlalu tinggi (>85%) membuat pengangkutan Kalsium terhenti, atau larutan penampung air terlalu pekat dibanding daya serap air tanaman saat terik.',
     tindakan: [
-      'Cek bacaan TDS dan pH di Dashboard: bila TDS melebihi target fase saat ini, encerkan sedikit tandon dengan air baku; jaga pH di 5.8–6.5.',
+      'Cek bacaan TDS dan pH di Dashboard: bila TDS melebihi target fase saat ini, encerkan sedikit penampung air dengan air baku; jaga pH di 5.8–6.5.',
       'Pastikan kipas sirkulasi/exhaust tetap berjalan di malam hari agar transpirasi tanaman tidak nol.',
-      'Pastikan pekatan A (Kalsium Nitrat) dituang terpisah dari pekatan B agar Kalsium tidak mengendap di dasar tandon.',
+      'Pastikan pekatan A (Kalsium Nitrat) dituang terpisah dari pekatan B agar Kalsium tidak mengendap di dasar penampung air.',
     ],
   },
   {
@@ -400,10 +400,10 @@ const MATRIX = [
     pola: /\b(?:racik|meracik|mencampur|campur|larutkan|melarutkan|endapan|mengendap|gipsum)\b.{0,30}\b(?:ab mix|abmix|pekatan a|pekatan b|stok a|stok b|pupuk)\b|\b(?:pekatan a|stok a)\b.{0,25}\b(?:pekatan b|stok b)\b/,
     judul: 'SOP Peracikan Stok Pupuk AB Mix Melon & Pencegahan Endapan',
     analisis: 'Pupuk hidroponik AB Mix dipisah menjadi Pekatan A (berisi Kalsium Nitrat & Besi/Fe) dan Pekatan B (berisi Kalium, Fosfat, Magnesium Sulfat, & Mikrohara) agar tidak bereaksi membentuk endapan padat.',
-    penyebab: 'Jika pekatan A dan pekatan B dicampur langsung dalam keadaan pekat tanpa diencerkan di air tandon terlebih dahulu, ion Kalsium (Ca2+) dan Sulfat (SO4 2-) langsung mengikat menjadi Gipsum (CaSO4) putih yang mengendap dan tidak bisa diserap akar.',
+    penyebab: 'Jika pekatan A dan pekatan B dicampur langsung dalam keadaan pekat tanpa diencerkan di air di penampung terlebih dahulu, ion Kalsium (Ca2+) dan Sulfat (SO4 2-) langsung mengikat menjadi Gipsum (CaSO4) putih yang mengendap dan tidak bisa diserap akar.',
     tindakan: [
-      'Isi tandon dengan air baku bersih minimal 70–80% dari volume target terlebih dahulu dan nyalakan pompa sirkulasi/aerator.',
-      'Tuangkan takaran Pekatan A ke dalam tandon, lalu aduk atau sirkulasikan selama 2–3 menit hingga larut merata sempurna.',
+      'Isi penampung air dengan air baku bersih minimal 70–80% dari volume target terlebih dahulu dan nyalakan pompa sirkulasi/aerator.',
+      'Tuangkan takaran Pekatan A ke dalam penampung air, lalu aduk atau sirkulasikan selama 2–3 menit hingga larut merata sempurna.',
       'Setelah Pekatan A menyatu dengan air baku, barulah tuangkan takaran Pekatan B secara perlahan, kemudian cek nilai TDS (PPM) dan koreksi pH ke 5.8–6.5.',
     ],
   },
@@ -450,7 +450,7 @@ const MATRIX = [
     analisis: 'Gejala: Tanaman melon tampak segar di pagi hari namun layu terkulai saat siang hari, diikuti menguningnya daun bawah secara sepihak hingga seluruh tanaman mati mengering.',
     penyebab: 'Jamur Fusarium oxysporum menyumbat pembuluh xilem dengan miselium dan menyebabkan batang bawah kecokelatan (sering retak bergaris), sedangkan bakteri Ralstonia mengeluarkan lendir putih susu keruh bila potongan batang dicelupkan ke air bening.',
     tindakan: [
-      'Isolasi Segera: Cabut tanaman yang sudah positif layu sistemik beserta medianya dan musnahkan di luar greenhouse agar patogen tidak menyebar lewat aliran tandon.',
+      'Isolasi Segera: Cabut tanaman yang sudah positif layu sistemik beserta medianya dan musnahkan di luar greenhouse agar patogen tidak menyebar lewat aliran penampung air.',
       'Pencegahan Hayati: Aplikasikan agens hayati Trichoderma harzianum dan PGPR (Bacillus subtilis / Pseudomonas fluorescens) sejak awal pindah tanam untuk melindungi zona perakaran.',
       'Jaga pH & Suhu Air: Pertahankan pH 5.8–6.5 dan suhu air <28°C karena patogen tular-air berkembang cepat pada akar yang stres kekurangan oksigen.',
     ],
@@ -487,8 +487,8 @@ const MATRIX = [
     penyebab: 'Air sumur sadah menggeser pH naik terus-menerus, sedangkan air tanpa aerasi yang cukup (DO < 5 mg/L) membuat akar melon lemas (hipoksia) dan gagal menyerap Kalium/Kalsium.',
     tindakan: [
       'Syarat Air Baku Ideal: Gunakan air baku dengan TDS awal < 150 PPM (maksimal 250 PPM) dan pH netral 6.5–7.2. Bila memakai air PDAM, endapkan 24 jam agar klorin menguap sebelum ditambah nutrisi.',
-      'Target Oksigen Terlarut (DO): Jaga kadar DO di tandon minimal 6–8 mg/L dengan menyalakan pompa aerator batu gelembung atau injektor pipa venturi secara kontinu.',
-      'Penyesuaian pH: Gunakan larutan Asam Fosfat (H3PO4) food-grade sebagai pH Down dan Kalium Hidroksida (KOH) sebagai pH Up untuk menjaga pH tandon di rentang 5.8–6.5.',
+      'Target Oksigen Terlarut (DO): Jaga kadar DO di penampung air minimal 6–8 mg/L dengan menyalakan pompa aerator batu gelembung atau injektor pipa venturi secara kontinu.',
+      'Penyesuaian pH: Gunakan larutan Asam Fosfat (H3PO4) food-grade sebagai pH Down dan Kalium Hidroksida (KOH) sebagai pH Up untuk menjaga pH penampung air di rentang 5.8–6.5.',
     ],
   },
   {
@@ -499,7 +499,7 @@ const MATRIX = [
     penyebab: 'Memasukkan bibit melon baru langsung ke instalasi/greenhouse bekas panen tanpa sterilisasi membuat bibit muda langsung diserang koloni Kutu Kebul, Tungau, atau spora Pythium/Fusarium.',
     tindakan: [
       'Pembersihan Total: Angkut seluruh sisa tanaman lama, gulma, dan akar bekas ke luar area kebun; sapu bersih lantai/weedmat.',
-      'Cuci Instalasi & Tandon: Sirkulasikan air berisi disinfektan H2O2 3% (3–5 mL/L) atau klorin ke seluruh tandon, pipa, dan talang selama 12–24 jam, lalu kuras dan bilas dengan air bersih hingga netral.',
+      'Cuci Instalasi & Penampung Air: Sirkulasikan air berisi disinfektan H2O2 3% (3–5 mL/L) atau klorin ke seluruh penampung air, pipa, dan talang selama 12–24 jam, lalu kuras dan bilas dengan air bersih hingga netral.',
       'Solarisasi & Pemeriksaan Alat: Tutup rapat greenhouse saat siang terik selama 3–5 hari untuk mematikan sisa hama dengan suhu panas, ganti Yellow/Blue Sticky Trap baru, lalu lakukan kalibrasi sensor pH & EC (1413 µS/cm) di aplikasi GARAP sebelum bibit masuk.',
     ],
   },

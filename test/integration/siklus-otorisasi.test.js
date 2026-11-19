@@ -273,7 +273,7 @@ test('3B.1 tandon: transisi otomatis hanya bila parameter kestabilan SIAP dan ba
            VALUES (26, 6.0, 500, 28, 70, $1, now() - interval '20 minutes', now() - interval '3 seconds', 240, 5)`, [meja[4]]);
 
   let h = await svc.jalankanPenjadwal();
-  assert.ok(h.dilewati.some((x) => /kestabilan tandon/.test(x)), JSON.stringify(h));
+  assert.ok(h.dilewati.some((x) => /kestabilan penampung air/.test(x)), JSON.stringify(h));
   assert.equal((await svc.detail(id)).status, 'TANK_PREPARATION', 'parameter NULL → tidak ada transisi otomatis');
   const diag = await request(base).get(`/api/siklus/${id}/kestabilan`).set(bearer(admin));
   assert.equal(diag.body.dievaluasi, false);

@@ -65,7 +65,7 @@ const MODUL_MELON = [
   {
     id: 'iklim_vpd_melon',
     bobotPola: /\b(?:suhu|temperatur|kelembap|vpd|panas|dingin|udara|oksigen|aerator|akar)\b/,
-    ringkasQwen: 'Iklim Melon Greenhouse: suhu siang 26-32 C, malam 20-24 C, RH vegetatif 65-75%, RH buah 55-65%, VPD 0.8-1.2 kPa, suhu air tandon ideal 20-26 C (maks 28 C) agar DO tinggi dan akar bebas Pythium.',
+    ringkasQwen: 'Iklim Melon Greenhouse: suhu siang 26-32 C, malam 20-24 C, RH vegetatif 65-75%, RH buah 55-65%, VPD 0.8-1.2 kPa, suhu air di penampung ideal 20-26 C (maks 28 C) agar DO tinggi dan akar bebas Pythium.',
   },
   {
     id: 'hama_penyakit_melon',

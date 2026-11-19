@@ -52,7 +52,7 @@ function kondisiAlat(a, estopServer) {
   if (a.kunci) hasil.push(kondisi(`kunci_${a.kunci.toLowerCase()}`, 'critical', PESAN_KUNCI[a.kunci] || `Alat terkunci: ${a.kunci}`));
   if (a.siap === false) hasil.push(kondisi('belum_siap', 'warning', `Alat belum siap semai: belum ada ${a.kurang || 'konfigurasi lengkap'}`, 60));
   if (a.ppm_terlalu_rendah) hasil.push(kondisi('ppm_probe', 'warning', 'ppm hampir 0 saat semai: cek probe EC terendam', TUNDA_SENSOR));
-  if (a.level_air === 'RENDAH' && a.mode === 'SEMAI') hasil.push(kondisi('air_rendah', 'warning', 'Air tandon RENDAH saat semai', TUNDA_SENSOR));
+  if (a.level_air === 'RENDAH' && a.mode === 'SEMAI') hasil.push(kondisi('air_rendah', 'warning', 'Air di penampung RENDAH saat semai', TUNDA_SENSOR));
   for (const [kunci, maks, nama] of BATAS_HARIAN) {
     if (a[kunci] != null && a[kunci] >= maks) {
       hasil.push(kondisi(`batas_${kunci}`, 'warning', `Batas harian ${nama} penuh (${a[kunci]}/${maks}); alat menunggu besok`));

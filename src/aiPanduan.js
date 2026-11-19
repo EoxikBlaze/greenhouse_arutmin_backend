@@ -15,7 +15,7 @@ const { SOP_SEMAI_MELON_LAPANGAN } = require('./aiMelonModul');
 const TEKS = {
   alur: [
     'Alur GARAP secara singkat:',
-    '1. Alat sensor (ESP32) mengukur pH, nutrisi (TDS), dan suhu di tandon, lalu mengirimnya ke server.',
+    '1. Alat sensor (ESP32) mengukur pH, nutrisi (TDS), dan suhu di penampung air, lalu mengirimnya ke server.',
     '2. Server menyimpan bacaan dan menampilkannya di Dashboard dan Telemetri & Sensor. Bila nilai keluar dari batas aman, muncul peringatan.',
     '3. Tanaman melewati empat tahap: Semai → Peremajaan → Pendewasaan → Panen. Admin memulai semai dan memindahkan tahap; petani memantau di Kebun Saya.',
     '4. Nutrisi: sistem hanya menyarankan. Pompa dosing otomatis sengaja dimatikan sampai alat dan keputusan keselamatan siap.',
@@ -87,11 +87,11 @@ const TEKS = {
     '1. Daun Keriting & Menguning (Melon / Cabai):',
     '   • Penyebab Utama: Hama pengisap seperti Kutu Kebul (Bemisia tabaci), Thrips, atau Tungau (Mites) yang menyebarkan virus gemini.',
     '   • Penanganan Segera: Pasang perangkap lekat kuning (yellow sticky trap) di sekitar meja tanam setinggi tajuk tanaman. Semprot minyak nimba (neem oil) 3-5 mililiter/liter air atau pestisida nabati pada sore hari di bagian bawah daun.',
-    '   • Periksa pH & EC: Daun menguning (klorosis) juga bisa disebabkan defisiensi zat besi/magnesium akibat pH air tandon terlalu tinggi (>6.8). Sesuaikan pH ke 5.8–6.5.',
+    '   • Periksa pH & EC: Daun menguning (klorosis) juga bisa disebabkan defisiensi zat besi/magnesium akibat pH air di penampung terlalu tinggi (>6.8). Sesuaikan pH ke 5.8–6.5.',
     '2. Embun Tepung (Powdery Mildew):',
     '   • Daun tampak bercak serbuk putih kelabu. Jaga sirkulasi udara greenhouse dengan exhaust fan dan semprot fungisida hayati (Trichoderma).',
     '3. Busuk Akar (Pythium) & Layu:',
-    '   • Akar kecokelatan berbau busuk, tanaman layu saat terik matahari. Solusi: sanitasi instalasi tandon, jaga suhu air di bawah 28°C, dan tambahkan aerasi oksigen terlarut (DO tinggi).',
+    '   • Akar kecokelatan berbau busuk, tanaman layu saat terik matahari. Solusi: sanitasi instalasi penampung air, jaga suhu air di bawah 28°C, dan tambahkan aerasi oksigen terlarut (DO tinggi).',
   ].join('\n'),
 
   tanaman_buah: [
@@ -105,7 +105,7 @@ const TEKS = {
     'Panduan Pembuatan & Penggunaan Pupuk AB Mix Hidroponik:',
     '1. Komposisi: Pekatan A berisi Kalsium Nitrat & Zat Besi (Fe-EDTA). Pekatan B berisi Kalium, Fosfat, Sulfat, Magnesium, dan Unsur Mikro.',
     '2. ATURAN PENTING: JANGAN PERNAH mencampur pekatan A dan pekatan B dalam keadaan pekat langsung! Jika dicampur pekat, Kalsium akan bereaksi dengan Sulfat membentuk Kalsium Sulfat (endapan putih tidak larut) sehingga nutrisi rusak/tidak bisa diserap tanaman.',
-    '3. Cara Melarutkan ke Tandon: Masukkan air baku ke tandon > tuang pekatan A > aduk hingga rata > baru tuang pekatan B > aduk rata > ukur nilai PPM dan pH dengan TDS meter.',
+    '3. Cara Melarutkan ke Penampung Air: Masukkan air baku ke penampung air > tuang pekatan A > aduk hingga rata > baru tuang pekatan B > aduk rata > ukur nilai PPM dan pH dengan TDS meter.',
   ].join('\n'),
 
   media_tanam: [
@@ -183,7 +183,7 @@ const TEKS = {
   input_data: [
     'Urutan lengkap cara input data di aplikasi GARAP dari awal untuk petani & pengelola:',
     '1. Input Jenis Tanaman & Siklus: Masuk ke menu Jenis Tanaman untuk mendaftarkan varietas melon, lalu atur lama hari tiap tahap (Semai, Peremajaan, Pendewasaan).',
-    '2. Input Meja & Penampung: Buka menu Pengaturan Alat / Master Meja untuk mendaftarkan nomor meja hidroponik dan tandon nutrisi yang terhubung ke sensor.',
+    '2. Input Meja & Penampung: Buka menu Pengaturan Alat / Master Meja untuk mendaftarkan nomor meja hidroponik dan penampung air nutrisi yang terhubung ke sensor.',
     '3. Input Ambang Sensor & Target Nutrisi: Buka menu Ambang Sensor untuk mengatur batas aman pH (5,8–6,5), PPM nutrisi, dan suhu air, serta buka menu Dosing untuk mengisi target nutrisi per tahap.',
     '4. Input Batch Tanam Baru (Mulai Menanam): Buka menu Kebun Saya (ikon tanaman di navigasi bawah), klik tombol "Mulai Semai Baru", pilih tanaman, tanggal semai, dan jumlah benih, lalu klik Simpan.',
     '5. Input Pindah Tahap & Panen: Saat umur melon bertambah dan muncul tanda "Siap Pindah", klik tombol pindah tahap (dari Semai ke Peremajaan, lalu ke Pendewasaan), dan catat hasil panen di menu Panen serta Uji Lab.',
@@ -191,8 +191,8 @@ const TEKS = {
 
   fitur: [
     'Daftar lengkap seluruh fitur Website & Aplikasi GARAP (Vertonik Smart Farm):',
-    '1. Dashboard / Beranda Utama: Ringkasan kondisi kebun, bacaan sensor terakhir, status tandon air, dan pintasan cepat.',
-    '2. Telemetri & Sensor: Grafik pantauan langsung pH air, nutrisi TDS/EC, suhu air tandon, serta suhu & kelembaban udara greenhouse.',
+    '1. Dashboard / Beranda Utama: Ringkasan kondisi kebun, bacaan sensor terakhir, status penampung air, dan pintasan cepat.',
+    '2. Telemetri & Sensor: Grafik pantauan langsung pH air, nutrisi TDS/EC, suhu air di penampung, serta suhu & kelembaban udara greenhouse.',
     '3. Kebun Saya & Tahap Tanam: Mengelola siklus hidup tanaman melon dari semai, peremajaan, pendewasaan, hingga panen.',
     '4. Dosing & Naik Harian: Mengatur preset target nutrisi per tahap, kenaikan target harian otomatis, dan rekomendasi pupuk AB Mix.',
     '5. Saklar: Mengatur izin pompa ON/OFF.',
@@ -236,27 +236,27 @@ const TEKS = {
 
   alat_iot_k3: [
     'Panduan Pengoperasian Panel Alat IoT ESP32 (gabungan-0.6) & Keselamatan K3:',
-    '1. Cek Fisik Sebelum Nyala: pastikan tandon terisi air, probe pH & EC terendam, lantai sekitar panel kering, tidak ada bau hangus atau selang bocor, serta tombol jamur merah E-STOP dalam keadaan tertarik/lepas.',
+    '1. Cek Fisik Sebelum Nyala: pastikan penampung air terisi air, probe pH & EC terendam, lantai sekitar panel kering, tidak ada bau hangus atau selang bocor, serta tombol jamur merah E-STOP dalam keadaan tertarik/lepas.',
     '2. Nyalakan Raspberry Pi dulu (±1 menit) lalu hidupkan panel ESP32. Tunggu LCD 20x4 beralih dari WIFI MATI / TUNGGU SERVER... ke PENAMPUNG CUKUP.',
     '3. Arti Lampu Pilot 3 Warna:',
     '   • Hijau saja: normal (Wi-Fi & MQTT terhubung, air penampung cukup).',
-    '   • Merah + Hijau: waspada (air tandon kurang dari pelampung bawah atau koneksi MQTT/server terputus).',
+    '   • Merah + Hijau: waspada (air di penampung kurang dari pelampung bawah atau koneksi MQTT/server terputus).',
     '   • Merah saja: DARURAT E-STOP aktif! Semua pompa dimatikan dan dikunci.',
     '   • Biru menyala: salah satu pompa sedang aktif bekerja — jangan mencabut selang.',
     '4. Arti Baris ke-4 LCD & Tombol RESET (GPIO 19): tekan singkat RESET untuk melihat SSID Wi-Fi, IP ESP, IP Server Pi, dan mode (MQTT/HTTP) selama 4 detik di LCD. Jika muncul HTTP SENSOR ONLY, port 1883 terblokir firewall/Client Isolation router dan pompa terkunci aman.',
-    '5. Protokol K3 Darurat: bila selang lepas, tandon bocor, atau ada bau hangus/korsleting, TEKAN TOMBOL MERAH E-STOP FISIK SEGERA tanpa menunggu website. Semua uji pompa wajib memakai air bersih ke gelas ukur.',
+    '5. Protokol K3 Darurat: bila selang lepas, penampung air bocor, atau ada bau hangus/korsleting, TEKAN TOMBOL MERAH E-STOP FISIK SEGERA tanpa menunggu website. Semua uji pompa wajib memakai air bersih ke gelas ukur.',
   ].join('\n'),
 
   langkah_petani: [
     'Urutan Lengkap Langkah Petani & Operator Harian (Berdasarkan Modul Juknas/Juknis & Poster GARAP):',
     'A. Checklist Harian Petani (5–10 Menit Pagi & Sore):',
-    '   1. Cek Panel & Tandon: pastikan lampu pilot menyala Hijau, LCD baris ke-4 bertuliskan PENAMPUNG CUKUP, dan tidak ada selang bocor.',
+    '   1. Cek Panel & Penampung Air: pastikan lampu pilot menyala Hijau, LCD baris ke-4 bertuliskan PENAMPUNG CUKUP, dan tidak ada selang bocor.',
     '   2. Buka & Login Website/HP: buka http://vertonik.local (atau http://10.42.0.1 di hotspot Pi), lalu masuk dengan akun Petani/Admin.',
-    '   3. Pantau Dashboard: pastikan status "Alat terhubung" (hijau) dan periksa nilai pH, TDS/EC, suhu air, suhu udara, kelembapan, serta level tandon.',
-    '   4. Cek Sensor & Peringatan: buka Telemetri & Sensor (rentang 6 Jam / 24 Jam / 7 Hari) dan menu Peringatan; periksa kondisi fisik tandon sebelum menekan Tandai selesai.',
+    '   3. Pantau Dashboard: pastikan status "Alat terhubung" (hijau) dan periksa nilai pH, TDS/EC, suhu air, suhu udara, kelembapan, serta level penampung air.',
+    '   4. Cek Sensor & Peringatan: buka Telemetri & Sensor (rentang 6 Jam / 24 Jam / 7 Hari) dan menu Peringatan; periksa kondisi fisik penampung air sebelum menekan Tandai selesai.',
     '   5. Pantau Kebun, CCTV & Asisten AI: cek usia tanam/HST melon dan estimasi panen di Kebun Saya, lihat visual daun di CCTV, atau tanyakan gejala ke Asisten AI.',
     'B. Urutan Setup & Kendali Teknis (Admin dari Awal hingga Panen):',
-    '   1. Pengaturan Alat: isi volume tandon (liter), jumlah talang, dan debit (liter/menit).',
+    '   1. Pengaturan Alat: isi volume penampung air (liter), jumlah talang, dan debit (liter/menit).',
     '   2. Kalibrasi: aktifkan Mode Pemeliharaan, kalibrasi 2-titik EC (1413 & 12880 uS/cm) + pH (4,0 & 7,0), serta ukur laju pompa dengan gelas ukur lalu matikan pemeliharaan.',
     '   3. Uji Lab & Saklar: catat kekuatan larutan di Data → Uji Lab, lalu atur 5 saklar izin di menu Saklar.',
     '   4. Mulai Semai Melon & Dosing Naik Harian: jalankan SOP bawang merah 1 hari → kain hitam 2 hari → jemur pagi 2 hari → rockwool, catat via Mulai Semai Baru di Kebun Saya, lalu atur kurva PPM Naik Harian di Dosing.',
@@ -395,7 +395,7 @@ const GAMBAR = {
     {
       url: '/panduan/sensor.png',
       judul: 'Pantauan Telemetri TDS & pH Realtime',
-      kenapa: 'Melihat bacaan sensor nutrisi saat ini di tandon greenhouse.',
+      kenapa: 'Melihat bacaan sensor nutrisi saat ini di penampung air greenhouse.',
     },
   ],
   polinasi_melon: [
@@ -430,7 +430,7 @@ const GAMBAR = {
     {
       url: '/panduan/sensor.png',
       judul: 'Layar Telemetri & Sensor Nutrisi',
-      kenapa: 'Memantau kenaikan PPM larutan nutrisi secara langsung di tandon.',
+      kenapa: 'Memantau kenaikan PPM larutan nutrisi secara langsung di penampung air.',
     },
   ],
   media_tanam: [
@@ -459,7 +459,7 @@ const GAMBAR = {
     {
       url: '/panduan/kontrol.png',
       judul: 'Langkah 4: Layar Kontrol Air & Saklar Pompa',
-      kenapa: 'Memeriksa saklar pompa pengisian air tandon dan sirkulasi nutrisi.',
+      kenapa: 'Memeriksa saklar pompa pengisian air di penampung dan sirkulasi nutrisi.',
     },
   ],
   input_data: [
@@ -508,7 +508,7 @@ const GAMBAR = {
     {
       url: '/panduan/kontrol.png',
       judul: 'Menu Kontrol Air & Saklar',
-      kenapa: 'Melihat status pompa tandon dan aktuator solenoid valve.',
+      kenapa: 'Melihat status pompa penampung air dan aktuator solenoid valve.',
     },
     {
       url: '/panduan/ai.png',
@@ -613,7 +613,7 @@ const GAMBAR = {
     {
       url: '/panduan/kontrol.png',
       judul: 'Layar Kontrol Air & Status Lock E-STOP di Aplikasi',
-      kenapa: 'Bila tandon berstatus LOCK / pemeliharaan, cek halaman ini dan panel fisik sebelum membuka kunci.',
+      kenapa: 'Bila penampung air berstatus LOCK / pemeliharaan, cek halaman ini dan panel fisik sebelum membuka kunci.',
     },
   ],
   langkah_petani: [
