@@ -269,7 +269,10 @@ router.get('/state', async (_req, res, next) => {
       "SELECT param, nilai FROM konfigurasi_dosis WHERE param IN ('ppm_per_ml_buah','ph_up_ml_per_ph_l_buah','ph_down_ml_per_ph_l_buah')", []))
       .map((r) => [r.param, r.nilai === null ? null : Number(r.nilai)]));
 
+    // izin otomasi yang DILAPORKAN alat (bukti saklar sampai ke alat); null = alat belum melapor
+    const { keadaanAlat: keadaanV6 } = await require('../keadaanAlat').bacaKeadaanAlat(null);
     res.json({
+      otomasi_alat: keadaanV6.otomasi,
       params_belum_diatur: _belum_diatur,
       // Bukti jadwal di NVS ESP32 = perintah JADWAL terakhir berstatus 'selesai' (laporan alat), bukan isi database.
       jadwal_alat: jadwalAlat ?? null,
@@ -354,10 +357,16 @@ router.put('/saklar', ...writeGuard, async (req, res, next) => {
     await client.query('COMMIT');
 
     const params = await muatKonfigV41(q);
+    // saklar ke alat: alat berhenti/mulai menyalakan aktuator itu sendiri (firmware v6 perintah OTOMASI)
+    const S = require('../sinkronAlat');
+    const kirim = await S.diam(S.kirimOtomasi, uid);
     res.json({
       status: true,
-      message: 'Saklar tindakan dan mode pengisian air disimpan.',
+      message: kirim.dikirim
+        ? 'Saklar disimpan dan dikirim ke alat; tunggu alat menjawab.'
+        : 'Saklar disimpan di sistem, tetapi belum bisa dikirim ke alat (belum ada alat terdaftar / perintah sebelumnya masih menunggu).',
       data: params,
+      kirim_alat: { dikirim: Boolean(kirim.dikirim), ket: kirim.ket ?? null },
     });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});

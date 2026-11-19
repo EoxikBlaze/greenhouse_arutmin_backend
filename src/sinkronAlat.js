@@ -15,6 +15,7 @@ const P = require('./presetDosing');
 const { thresholdsMap } = require('./routes/monitoring');
 const { bacaKeadaanAlat } = require('./keadaanAlat');
 const { parameterKonfigurasi } = require('./konfigurasiAlat');
+const saklarSvc = require('./saklar');
 
 const angka = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
@@ -74,6 +75,7 @@ async function mulaiSemaiAlat(idMeja, userId = null) {
     tipe: 'KONFIGURASI', parameter, sumber, userId, perangkat: kode, ttlDetik: 600,
     alasan: 'Konfigurasi meja sebelum mulai semai',
   });
+  await kirimOtomasi(userId);
   await A.buatPerintah({
     tipe: 'SEMAI', parameter: { target_ppm: t.target_ppm, ph_min: t.ph_min, ph_max: t.ph_max },
     sumber, userId, perangkat: kode, ttlDetik: 600, alasan: 'Mulai semai dari Kebun Saya',
@@ -83,10 +85,42 @@ async function mulaiSemaiAlat(idMeja, userId = null) {
   return { dikirim: true, ket, kurang };
 }
 
+/**
+ * Izin otomasi (saklar web) → firmware: nutrisi, ph (naik DAN turun harus ON), encer, isi. Dikirim penuh agar alat sama dengan web.
+ * @returns {Promise<{nutrisi: number, ph: number, encer: number, isi: number}>}
+ */
+async function izinOtomasi() {
+  const m = Object.fromEntries((await saklarSvc.daftar()).map((r) => [r.kode, r.aktif === true]));
+  const b = (v) => (v ? 1 : 0);
+  return { nutrisi: b(m.nutrisi_ab), ph: b(m.ph_up && m.ph_down), encer: b(m.pengenceran), isi: b(m.isi_air) };
+}
+
+/** Kirim izin otomasi ke semua alat. Dipanggil saat saklar diubah dan saat Mulai Semai. */
+async function kirimOtomasi(userId = null) {
+  const alat = await q("SELECT kode FROM perangkat WHERE peran IN ('gabungan', 'aktuator') AND aktif");
+  const parameter = await izinOtomasi();
+  const hasil = [];
+  for (const { kode } of alat) {
+    if (await adaPerintahTertunda(kode, ['OTOMASI'])) continue;
+    const p = await A.buatPerintah({
+      tipe: 'OTOMASI', parameter, sumber: userId ? 'pengguna' : 'otomasi', userId, perangkat: kode, ttlDetik: 3600,
+      alasan: 'Saklar otomasi diubah',
+    });
+    hasil.push({ kode, id: String(p.id) });
+  }
+  return { dikirim: hasil.length > 0, perintah: hasil, parameter };
+}
+
 /** Penjadwal (tiap 10 menit): kirim TARGET ke alat yang sedang SEMAI bila target batch di mejanya berubah. */
 async function sinkronKeAlat() {
   const alat = await q("SELECT kode, id_meja FROM perangkat WHERE id_meja IS NOT NULL AND peran IN ('gabungan', 'aktuator') AND aktif");
   const hasil = [];
+  const { keadaanAlat: ak } = await bacaKeadaanAlat(null);
+  // alat melapor izin otomasi yang beda dengan web (mis. alat baru / firmware baru) → samakan
+  const izin = await izinOtomasi();
+  if (ak.otomasi && Object.entries(izin).some(([k, v]) => ak.otomasi[k] != null && Number(ak.otomasi[k]) !== v)) {
+    hasil.push(...(await kirimOtomasi()).perintah.map((p) => ({ ...p, tipe: 'OTOMASI', ket: `OTOMASI dikirim ke ${p.kode}` })));
+  }
   for (const { kode, id_meja: idMeja } of alat) {
     const { keadaanAlat: a } = await bacaKeadaanAlat(null);
     if (a.mode !== 'SEMAI') continue;
@@ -125,4 +159,4 @@ function diam(fn, ...arg) {
   });
 }
 
-module.exports = { alatDiMeja, alatMeja, mejaBatchTerbaru, targetUntukMeja, mulaiSemaiAlat, sinkronKeAlat, panenBilaKosong, diam };
+module.exports = { kirimOtomasi, izinOtomasi, alatDiMeja, alatMeja, mejaBatchTerbaru, targetUntukMeja, mulaiSemaiAlat, sinkronKeAlat, panenBilaKosong, diam };

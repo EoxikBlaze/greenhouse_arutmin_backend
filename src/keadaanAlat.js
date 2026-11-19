@@ -47,6 +47,8 @@ async function bacaKeadaanAlat(latest) {
     estop: alat?.estop_aktif ?? null,
     dosing_ab_hari: angka(v6.dosing_ab_hari), dosing_ph_hari: angka(v6.dosing_ph_hari),
     encer_hari: angka(v6.encer_hari), isi_hari: angka(v6.isi_hari),
+    // izin otomasi yang dilaporkan alat (null = alat belum melapor / firmware lama)
+    otomasi: { nutrisi: bool(v6.otomasi_ab), ph: bool(v6.otomasi_ph), encer: bool(v6.otomasi_encer), isi: bool(v6.otomasi_isi) },
   };
   return { iotStatus, keadaanAlat };
 }

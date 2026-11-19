@@ -106,7 +106,7 @@ async function tandaiTerlihat(kode, ip, mentah = {}) {
   // Gagal mencatat tidak boleh mengganggu telemetri.
   try { await catatKejadianDosing(kode, mentah); } catch (e) { console.error('[dosing] gagal mencatat kejadian:', e.message); }
   // Field tambahan Kontrak MQTT v2.0 §3.2 yang ditampilkan Dashboard (boolean disimpan '1'/'0').
-  for (const k of ['pompa_isi', 'siap', 'ppm_terlalu_rendah']) {
+  for (const k of ['pompa_isi', 'siap', 'ppm_terlalu_rendah', 'otomasi_ab', 'otomasi_ph', 'otomasi_encer', 'otomasi_isi']) {
     if (typeof mentah[k] === 'boolean') await simpanState(`v6_${k}`, mentah[k] ? '1' : '0');
   }
   if (mentah.siap === true) await simpanState('v6_kurang', '');

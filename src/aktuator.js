@@ -21,7 +21,7 @@ const BATAS_WAJIB = {
 const TIPE = [
   'DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT',
   'UJI_POMPA', 'KALIBRASI', 'BALIK_KALIBRASI', 'JADWAL',
-  'KAL_SENSOR', 'KONFIGURASI', 'SEMAI', 'TARGET', 'PANEN', 'PEMELIHARAAN', 'BUKA_KUNCI', 'STATUS'
+  'KAL_SENSOR', 'KONFIGURASI', 'SEMAI', 'TARGET', 'PANEN', 'PEMELIHARAAN', 'BUKA_KUNCI', 'OTOMASI', 'STATUS'
 ];
 /** JADWAL = waktu operasi yang disimpan permanen di NVS ESP32 (bukan aktuasi). Rentang = batas keras firmware gabungan-0.7. */
 const JADWAL_RENTANG = { interval_sensor_detik: [5, 60], jeda_ab_detik: [60, 600], isi_air_maks_detik: [60, 600] };
@@ -276,6 +276,15 @@ function validasiPerintah(tipe, p, cfg) {
     const aksi = String(body.aksi || '').toUpperCase();
     if (aksi !== 'MULAI' && aksi !== 'SELESAI') err.aksi = ['aksi harus MULAI atau SELESAI.'];
     else out.aksi = aksi;
+  } else if (tipe === 'OTOMASI') {
+    // izin otomasi per aktuator (saklar web): hanya kunci yang dikirim yang diubah
+    for (const k of ['nutrisi', 'ph', 'encer', 'isi']) {
+      if (body[k] === undefined) continue;
+      const v = body[k] === true || body[k] === 1 || body[k] === '1' ? 1 : body[k] === false || body[k] === 0 || body[k] === '0' ? 0 : null;
+      if (v === null) err[k] = [`${k} harus 0 atau 1.`];
+      else out[k] = v;
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.otomasi = ['minimal satu dari nutrisi, ph, encer, isi.'];
   } else if (tipe === 'BUKA_KUNCI' || tipe === 'PANEN' || tipe === 'STATUS') {
     // Perintah tanpa parameter wajib
   }

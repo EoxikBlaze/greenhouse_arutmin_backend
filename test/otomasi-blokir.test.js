@@ -18,15 +18,15 @@ test('3B.3: pengendali dosing lama (otomasi.js) sudah dihapus; tidak ada yang me
   }
 });
 
-test('3B.3/3C: pemanggil buatPerintah di luar aktuator.js hanya rute admin (menolak DOSIS), kontrolAir (ISI_AIR saja), dosingSiklus (STOP saja), sinkronAlat (KONFIGURASI/SEMAI/TARGET/PANEN), routes/iotV41 (UJI_POMPA, KALIBRASI, BALIK_KALIBRASI, JADWAL, STOP; tidak pernah DOSIS)', () => {
+test('3B.3/3C: pemanggil buatPerintah di luar aktuator.js hanya rute admin (menolak DOSIS), kontrolAir (ISI_AIR saja), dosingSiklus (STOP saja), sinkronAlat (OTOMASI/KONFIGURASI/SEMAI/TARGET/PANEN), routes/iotV41 (UJI_POMPA, KALIBRASI, BALIK_KALIBRASI, JADWAL, STOP; tidak pernah DOSIS)', () => {
   const pemanggil = semua().filter((f) => !f.endsWith(`${path.sep}aktuator.js`) || f.includes(`routes${path.sep}`))
     .filter((f) => /buatPerintah\(/.test(fs.readFileSync(f, 'utf8')))
     .map((f) => path.relative(SRC, f)).sort();
   assert.deepEqual(pemanggil, ['dosingSiklus.js', 'kontrolAir.js', 'sinkronAlat.js', path.join('routes', 'aktuator.js'), path.join('routes', 'iotV41.js')].sort());
   // alur tanam → alat (Perancangan v5.0 §2.2): hanya KONFIGURASI / SEMAI / TARGET / PANEN, tidak pernah DOSIS (K3)
   const sinkron = fs.readFileSync(path.join(SRC, 'sinkronAlat.js'), 'utf8');
-  assert.equal((sinkron.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'KONFIGURASI',tipe: 'SEMAI',tipe: 'TARGET',tipe: 'TARGET',tipe: 'PANEN',tipe: 'PANEN'", 'sinkronAlat tanpa DOSIS (perintah + jawaban)');
-  assert.equal((sinkron.match(/buatPerintah\(/g) || []).length, 4);
+  assert.equal((sinkron.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'KONFIGURASI',tipe: 'SEMAI',tipe: 'OTOMASI',tipe: 'OTOMASI',tipe: 'TARGET',tipe: 'TARGET',tipe: 'PANEN',tipe: 'PANEN'", 'sinkronAlat tanpa DOSIS (perintah + jawaban)');
+  assert.equal((sinkron.match(/buatPerintah\(/g) || []).length, 5);
   // modul v4.1: uji pompa (terkunci bawaan), kiriman laju pompa, jadwal NVS (bukan aktuasi), dan STOP. Tidak ada jalur DOSIS.
   const v41 = fs.readFileSync(path.join(SRC, 'routes', 'iotV41.js'), 'utf8');
   assert.equal((v41.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'PEMELIHARAAN',tipe: 'UJI_POMPA',tipe: 'KALIBRASI',tipe: 'BALIK_KALIBRASI',tipe: 'KALIBRASI',tipe: 'JADWAL',tipe: 'STOP'", 'iotV41 tanpa DOSIS');
