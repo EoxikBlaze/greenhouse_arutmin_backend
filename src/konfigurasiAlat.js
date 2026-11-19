@@ -21,7 +21,7 @@ const DARI_KALIBRASI = {
 /** Nama untuk petani (pesan Mulai Semai). */
 const LABEL = {
   volume_l: 'volume penampung (Master Meja)', monitoring_menit: 'waktu monitoring (Master Meja)', jeda_ab_dtk: 'jeda A→B (Master Meja)',
-  ppm_per_ml_ab: 'uji lab nutrisi AB (Kalibrasi)', laju_a: 'laju pompa A (Kalibrasi)', laju_b: 'laju pompa B (Kalibrasi)',
+  ppm_per_ml_ab: 'uji lab nutrisi AB (menu Uji Lab)', laju_a: 'laju pompa A (Kalibrasi)', laju_b: 'laju pompa B (Kalibrasi)',
   laju_ph_up: 'laju pompa pH up (Kalibrasi)', laju_ph_down: 'laju pompa pH down (Kalibrasi)',
 };
 
