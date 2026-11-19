@@ -85,10 +85,12 @@ function kosong(hari = 7, sekarang = Date.now()) {
 }
 
 /**
- * @param {{hari?: number|string, maju?: number, idMeja?: string|number|null}} opsi
+ * @param {{hari?: number|string, maju?: number|null, idMeja?: string|number|null}} opsi
  */
-async function dataNutrisi({ hari = 7, maju = 2, idMeja = null } = {}) {
+async function dataNutrisi({ hari = 7, maju = null, idMeja = null } = {}) {
   const h = bulatHari(hari);
+  // rencana ke depan proporsional: rentang 24 jam → 1 hari ke depan (supaya riwayat tidak terjepit), selainnya 2 hari
+  if (maju == null) maju = h <= 1 ? 1 : 2;
   const sekarang = Date.now();
   const mejaId = idMeja ?? (await S.mejaBatchTerbaru());
   const batchMap = await P.batchPerMeja();
