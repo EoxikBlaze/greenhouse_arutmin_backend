@@ -26,7 +26,7 @@ const TIPE = [
 /** JADWAL = waktu operasi yang disimpan permanen di NVS ESP32 (bukan aktuasi). Rentang = batas keras firmware gabungan-0.7. */
 const JADWAL_RENTANG = { interval_sensor_detik: [5, 60], jeda_ab_detik: [60, 600], isi_air_maks_detik: [60, 600] };
 /** Nama pompa di firmware (NAMA_OUT). ISI_AIR sengaja tidak ada: punya perintah sendiri. */
-const POMPA_UJI = ['A', 'B', 'PH_UP', 'PH_DOWN'];
+const POMPA_UJI = ['A', 'B', 'PH_UP', 'PH_DOWN', 'ISI'];
 /** Batas firmware: UJI_POMPA menolak > 120 dtk; laju pompa 0–500 mL/dtk. */
 const UJI_POMPA_DETIK = [5, 120];
 const LAJU_KALIBRASI = ['laju_a', 'laju_b', 'laju_ph_up', 'laju_ph_down'];
@@ -491,6 +491,24 @@ function kategoriVolume(hasil, mlDiperintahkan) {
   return { kategori: hasil.sumber_volume === 'ukur' ? 'UKUR' : 'ESTIMASI', ml: Math.min(nyata, mlDiperintahkan), diperintahkan: mlDiperintahkan };
 }
 
+/**
+ * Alat menyimpan satu titik kalibrasi pH/EC (KAL_SENSOR SIMPAN selesai): catat ke riwayat; setelah titik ke-2 tersimpan
+ * kalibrasi dianggap baru (jadwal "terlambat" mulai dihitung dari sini).
+ */
+async function catatKalibrasiAlat(row) {
+  const h = row.hasil || {};
+  const sensor = row.parameter.sensor;
+  const tegangan = Number.isFinite(Number(h.tegangan)) ? Number(h.tegangan) : null;
+  const acuan = Number.isFinite(Number(h.acuan)) ? Number(h.acuan) : null;
+  await q(
+    `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sesudah, lulus, catatan, oleh_label)
+     VALUES ($1, $2, $3, true, $4, 'alat')`,
+    [sensor, acuan, tegangan, `[KAL_SENSOR] titik ${row.parameter.titik} tersimpan di alat (acuan ${acuan ?? '-'}, ${tegangan ?? '-'} V)`]);
+  if (Number(h.titik_terisi) >= 2) {
+    await q('UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = now(), hasil_ukur = coalesce($2, hasil_ukur) WHERE sensor = $1', [sensor, tegangan]);
+  }
+}
+
 async function laporHasil(perangkat, id, { status, hasil }) {
   if (!['selesai', 'gagal'].includes(status)) throw new PerintahDitolak(422, 'Data tidak valid.', { status: ['status harus selesai atau gagal.'] });
   const aman = hasil && typeof hasil === 'object' && !Array.isArray(hasil) && JSON.stringify(hasil).length <= 2000 ? hasil : null;
@@ -508,6 +526,7 @@ async function laporHasil(perangkat, id, { status, hasil }) {
     await q("UPDATE perintah_aktuator SET hasil = coalesce(hasil, '{}'::jsonb) || jsonb_build_object('volume_server', $2::jsonb) WHERE id = $1", [row.id, vol]);
     row.hasil = { ...(row.hasil || {}), volume_server: vol };
   }
+  if (row.tipe === 'KAL_SENSOR' && status === 'selesai' && row.parameter?.aksi === 'SIMPAN') await catatKalibrasiAlat(row);
   if (status === 'gagal' && row.tipe === 'DOSIS') {
     const { penampung, larutan } = row.parameter;
     const vol = row.hasil.volume_server;

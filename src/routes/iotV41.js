@@ -564,14 +564,39 @@ async function kirimKeAlat(req, perintah) {
  * Pagar: UJI_POMPA_DIIZINKAN=1 di .env, admin, mode pemeliharaan aktif, satu uji pada satu waktu, E-STOP menolak.
  * Balasan 202 = diantre, BUKAN pompa sudah jalan; hasil datang dari alat (GET /api/aktuator/perintah).
  */
+/** Mode pemeliharaan aktif menurut alat (v6) atau penampung (lama). */
+async function pemeliharaanAktif() {
+  const { keadaanAlat } = await require('../keadaanAlat').bacaKeadaanAlat(null);
+  if (keadaanAlat.pemeliharaan === true) return true;
+  return (await q('SELECT 1 FROM penampung_states WHERE mode_pemeliharaan LIMIT 1', [])).length > 0;
+}
+
+/**
+ * Kalibrasi pH/EC firmware v6 (Kontrak MQTT: KAL_SENSOR). Alat mengukur tegangan probe sendiri (UKUR), lalu menyimpannya (SIMPAN)
+ * dengan acuan bawaan (pH 4,01 / 6,86; EC 1,413 / 12,88 mS/cm dengan kompensasi suhu). Titik 1 lalu titik 2.
+ * Balasan 202 = diantre; hasil (tegangan, acuan) datang dari alat lewat /api/aktuator/perintah.
+ */
+router.post('/kal-sensor', ...writeGuard, async (req, res, next) => {
+  try {
+    const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (String(b.aksi).toUpperCase() !== 'BATAL' && !(await pemeliharaanAktif())) {
+      return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan dulu sebelum kalibrasi sensor.' });
+    }
+    const alat = await kirimKeAlat(req, {
+      tipe: 'KAL_SENSOR', parameter: { sensor: b.sensor, titik: b.titik, aksi: b.aksi }, alasan: `Kalibrasi ${String(b.sensor).toUpperCase()} titik ${b.titik} ${String(b.aksi).toUpperCase()}`,
+    });
+    if (!alat.id) return json(res, 422, { message: alat.ket });
+    return res.status(202).json({ status: true, antre: true, dikonfirmasi: false, id_perintah: alat.id, message: `Perintah kalibrasi ${alat.ket}.` });
+  } catch (e) { next(e); }
+});
+
 router.post('/uji-pompa', ...writeGuard, async (req, res, next) => {
   try {
     if (!config.ujiPompaDiizinkan) {
       return json(res, 423, { kode: 'uji_pompa_dikunci', message: 'Uji pompa dari aplikasi dikunci. Admin server harus mengisi UJI_POMPA_DIIZINKAN=1 di .env lalu memulai ulang layanan.' });
     }
     const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const pemeliharaan = (await q('SELECT 1 FROM penampung_states WHERE mode_pemeliharaan LIMIT 1', [])).length > 0;
-    if (!pemeliharaan) return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan sebelum menyalakan pompa uji.' });
+    if (!(await pemeliharaanAktif())) return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan sebelum menyalakan pompa uji.' });
     const jalan = await q("SELECT id FROM perintah_aktuator WHERE tipe = 'UJI_POMPA' AND status IN ('menunggu','dikirim') LIMIT 1", []);
     if (jalan.length) return json(res, 409, { kode: 'uji_pompa_berjalan', message: 'Masih ada uji pompa yang belum selesai. Tunggu atau tekan STOP.' });
     let perintah;

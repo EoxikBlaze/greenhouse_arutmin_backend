@@ -29,7 +29,7 @@ test('3B.3/3C: pemanggil buatPerintah di luar aktuator.js hanya rute admin (meno
   assert.equal((sinkron.match(/buatPerintah\(/g) || []).length, 5);
   // modul v4.1: uji pompa (terkunci bawaan), kiriman laju pompa, jadwal NVS (bukan aktuasi), dan STOP. Tidak ada jalur DOSIS.
   const v41 = fs.readFileSync(path.join(SRC, 'routes', 'iotV41.js'), 'utf8');
-  assert.equal((v41.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'PEMELIHARAAN',tipe: 'UJI_POMPA',tipe: 'KALIBRASI',tipe: 'BALIK_KALIBRASI',tipe: 'KALIBRASI',tipe: 'JADWAL',tipe: 'STOP'", 'iotV41 tanpa DOSIS');
+  assert.equal((v41.match(/tipe: '([A-Z_]+)'/g) || []).join(), "tipe: 'PEMELIHARAAN',tipe: 'KAL_SENSOR',tipe: 'UJI_POMPA',tipe: 'KALIBRASI',tipe: 'BALIK_KALIBRASI',tipe: 'KALIBRASI',tipe: 'JADWAL',tipe: 'STOP'", 'iotV41 tanpa DOSIS');
   assert.equal((v41.match(/buatPerintah\(/g) || []).length, 4);
   // alur persetujuan (3C): eksekusi diblokir — satu-satunya perintah adalah STOP saat siklus RUNNING dicabut
   const dos = fs.readFileSync(path.join(SRC, 'dosingSiklus.js'), 'utf8');

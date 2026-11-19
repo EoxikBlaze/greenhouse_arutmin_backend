@@ -95,11 +95,23 @@ function kondisiSensor(sensor, a, ambang) {
   return hasil;
 }
 
+const NAMA_KALIBRASI = { ph: 'sensor pH', ec: 'sensor EC', pulsa_peristaltik: 'laju pompa' };
+
+/** Kalibrasi yang lewat jatuh tempo (jadwal dari tabel kalibrasi_sensor). Berdasar waktu, tidak tergantung alat online. */
+function kondisiKalibrasi(rows = []) {
+  return rows.filter((r) => r.status === 'terlambat' && NAMA_KALIBRASI[r.sensor])
+    .map((r) => kondisi(`kalibrasi_${r.sensor}`, 'warning', `Kalibrasi ${NAMA_KALIBRASI[r.sensor]} terlambat: kalibrasi ulang di menu Kalibrasi`, 0, 0));
+}
+
 /**
  * Kondisi yang sedang benar (fungsi murni, diuji di test/peringatan.test.js).
  * @param {{online: boolean, dataSegar: boolean, estopServer: boolean, alat: object, sensor: object|null, ambang: object}} s
  */
 function kondisiSekarang(s) {
+  return [...kondisiLive(s), ...kondisiKalibrasi(s.kalibrasi)];
+}
+
+function kondisiLive(s) {
   if (!s.online) return [kondisi('alat_offline', 'warning', 'Alat tidak terhubung ke server: cek listrik dan Wi-Fi alat', 0, 0)];
   const hasil = kondisiAlat(s.alat, s.estopServer);
   if (!s.dataSegar) {
@@ -150,10 +162,14 @@ async function terapkan(daftar, kini = Date.now()) {
 
 async function nilaiSekali() {
   const sensor = (await q('SELECT * FROM monitorings ORDER BY created_at DESC, id DESC LIMIT 1'))[0] ?? null;
-  const [{ iotStatus, keadaanAlat }, ambang, es] = await Promise.all([bacaKeadaanAlat(sensor), thresholdsMap(), statusEstop()]);
+  const [{ iotStatus, keadaanAlat }, ambang, es, kal] = await Promise.all([
+    bacaKeadaanAlat(sensor), thresholdsMap(), statusEstop(),
+    q("SELECT * FROM kalibrasi_sensor WHERE sensor = ANY($1::text[])", [Object.keys(NAMA_KALIBRASI)]).catch(() => []),
+  ]);
+  const { statusJadwal } = require('./routes/kalibrasi');
   await terapkan(kondisiSekarang({
     online: iotStatus.online, dataSegar: iotStatus.data_segar, estopServer: es.nilai === '1',
-    alat: keadaanAlat, sensor, ambang,
+    alat: keadaanAlat, sensor, ambang, kalibrasi: kal.map((r) => ({ sensor: r.sensor, ...statusJadwal(r) })),
   }));
 }
 
