@@ -304,6 +304,19 @@ router.get('/', requireAuth, async (_req, res, next) => {
   try { res.json({ page: 'monitoring' }); } catch (e) { next(e); }
 });
 
+/**
+ * Grafik Nutrisi (menu Sensor): ppm aktual, target di alat, rencana target, dan kejadian dosing — src/nutrisiGrafik.js.
+ * ?hari=1–14 (bawaan 7) · ?id_meja= (bawaan: meja batch berjalan terbaru). Modul dimuat malas (menghindari siklus impor).
+ */
+router.get('/nutrisi', requireAuth, async (req, res, next) => {
+  try {
+    const N = require('../nutrisiGrafik');
+    if (req.user?.demo) return res.json(N.kosong());
+    const idMeja = /^\d{1,18}$/.test(String(req.query.id_meja ?? '')) ? req.query.id_meja : null;
+    res.json(await N.dataNutrisi({ hari: req.query.hari, idMeja }));
+  } catch (e) { next(e); }
+});
+
 router.get('/chart-data', requireAuth, async (req, res, next) => {
   try {
     if (req.user?.demo) return res.json([]);

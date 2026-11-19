@@ -9,6 +9,7 @@
  */
 const express = require('express');
 const { q, one } = require('../db');
+const { catatKejadianDosing } = require('../nutrisiGrafik');
 const { requireKunci } = require('../kunci');
 const { ambilPerintah, laporHasil, statusEstop, PerintahDitolak } = require('../aktuator');
 const mon = require('./monitoring');
@@ -99,6 +100,9 @@ async function tandaiTerlihat(kode, ip, mentah = {}) {
   if (pemeliharaan !== null) await simpanState('v6_pemeliharaan', pemeliharaan ? '1' : '0');
   if (targetPpm !== null) await simpanState('v6_target_ppm', targetPpm);
   if (hariSemai !== null) await simpanState('v6_hari_semai', hariSemai);
+  // Hitungan dosing harian naik = alat baru menyuntik → catat kejadiannya (grafik Nutrisi). Harus SEBELUM hitungan baru disimpan.
+  // Gagal mencatat tidak boleh mengganggu telemetri.
+  try { await catatKejadianDosing(kode, mentah); } catch (e) { console.error('[dosing] gagal mencatat kejadian:', e.message); }
   // Field tambahan Kontrak MQTT v2.0 §3.2 yang ditampilkan Dashboard (boolean disimpan '1'/'0').
   for (const k of ['pompa_isi', 'siap', 'ppm_terlalu_rendah']) {
     if (typeof mentah[k] === 'boolean') await simpanState(`v6_${k}`, mentah[k] ? '1' : '0');
