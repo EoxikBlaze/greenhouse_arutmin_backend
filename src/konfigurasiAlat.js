@@ -18,6 +18,13 @@ const DARI_KALIBRASI = {
   laju_pompa_ph_up_mls: 'laju_ph_up', laju_pompa_ph_down_mls: 'laju_ph_down',
 };
 
+/** Nama untuk petani (pesan Mulai Semai). */
+const LABEL = {
+  volume_l: 'volume penampung (Master Meja)', monitoring_menit: 'waktu monitoring (Master Meja)', jeda_ab_dtk: 'jeda A→B (Master Meja)',
+  ppm_per_ml_ab: 'uji lab nutrisi AB (Kalibrasi)', laju_a: 'laju pompa A (Kalibrasi)', laju_b: 'laju pompa B (Kalibrasi)',
+  laju_ph_up: 'laju pompa pH up (Kalibrasi)', laju_ph_down: 'laju pompa pH down (Kalibrasi)',
+};
+
 const angka = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
 /**
@@ -52,8 +59,8 @@ async function parameterKonfigurasi(idMeja) {
   const kurang = [];
   for (const [kunci, [min, max]] of Object.entries(RENTANG)) {
     const v = nilai[kunci];
-    if (v == null) { kurang.push(kunci); continue; }
-    if (v < min || v > max) { kurang.push(`${kunci} (${v} di luar ${min}–${max})`); continue; }
+    if (v == null) { kurang.push(LABEL[kunci]); continue; }
+    if (v < min || v > max) { kurang.push(`${LABEL[kunci]}: ${v} di luar ${min}–${max}`); continue; }
     parameter[kunci] = kunci === 'volume_l' || kunci.endsWith('_menit') || kunci.endsWith('_dtk') ? Math.round(v) : v;
   }
   return { parameter, kurang };

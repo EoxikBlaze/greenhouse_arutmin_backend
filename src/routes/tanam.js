@@ -151,13 +151,16 @@ router.get('/pilihan', async (_req, res, next) => {
   try {
     const [tanaman, meja] = await Promise.all([
       q(`SELECT t.id_tanaman AS id, t.nama_tanaman AS nama, t.id_meja, t.ppm_awal, t.ppm_target, t.hari_capai,
-                t.cara_naik, t.ppm_semai, t.ppm_peremajaan, t.ppm_pendewasaan, t.ph_min, t.ph_max,
+                t.ppm_semai, t.ppm_peremajaan, t.ppm_pendewasaan, t.ph_min, t.ph_max,
                 ${DURASI('semai')} AS semai, ${DURASI('peremajaan')} AS peremajaan, ${DURASI('pendewasaan')} AS pendewasaan
            FROM tanamen t ORDER BY t.nama_tanaman`),
       // alat yang terpasang di meja (perangkat.id_meja) — Mulai Semai mengirim KONFIGURASI + SEMAI ke alat ini
       q(`SELECT m.id_meja AS id, m.meja AS nama, m.kapasitas_penampung_l AS volume_l,
-                (SELECT p.kode FROM perangkat p WHERE p.id_meja = m.id_meja AND p.peran IN ('gabungan','aktuator') ORDER BY p.kode LIMIT 1) AS alat
-           FROM mejas m ORDER BY m.meja`),
+                a.kode AS alat, coalesce(nullif(a.nama, ''), a.kode) AS alat_nama
+           FROM mejas m
+           LEFT JOIN LATERAL (SELECT p.kode, p.nama FROM perangkat p WHERE p.id_meja = m.id_meja AND p.peran IN ('gabungan','aktuator')
+                               ORDER BY p.kode LIMIT 1) a ON true
+          ORDER BY m.meja`),
     ]);
     res.json({ tanaman, meja });
   } catch (e) { next(e); }
@@ -172,7 +175,7 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
     if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
     // kurva naik harian disalin ke batch (isian dialog menimpa kurva tanaman) — ubah kurva tanaman nanti tidak menggeser batch ini
     const tanaman = b.id_tanaman == null ? null
-      : await one(`SELECT cara_naik, ppm_awal, ppm_target, hari_capai, ppm_semai, ppm_peremajaan, ppm_pendewasaan, ph_min, ph_max
+      : await one(`SELECT ppm_awal, ppm_target, hari_capai, ppm_semai, ppm_peremajaan, ppm_pendewasaan, ph_min, ph_max
                      FROM tanamen WHERE id_tanaman = $1`, [b.id_tanaman]);
     const kurva = K.kurvaAwal(tanaman, b);
     if (Object.keys(kurva.errors).length) return json(res, 422, { message: 'Data tidak valid.', errors: kurva.errors });

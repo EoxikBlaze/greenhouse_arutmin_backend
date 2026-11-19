@@ -21,13 +21,19 @@ router.get('/meja/konfigurasi-alat', ...guard, async (_req, res, next) => {
            FROM perangkat WHERE peran IN ('gabungan', 'aktuator') ORDER BY kode`),
     ]);
     res.json({
-      data: meja.map((m) => ({ id_meja: m.id_meja, ...konfigurasiMeja(m), alat: alat.find((a) => String(a.id_meja) === String(m.id_meja))?.kode ?? null })),
+      data: meja.map((m) => {
+        const a = alat.find((x) => String(x.id_meja) === String(m.id_meja));
+        return { id_meja: m.id_meja, ...konfigurasiMeja(m), alat: a?.kode ?? null, alat_nama: a ? a.nama || a.kode : null };
+      }),
       alat,
     });
   } catch (e) { next(e); }
 });
 
-/** Pasang / lepas alat di meja (perangkat.id_meja). Satu alat hanya di satu meja; satu meja satu alat. */
+/**
+ * Pasang / lepas alat di meja (perangkat.id_meja) dan, opsional, ganti nama tampilannya (perangkat.nama).
+ * Satu alat hanya di satu meja; satu meja satu alat. Kode alat (login MQTT, topik garap/<kode>/…) tidak pernah diubah.
+ */
 router.put('/meja/:id/alat', ...guard, demoGuard('meja.alat'), async (req, res, next) => {
   try {
     if (!/^\d{1,18}$/.test(req.params.id)) return res.status(404).json({ message: 'Data tidak ditemukan.' });
@@ -39,8 +45,13 @@ router.put('/meja/:id/alat', ...guard, demoGuard('meja.alat'), async (req, res, 
     if (kode && !(await one("SELECT 1 AS x FROM perangkat WHERE kode = $1 AND peran IN ('gabungan','aktuator')", [kode]))) {
       return res.status(422).json({ message: 'Data tidak valid.', errors: { kode: ['Alat tidak dikenal.'] } });
     }
+    const nama = req.body?.nama;
+    if (nama !== undefined && nama !== null && (typeof nama !== 'string' || nama.trim().length > 100)) {
+      return res.status(422).json({ message: 'Data tidak valid.', errors: { nama: ['Nama alat maksimal 100 karakter.'] } });
+    }
     await q('UPDATE perangkat SET id_meja = NULL, updated_at = now() WHERE id_meja = $1 AND ($2::text IS NULL OR kode <> $2)', [req.params.id, kode]);
     if (kode) await q('UPDATE perangkat SET id_meja = $1, updated_at = now() WHERE kode = $2', [req.params.id, kode]);
+    if (kode && typeof nama === 'string' && nama.trim()) await q('UPDATE perangkat SET nama = $1 WHERE kode = $2', [nama.trim(), kode]);
     req.audit = { aksi: 'update', tabel: 'perangkat', row_id: kode ?? String(req.params.id), after: { id_meja: kode ? Number(req.params.id) : null } };
     res.json({ status: true, message: kode ? `Alat ${kode} dipasang di meja ini.` : 'Alat dilepas dari meja ini.' });
   } catch (e) { next(e); }
@@ -72,8 +83,8 @@ router.use('/tanaman', ...guard,
   demoGuard('tanaman.store'),
   crudRouter({
     table: 'tanamen', pk: 'id_tanaman',
-    // resep: kurva nutrisi (per hari / per tahap) & rentang pH — disalin ke batch saat Mulai Semai
-    columns: ['nama_tanaman', 'id_meja', 'cara_naik', 'ppm_awal', 'ppm_target', 'hari_capai',
+    // dua resep (per hari & per siklus) + rentang pH; cara yang dipakai dipilih saat Mulai Semai lalu disalin ke batch
+    columns: ['nama_tanaman', 'id_meja', 'ppm_awal', 'ppm_target', 'hari_capai',
       'ppm_semai', 'ppm_peremajaan', 'ppm_pendewasaan', 'ph_min', 'ph_max'],
     name: 'tanaman', orderBy: 'id_tanaman',
   }));

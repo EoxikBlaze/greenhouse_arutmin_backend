@@ -46,7 +46,7 @@ function bacaIsian(b) {
     if (nilai[k] == null) errors[k] = ['pH harus 4,0–8,5.'];
   }
   nilai.cara_naik = kosong('cara_naik') ? null : b.cara_naik;
-  if (nilai.cara_naik != null && !['harian', 'tahap'].includes(nilai.cara_naik)) errors.cara_naik = ['Pilih per hari atau per tahap.'];
+  if (nilai.cara_naik != null && !['harian', 'tahap'].includes(nilai.cara_naik)) errors.cara_naik = ['Pilih per hari atau per siklus.'];
   return { nilai, errors };
 }
 
@@ -59,26 +59,35 @@ function cekPh(min, max) {
 }
 
 /**
- * Resep batch baru: isian dialog Mulai Semai menimpa resep tanaman. kolom null = tanaman belum punya resep.
+ * Resep batch baru. Cara naik (`cara_naik`: harian = per hari, tahap = per siklus) DIPILIH saat Mulai Semai;
+ * angkanya dari resep Master Jenis Tanaman, boleh ditimpa isian dialog untuk batch ini saja.
+ * Tanpa pilihan: per hari bila resep per hari lengkap, selainnya per siklus. kolom null = tanaman tanpa resep.
  * @returns {{kolom: object|null, errors: object}}
  */
 function kurvaAwal(tanaman, isian) {
   const { nilai, errors } = bacaIsian(isian);
   if (Object.keys(errors).length) return { kolom: null, errors };
   const pilih = (k) => nilai[k] ?? (tanaman?.[k] == null ? null : Number(tanaman[k]));
-  const cara = nilai.cara_naik ?? tanaman?.cara_naik ?? 'harian';
+  const adaHarian = pilih('ppm_awal') != null && pilih('ppm_target') != null && pilih('hari_capai') != null;
+  const adaTahap = pilih('ppm_semai') != null;
+  const cara = nilai.cara_naik ?? (adaHarian || !adaTahap ? 'harian' : 'tahap');
   const ph = { kurva_ph_min: pilih('ph_min'), kurva_ph_max: pilih('ph_max') };
   const galatPh = cekPh(ph.kurva_ph_min, ph.kurva_ph_max);
   if (galatPh) return { kolom: null, errors: galatPh };
   if (cara === 'tahap') {
     const t = { kurva_ppm_semai: pilih('ppm_semai'), kurva_ppm_peremajaan: pilih('ppm_peremajaan'), kurva_ppm_pendewasaan: pilih('ppm_pendewasaan') };
-    if (Object.values(t).some((v) => v == null)) return { kolom: null, errors: { kurva: ['Isi ppm Semai, Peremajaan, dan Pendewasaan.'] } };
+    if (Object.values(t).some((v) => v == null)) {
+      return { kolom: null, errors: { cara_naik: ['Resep per siklus belum diisi: isi ppm Semai, Peremajaan, dan Pendewasaan.'] } };
+    }
     return { kolom: { kurva_cara: 'tahap', ...t, ...ph }, errors: {} };
   }
   const awal = pilih('ppm_awal');
   const target = pilih('ppm_target');
   const capai = pilih('hari_capai');
-  if (awal == null && target == null && capai == null) return { kolom: ph.kurva_ph_min != null ? { kurva_cara: 'harian', ...ph } : null, errors: {} };
+  if (awal == null && target == null && capai == null) {
+    if (nilai.cara_naik === 'harian') return { kolom: null, errors: { cara_naik: ['Resep per hari belum diisi: isi ppm awal, ppm akhir, dan hari capai.'] } };
+    return { kolom: ph.kurva_ph_min != null ? { kurva_cara: 'harian', ...ph } : null, errors: {} };
+  }
   if (awal == null || target == null || capai == null) {
     return { kolom: null, errors: { kurva: ['Isi ppm awal, ppm target, dan hari capai sekaligus.'] } };
   }

@@ -185,14 +185,13 @@ const TABLE_SPECS = {
     monitoring_menit: { tipe: 'integer', min: 5, max: 720, nullable: true },
     jeda_ab_dtk: { tipe: 'integer', min: 10, max: 900, nullable: true },
   },
-  // Jenis tanaman (migrasi 2026-10-27 naik harian + 2026-11-19_01 cara naik & pH). Aturan antar-kolom
-  // (awal ≤ target, ppm tahap wajib saat cara 'tahap', selisih pH ≥ 0,2) dijaga CHECK DB → 422.
+  // Jenis tanaman: resep per hari (2026-10-27) & per siklus + pH (2026-11-19_01). Aturan antar-kolom
+  // (awal ≤ target, resep diisi lengkap atau kosong semua, selisih pH ≥ 0,2) dijaga CHECK DB → 422.
   tanamen: {
     nama_tanaman: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 50 },
     ppm_awal: { tipe: 'integer', min: 50, max: 2500, nullable: true },
     ppm_target: { tipe: 'integer', min: 50, max: 2500, nullable: true },
     hari_capai: { tipe: 'integer', min: 1, max: 365, nullable: true },
-    cara_naik: { tipe: 'enum', enum: ['harian', 'tahap'] },
     ppm_semai: { tipe: 'integer', min: 50, max: 2500, nullable: true },
     ppm_peremajaan: { tipe: 'integer', min: 50, max: 2500, nullable: true },
     ppm_pendewasaan: { tipe: 'integer', min: 50, max: 2500, nullable: true },

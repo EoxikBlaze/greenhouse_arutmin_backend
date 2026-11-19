@@ -67,7 +67,7 @@ test('per tahap: ppm tetap per tahap; per hari: saat Semai = ppm awal', () => {
 test('mulai semai per tahap & pH: wajib tiga ppm tahap; pH selisih ≥ 0,2', () => {
   const t = { cara_naik: 'tahap', ppm_semai: 300, ppm_peremajaan: 700, ppm_pendewasaan: 1100, ph_min: 5.5, ph_max: 6.5 };
   assert.equal(kurvaAwal(t, {}).kolom.kurva_ppm_peremajaan, 700);
-  assert.ok(kurvaAwal({ ...t, ppm_pendewasaan: null }, {}).errors.kurva);
+  assert.ok(kurvaAwal({ ...t, ppm_pendewasaan: null }, {}).errors.cara_naik);
   assert.ok(kurvaAwal(t, { ph_min: '6,4', ph_max: '6,5' }).errors.ph_max);
   assert.equal(kurvaAwal(t, { ph_min: '5,8' }).kolom.kurva_ph_min, 5.8);
 });
@@ -75,4 +75,13 @@ test('mulai semai per tahap & pH: wajib tiga ppm tahap; pH selisih ≥ 0,2', () 
 test('ubah batch per tahap: ganti angka tahap tanpa syarat netpot', () => {
   const b = { tahap: 'Peremajaan', hari_netpot: 5, kurva_cara: 'tahap', kurva_ppm_semai: 300, kurva_ppm_peremajaan: 700, kurva_ppm_pendewasaan: 1100 };
   assert.equal(rencanaUbah(b, { ppm_peremajaan: 750 }).kolom.kurva_ppm_peremajaan, 750);
+});
+
+test('cara naik dipilih saat Mulai Semai: master menyimpan dua resep', () => {
+  const t = { ppm_awal: 400, ppm_target: 1200, hari_capai: 30, ppm_semai: 300, ppm_peremajaan: 700, ppm_pendewasaan: 1100, ph_min: 5.5, ph_max: 6.5 };
+  assert.equal(kurvaAwal(t, {}).kolom.kurva_cara, 'harian'); // bawaan: per hari bila lengkap
+  assert.equal(kurvaAwal(t, { cara_naik: 'tahap' }).kolom.kurva_ppm_semai, 300);
+  assert.ok(kurvaAwal({ ...t, ppm_semai: null }, { cara_naik: 'tahap' }).errors.cara_naik);
+  assert.ok(kurvaAwal({ ppm_semai: 300, ppm_peremajaan: 700, ppm_pendewasaan: 1100 }, { cara_naik: 'harian' }).errors.cara_naik);
+  assert.ok(kurvaAwal(t, { cara_naik: 'bebas' }).errors.cara_naik);
 });

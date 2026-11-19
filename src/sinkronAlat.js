@@ -18,12 +18,14 @@ const { parameterKonfigurasi } = require('./konfigurasiAlat');
 
 const angka = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
-/** Kode alat yang terpasang di meja, atau null. */
-async function alatDiMeja(idMeja) {
+/** Alat yang terpasang di meja ({kode, nama} — nama untuk pesan ke petani), atau null. */
+async function alatMeja(idMeja) {
   if (idMeja == null) return null;
-  return (await one(
-    "SELECT kode FROM perangkat WHERE id_meja = $1 AND peran IN ('gabungan', 'aktuator') AND aktif ORDER BY kode LIMIT 1", [idMeja]))?.kode ?? null;
+  const a = await one(
+    "SELECT kode, nama FROM perangkat WHERE id_meja = $1 AND peran IN ('gabungan', 'aktuator') AND aktif ORDER BY kode LIMIT 1", [idMeja]);
+  return a ? { kode: a.kode, nama: a.nama || a.kode } : null;
 }
+const alatDiMeja = async (idMeja) => (await alatMeja(idMeja))?.kode ?? null;
 
 async function mejaBatchTerbaru() {
   const batch = await P.batchPerMeja();
@@ -60,8 +62,9 @@ async function adaPerintahTertunda(kode, tipe) {
  * @returns {Promise<{dikirim: boolean, ket: string, kurang?: string[]}>}
  */
 async function mulaiSemaiAlat(idMeja, userId = null) {
-  const kode = await alatDiMeja(idMeja);
-  if (!kode) return { dikirim: false, ket: 'Meja ini belum dipasangi alat (Master Data → Meja Tanaman → Alat terpasang).' };
+  const alat = await alatMeja(idMeja);
+  if (!alat) return { dikirim: false, ket: 'Meja ini belum dipasangi alat (Master Data → Meja Tanaman → Alat terpasang).' };
+  const { kode } = alat;
   const t = await targetUntukMeja(idMeja);
   if (!t) return { dikirim: false, ket: 'Belum ada target nutrisi / rentang pH (isi resep di Master Data → Jenis Tanaman).' };
   if (await adaPerintahTertunda(kode, ['KONFIGURASI', 'SEMAI'])) return { dikirim: false, ket: 'Perintah sebelumnya masih menunggu alat.' };
@@ -75,7 +78,7 @@ async function mulaiSemaiAlat(idMeja, userId = null) {
     tipe: 'SEMAI', parameter: { target_ppm: t.target_ppm, ph_min: t.ph_min, ph_max: t.ph_max },
     sumber, userId, perangkat: kode, ttlDetik: 600, alasan: 'Mulai semai dari Kebun Saya',
   });
-  const ket = `KONFIGURASI + SEMAI ${t.target_ppm} ppm · pH ${t.ph_min}–${t.ph_max} dikirim ke ${kode}, menunggu alat`
+  const ket = `konfigurasi meja + mulai semai ${t.target_ppm} ppm · pH ${t.ph_min}–${t.ph_max} dikirim ke ${alat.nama}, menunggu jawaban alat`
     + (kurang.length ? ` (belum ada di web: ${kurang.join(', ')}; alat memakai nilai tersimpannya)` : '');
   return { dikirim: true, ket, kurang };
 }
@@ -122,4 +125,4 @@ function diam(fn, ...arg) {
   });
 }
 
-module.exports = { alatDiMeja, mejaBatchTerbaru, targetUntukMeja, mulaiSemaiAlat, sinkronKeAlat, panenBilaKosong, diam };
+module.exports = { alatDiMeja, alatMeja, mejaBatchTerbaru, targetUntukMeja, mulaiSemaiAlat, sinkronKeAlat, panenBilaKosong, diam };
