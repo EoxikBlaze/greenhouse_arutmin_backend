@@ -265,9 +265,6 @@ router.get('/state', async (_req, res, next) => {
         : online ? 'online' : 'offline';
 
     const arsipUjiLab = arsipKal.filter((a) => a.catatan && a.catatan.startsWith('[UJI LAB'));
-    const takaranBuah = Object.fromEntries((await q(
-      "SELECT param, nilai FROM konfigurasi_dosis WHERE param IN ('ppm_per_ml_buah','ph_up_ml_per_ph_l_buah','ph_down_ml_per_ph_l_buah')", []))
-      .map((r) => [r.param, r.nilai === null ? null : Number(r.nilai)]));
 
     // izin otomasi yang DILAPORKAN alat (bukti saklar sampai ke alat); null = alat belum melapor
     const { keadaanAlat: keadaanV6 } = await require('../keadaanAlat').bacaKeadaanAlat(null);
@@ -322,11 +319,6 @@ router.get('/state', async (_req, res, next) => {
       },
       arsip_kalibrasi: arsipKal,
       arsip_ujilab: arsipUjiLab,
-      takaran_buah: {
-        ppm_per_ml: takaranBuah.ppm_per_ml_buah ?? null,
-        ph_up_ml: takaranBuah.ph_up_ml_per_ph_l_buah ?? null,
-        ph_down_ml: takaranBuah.ph_down_ml_per_ph_l_buah ?? null,
-      },
     });
   } catch (e) { next(e); }
 });
@@ -444,10 +436,9 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
   try {
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const jenis = String(b.aksi || b.jenis || 'ec').toLowerCase();
-    // takaran dipisah per kategori: 'tanaman' (bawaan, kunci lama) dan 'buah' (kunci berakhiran _buah)
-    const buah = String(b.kategori || 'tanaman').toLowerCase() === 'buah';
-    const sfx = buah ? '_buah' : '';
-    const tag = buah ? ' BUAH' : '';
+    // satu takaran per alat (firmware v6 hanya punya satu ppm_per_ml_ab dan satu ph_ml_per_100l)
+    const sfx = '';
+    const tag = '';
 
     if (jenis === 'ec') {
       const hasil = hitungUjiLabEc(b);

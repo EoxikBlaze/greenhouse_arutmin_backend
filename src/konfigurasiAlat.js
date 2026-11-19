@@ -25,6 +25,20 @@ const LABEL = {
   laju_ph_up: 'laju pompa pH up (Kalibrasi)', laju_ph_down: 'laju pompa pH down (Kalibrasi)',
 };
 
+/** Perubahan pH yang dituju tiap suntikan pH (firmware: satu nilai mL per 100 L untuk naik dan turun). */
+const LANGKAH_PH = 0.3;
+const RENTANG_PH_ML_100L = [0.1, 50];
+
+/**
+ * mL per suntikan per 100 L dari Uji Lab pH (mL per 1 pH per 1 L). Naik dan turun beda → pakai yang lebih kecil (lebih aman).
+ * @returns {number|null}
+ */
+function phMlPer100L(up, down) {
+  const ada = [up, down].map((v) => (v == null ? null : Number(v))).filter((v) => Number.isFinite(v) && v > 0);
+  if (!ada.length) return null;
+  return Math.round(Math.min(...ada) * 100 * LANGKAH_PH * 100) / 100;
+}
+
 const angka = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
 /**
@@ -52,9 +66,12 @@ function konfigurasiMeja(m) {
 async function parameterKonfigurasi(idMeja) {
   const meja = await one('SELECT * FROM mejas WHERE id_meja = $1', [idMeja]);
   const k = konfigurasiMeja(meja);
-  const kal = await q('SELECT param, nilai FROM konfigurasi_dosis WHERE param = ANY($1::text[])', [Object.keys(DARI_KALIBRASI)]);
+  const kal = await q('SELECT param, nilai, sumber FROM konfigurasi_dosis WHERE param = ANY($1::text[])', [[...Object.keys(DARI_KALIBRASI), 'ph_up_ml_per_ph_l', 'ph_down_ml_per_ph_l']]);
   const nilai = { volume_l: k.volume_l, monitoring_menit: k.monitoring_menit, jeda_ab_dtk: k.jeda_ab_dtk };
-  for (const r of kal) if (angka(r.nilai) != null) nilai[DARI_KALIBRASI[r.param]] = angka(r.nilai);
+  for (const r of kal) if (angka(r.nilai) != null && DARI_KALIBRASI[r.param]) nilai[DARI_KALIBRASI[r.param]] = angka(r.nilai);
+  // hanya hasil Uji Lab yang disimpan web (sumber 'Aplikasi Web v4.1'); nilai awal bawaan migrasi (1,0 mL/pH/L) bukan hasil ukur
+  const hasilUjiLab = (param) => kal.find((r) => r.param === param && r.sumber === 'Aplikasi Web v4.1')?.nilai;
+  const phMl = phMlPer100L(hasilUjiLab('ph_up_ml_per_ph_l'), hasilUjiLab('ph_down_ml_per_ph_l'));
   const parameter = { id_meja: Number(idMeja) };
   const kurang = [];
   for (const [kunci, [min, max]] of Object.entries(RENTANG)) {
@@ -63,7 +80,12 @@ async function parameterKonfigurasi(idMeja) {
     if (v < min || v > max) { kurang.push(`${LABEL[kunci]}: ${v} di luar ${min}–${max}`); continue; }
     parameter[kunci] = kunci === 'volume_l' || kunci.endsWith('_menit') || kunci.endsWith('_dtk') ? Math.round(v) : v;
   }
+  // opsional: tanpa uji lab pH alat memakai bawaan firmware (2 mL per 100 L, maks 10 mL)
+  if (phMl != null) {
+    if (phMl >= RENTANG_PH_ML_100L[0] && phMl <= RENTANG_PH_ML_100L[1]) parameter.ph_ml_per_100l = phMl;
+    else kurang.push(`takaran pH dari Uji Lab: ${phMl} mL/100 L di luar ${RENTANG_PH_ML_100L.join('–')}; periksa hasil uji lab pH`);
+  }
   return { parameter, kurang };
 }
 
-module.exports = { konfigurasiMeja, parameterKonfigurasi, RENTANG };
+module.exports = { konfigurasiMeja, parameterKonfigurasi, phMlPer100L, LANGKAH_PH, RENTANG };
