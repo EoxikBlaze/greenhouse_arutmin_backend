@@ -348,7 +348,7 @@ async function wajibTandonDalamPita(c, s) {
       : ph == null || tds == null ? 'bacaan pH/TDS tidak lengkap'
         : bacaanMustahil({ ph, tds, suhuAir: m.waterTemp == null ? null : Number(m.waterTemp) })
           || (tds < pita.ec_min || tds > pita.ec_max || ph < pita.ph_min || ph > pita.ph_max ? `bacaan (pH ${ph}, TDS ${tds}) di luar pita target` : null);
-  if (masalah) throw new SiklusGalat(409, `Tandon belum memenuhi syarat mulai semai: ${masalah}.`, { kode: 'tandon_tidak_dalam_pita' });
+  if (masalah) throw new SiklusGalat(409, `Penampung Air belum memenuhi syarat mulai semai: ${masalah}.`, { kode: 'tandon_tidak_dalam_pita' });
 }
 
 /** Admin meminta konfirmasi peremajaan secara manual (hanya setelah H+4 tercapai). */
@@ -407,11 +407,11 @@ async function jawabKonfirmasi(idPermintaan, body, aktor, idem) {
       await wajibTandonDalamPita(c, s);
       const { konfirmasi_peremajaan_jam_ke: jamKe } = await wajibSiap({ timing_operasi: ['konfirmasi_peremajaan_jam_ke'] }, (t, pr) => c.query(t, pr));
       await ubahStatus(c, s, 'SEEDING', aktor, {
-        alasan: 'tandon siap, semai dimulai', data, idem, hash,
+        alasan: 'penampung air siap, semai dimulai', data, idem, hash,
         set: { semai_mulai_pada: { sql: 'now()', params: [] }, jadwal_konfirmasi_berikut: { sql: 'now() + make_interval(secs => ?::float8 * 3600)', params: [jamKe] } },
       });
     } else {
-      await ubahStatus(c, s, 'TANK_PREPARATION', aktor, { alasan: 'tandon belum siap', data, idem, hash });
+      await ubahStatus(c, s, 'TANK_PREPARATION', aktor, { alasan: 'penampung air belum siap', data, idem, hash });
     }
     return { id_siklus: Number(s.id) };
   });
@@ -596,7 +596,7 @@ async function jalankanPenjadwal() {
         if (p.jenis === 'REJUVENATION' && s.status === 'WAITING_REJUVENATION_CONFIRMATION') {
           await ubahStatus(c, s, 'SEEDING', SISTEM, { alasan: 'konfirmasi peremajaan tidak dijawab (kedaluwarsa)', data, set: { jadwal_konfirmasi_berikut: await jadwalUlang(c, s) } });
         } else if (p.jenis === 'TANK_READY' && s.status === 'WAITING_TANK_CONFIRMATION') {
-          await ubahStatus(c, s, 'TANK_PREPARATION', SISTEM, { alasan: 'konfirmasi tandon tidak dijawab (kedaluwarsa)', data });
+          await ubahStatus(c, s, 'TANK_PREPARATION', SISTEM, { alasan: 'konfirmasi penampung air tidak dijawab (kedaluwarsa)', data });
         }
         await notif(c, {
           jenis: 'konfirmasi_kedaluwarsa', severity: 'warning', judul: 'Konfirmasi terlewat',
@@ -636,7 +636,7 @@ async function jalankanPenjadwal() {
       AND NOT EXISTS (SELECT 1 FROM permintaan_konfirmasi k WHERE k.id_siklus = s.id AND k.status = 'PENDING') ORDER BY s.id`);
   if (tandon.length) {
     const p = await parameterKestabilan();
-    if (!p.siap) hasil.dilewati.push(`kestabilan tandon: ${p.belum.join(', ')} belum SIAP`);
+    if (!p.siap) hasil.dilewati.push(`kestabilan penampung air: ${p.belum.join(', ')} belum SIAP`);
     else {
       hasil.tandon_siap = 0;
       for (const r of tandon) {
@@ -652,10 +652,10 @@ async function jalankanPenjadwal() {
                VALUES ($1, 'TANK_READY', (SELECT count(*) + 1 FROM permintaan_konfirmasi WHERE id_siklus = $1 AND jenis = 'TANK_READY'),
                        CASE WHEN $2::float8 IS NULL THEN NULL ELSE now() + make_interval(secs => $2::float8 * 3600) END) RETURNING id`,
               [s.id, jam])).rows[0];
-            await ubahStatus(c, s, 'WAITING_TANK_CONFIRMATION', SISTEM, { alasan: 'tandon stabil dalam pita target', data: { id_permintaan: Number(k.id), konfirmasi: ev.konfirmasi } });
+            await ubahStatus(c, s, 'WAITING_TANK_CONFIRMATION', SISTEM, { alasan: 'penampung air stabil dalam pita target', data: { id_permintaan: Number(k.id), konfirmasi: ev.konfirmasi } });
             await notif(c, {
-              jenis: 'konfirmasi_tandon', judul: 'Konfirmasi tandon siap',
-              isi: `Siklus #${s.id}: tandon stabil di pita target. Konfirmasi untuk mulai semai.`,
+              jenis: 'konfirmasi_tandon', judul: 'Konfirmasi penampung air siap',
+              isi: `Siklus #${s.id}: penampung air stabil di pita target. Konfirmasi untuk mulai semai.`,
               tautan: { tipe: 'konfirmasi', id: Number(k.id), id_siklus: Number(s.id) }, dedup: `konfirmasi:${k.id}`,
             });
             hasil.tandon_siap += 1;

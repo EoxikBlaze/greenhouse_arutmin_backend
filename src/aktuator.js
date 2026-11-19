@@ -18,11 +18,15 @@ const BATAS_WAJIB = {
   BILAS: ['maks_ml_bilas_per_perintah'],
 };
 
-const TIPE = ['DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT', 'UJI_POMPA', 'KALIBRASI', 'BALIK_KALIBRASI', 'JADWAL'];
+const TIPE = [
+  'DOSIS', 'BILAS', 'SAMPLING', 'ISI_AIR', 'STOP', 'STOP_DARURAT',
+  'UJI_POMPA', 'KALIBRASI', 'BALIK_KALIBRASI', 'JADWAL',
+  'KAL_SENSOR', 'KONFIGURASI', 'SEMAI', 'TARGET', 'PANEN', 'PEMELIHARAAN', 'BUKA_KUNCI', 'OTOMASI', 'STATUS'
+];
 /** JADWAL = waktu operasi yang disimpan permanen di NVS ESP32 (bukan aktuasi). Rentang = batas keras firmware gabungan-0.7. */
 const JADWAL_RENTANG = { interval_sensor_detik: [5, 60], jeda_ab_detik: [60, 600], isi_air_maks_detik: [60, 600] };
 /** Nama pompa di firmware (NAMA_OUT). ISI_AIR sengaja tidak ada: punya perintah sendiri. */
-const POMPA_UJI = ['A', 'B', 'PH_UP', 'PH_DOWN'];
+const POMPA_UJI = ['A', 'B', 'PH_UP', 'PH_DOWN', 'ISI'];
 /** Batas firmware: UJI_POMPA menolak > 120 dtk; laju pompa 0–500 mL/dtk. */
 const UJI_POMPA_DETIK = [5, 120];
 const LAJU_KALIBRASI = ['laju_a', 'laju_b', 'laju_ph_up', 'laju_ph_down'];
@@ -179,7 +183,7 @@ function validasiPerintah(tipe, p, cfg) {
     if (!Number.isFinite(detik) || detik < UJI_POMPA_DETIK[0] || detik > UJI_POMPA_DETIK[1]) err.detik = [`detik harus ${UJI_POMPA_DETIK[0]}–${UJI_POMPA_DETIK[1]}.`];
     else out.detik = bulat1(detik);
   } else if (tipe === 'KALIBRASI') {
-    // Laju pompa dan tegangan pH. Faktor EC belum dikirim: titik server (µS/cm, dua titik) ≠ firmware (satu faktor TDS).
+    // Laju pompa, tegangan pH, dan faktor koreksi TDS/EC (disimpan di NVS ESP32).
     for (const k of LAJU_KALIBRASI) {
       if (body[k] === undefined) continue;
       const v = angka(body[k]);
@@ -193,7 +197,13 @@ function validasiPerintah(tipe, p, cfg) {
       if (!sah(v7) || !sah(v4) || Math.abs(v4 - v7) < 0.05) err.ph_v7 = ['ph_v7 dan ph_v4 wajib sepasang, 0–5 V, dan berselisih ≥ 0,05 V.'];
       else { out.ph_v7 = Math.round(v7 * 10000) / 10000; out.ph_v4 = Math.round(v4 * 10000) / 10000; }
     }
-    if (!Object.keys(out).length && !Object.keys(err).length) err.laju = [`isi minimal satu dari ${LAJU_KALIBRASI.join(', ')} atau pasangan ph_v7/ph_v4.`];
+    // EC/TDS: faktor pengali koreksi firmware (gabungan.ino menolak ≤ 0,01 atau > 20).
+    if (body.tds_faktor !== undefined) {
+      const fk = angka(body.tds_faktor);
+      if (!Number.isFinite(fk) || fk <= 0.01 || fk > 20) err.tds_faktor = ['tds_faktor harus > 0,01 dan ≤ 20.'];
+      else out.tds_faktor = Math.round(fk * 10000) / 10000;
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.laju = [`isi minimal satu dari ${LAJU_KALIBRASI.join(', ')}, pasangan ph_v7/ph_v4, atau tds_faktor.`];
   } else if (tipe === 'JADWAL') {
     for (const [k, [min, maks]] of Object.entries(JADWAL_RENTANG)) {
       if (body[k] === undefined) continue;
@@ -203,8 +213,80 @@ function validasiPerintah(tipe, p, cfg) {
     }
     if (!Object.keys(out).length && !Object.keys(err).length) err.jadwal = [`isi minimal satu dari ${Object.keys(JADWAL_RENTANG).join(', ')}.`];
   } else if (tipe === 'BALIK_KALIBRASI') {
-    if (body.sensor !== 'ph') err.sensor = ['sensor harus ph (EC belum tersambung ke alat).'];
-    else out.sensor = 'ph';
+    if (body.sensor !== 'ph' && body.sensor !== 'ec') err.sensor = ['sensor harus ph atau ec.'];
+    else out.sensor = body.sensor;
+  } else if (tipe === 'KAL_SENSOR') {
+    const sensor = String(body.sensor || '').toLowerCase();
+    if (sensor !== 'ph' && sensor !== 'ec') err.sensor = ['sensor harus ph atau ec.'];
+    else out.sensor = sensor;
+    const titik = angka(body.titik);
+    if (titik !== 1 && titik !== 2) err.titik = ['titik harus 1 atau 2.'];
+    else out.titik = titik;
+    const aksi = String(body.aksi || '').toUpperCase();
+    if (!['UKUR', 'SIMPAN', 'BATAL'].includes(aksi)) err.aksi = ['aksi harus UKUR, SIMPAN, atau BATAL.'];
+    else out.aksi = aksi;
+    if (body.acuan !== undefined) {
+      const acuan = angka(body.acuan);
+      if (!Number.isFinite(acuan) || acuan <= 0) err.acuan = ['acuan harus angka > 0.'];
+      else out.acuan = acuan;
+    }
+  } else if (tipe === 'KONFIGURASI') {
+    const params = [
+      'volume_l', 'monitoring_menit', 'jeda_ab_dtk', 'ppm_per_ml_ab',
+      'laju_a', 'laju_b', 'laju_ph_up', 'laju_ph_down',
+      'toleransi_bawah_ppm', 'toleransi_atas_ppm', 'persen_dosis', 'maks_ppm_sekali',
+      'ppm_min_dosing', 'ph_toleransi', 'ph_jeda_menit', 'ph_ml_per_100l', 'ph_ml_maks',
+      'maks_ab_hari', 'maks_ph_hari', 'maks_encer_hari', 'maks_isi_hari', 'timeout_isi_menit',
+      'pemeliharaan_maks_menit', 'telemetri_dtk', 'tz_menit', 'id_meja', 'ec_faktor'
+    ];
+    for (const p of params) {
+      if (body[p] !== undefined) {
+        const v = angka(body[p]);
+        if (!Number.isFinite(v)) err[p] = [`${p} harus berupa angka.`];
+        else out[p] = v;
+      }
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.konfigurasi = ['Minimal satu parameter konfigurasi harus diisi.'];
+  } else if (tipe === 'SEMAI') {
+    const tPpm = angka(body.target_ppm);
+    if (!Number.isFinite(tPpm) || tPpm <= 0) err.target_ppm = ['target_ppm wajib angka > 0.'];
+    else out.target_ppm = Math.round(tPpm);
+    const phMin = angka(body.ph_min);
+    if (!Number.isFinite(phMin) || phMin < 0 || phMin > 14) err.ph_min = ['ph_min wajib 0–14.'];
+    else out.ph_min = phMin;
+    const phMax = angka(body.ph_max);
+    if (!Number.isFinite(phMax) || phMax < 0 || phMax > 14 || phMax <= phMin) err.ph_max = ['ph_max wajib > ph_min dan 0–14.'];
+    else out.ph_max = phMax;
+  } else if (tipe === 'TARGET') {
+    if (body.target_ppm !== undefined) {
+      const tPpm = angka(body.target_ppm);
+      if (!Number.isFinite(tPpm) || tPpm <= 0) err.target_ppm = ['target_ppm wajib angka > 0.'];
+      else out.target_ppm = Math.round(tPpm);
+    }
+    if (body.ph_min !== undefined || body.ph_max !== undefined) {
+      const phMin = angka(body.ph_min);
+      const phMax = angka(body.ph_max);
+      if (!Number.isFinite(phMin) || phMin < 0 || phMin > 14) err.ph_min = ['ph_min wajib 0–14.'];
+      else out.ph_min = phMin;
+      if (!Number.isFinite(phMax) || phMax < 0 || phMax > 14 || (out.ph_min && phMax <= out.ph_min)) err.ph_max = ['ph_max wajib > ph_min dan 0–14.'];
+      else out.ph_max = phMax;
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.target = ['target_ppm atau pasangan ph_min/ph_max harus diisi.'];
+  } else if (tipe === 'PEMELIHARAAN') {
+    const aksi = String(body.aksi || '').toUpperCase();
+    if (aksi !== 'MULAI' && aksi !== 'SELESAI') err.aksi = ['aksi harus MULAI atau SELESAI.'];
+    else out.aksi = aksi;
+  } else if (tipe === 'OTOMASI') {
+    // izin otomasi per aktuator (saklar web): hanya kunci yang dikirim yang diubah
+    for (const k of ['nutrisi', 'ph', 'encer', 'isi']) {
+      if (body[k] === undefined) continue;
+      const v = body[k] === true || body[k] === 1 || body[k] === '1' ? 1 : body[k] === false || body[k] === 0 || body[k] === '0' ? 0 : null;
+      if (v === null) err[k] = [`${k} harus 0 atau 1.`];
+      else out[k] = v;
+    }
+    if (!Object.keys(out).length && !Object.keys(err).length) err.otomasi = ['minimal satu dari nutrisi, ph, encer, isi.'];
+  } else if (tipe === 'BUKA_KUNCI' || tipe === 'PANEN' || tipe === 'STATUS') {
+    // Perintah tanpa parameter wajib
   }
   if (Object.keys(err).length) throw new PerintahDitolak(422, 'Data tidak valid.', err);
   return out;
@@ -409,6 +491,25 @@ function kategoriVolume(hasil, mlDiperintahkan) {
   return { kategori: hasil.sumber_volume === 'ukur' ? 'UKUR' : 'ESTIMASI', ml: Math.min(nyata, mlDiperintahkan), diperintahkan: mlDiperintahkan };
 }
 
+/**
+ * Alat menyimpan satu titik kalibrasi pH/EC (KAL_SENSOR SIMPAN selesai): catat ke riwayat; setelah titik ke-2 tersimpan
+ * kalibrasi dianggap baru (jadwal "terlambat" mulai dihitung dari sini).
+ */
+async function catatKalibrasiAlat(row) {
+  const h = row.hasil || {};
+  const sensor = row.parameter.sensor;
+  const tegangan = Number.isFinite(Number(h.tegangan)) ? Number(h.tegangan) : null;
+  const acuan = Number.isFinite(Number(h.acuan)) ? Number(h.acuan) : null;
+  await q(
+    `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sesudah, lulus, konstanta_baru, catatan, oleh_label)
+     VALUES ($1, $2, $3, true, $4, $5, 'alat')`,
+    [sensor, acuan, tegangan, JSON.stringify({ titik: row.parameter.titik, tegangan, acuan }),
+      `Titik ${row.parameter.titik} tersimpan di alat (acuan ${acuan ?? '-'}, ${tegangan ?? '-'} V)`]);
+  if (Number(h.titik_terisi) >= 2) {
+    await q('UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = now(), hasil_ukur = coalesce($2, hasil_ukur) WHERE sensor = $1', [sensor, tegangan]);
+  }
+}
+
 async function laporHasil(perangkat, id, { status, hasil }) {
   if (!['selesai', 'gagal'].includes(status)) throw new PerintahDitolak(422, 'Data tidak valid.', { status: ['status harus selesai atau gagal.'] });
   const aman = hasil && typeof hasil === 'object' && !Array.isArray(hasil) && JSON.stringify(hasil).length <= 2000 ? hasil : null;
@@ -426,6 +527,7 @@ async function laporHasil(perangkat, id, { status, hasil }) {
     await q("UPDATE perintah_aktuator SET hasil = coalesce(hasil, '{}'::jsonb) || jsonb_build_object('volume_server', $2::jsonb) WHERE id = $1", [row.id, vol]);
     row.hasil = { ...(row.hasil || {}), volume_server: vol };
   }
+  if (row.tipe === 'KAL_SENSOR' && status === 'selesai' && row.parameter?.aksi === 'SIMPAN') await catatKalibrasiAlat(row);
   if (status === 'gagal' && row.tipe === 'DOSIS') {
     const { penampung, larutan } = row.parameter;
     const vol = row.hasil.volume_server;

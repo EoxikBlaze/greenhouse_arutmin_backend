@@ -26,24 +26,27 @@ async function batchPerMeja() {
   const rows = await q(`
     WITH b AS (
       SELECT s.id_meja, 'Semai' AS tahap, s.id_semai AS id, s.id_tanaman, s.tgl_awal_semai AS mulai,
-             s.tgl_awal_semai AS semai_mulai, NULL::date AS netpot_mulai, s.jumlah_benih AS jumlah
+             s.tgl_awal_semai AS semai_mulai, NULL::date AS netpot_mulai, s.jumlah_benih AS jumlah, s.id_semai AS id_semai
         FROM semais s WHERE s.status = 'proses' AND s.id_meja IS NOT NULL
       UNION ALL
       SELECT p.id_meja, 'Peremajaan', p.id_peremajaan, s.id_tanaman, p.tgl_awal_peremajaan, s.tgl_awal_semai,
-             p.tgl_awal_peremajaan, p.jumlah_masuk
+             p.tgl_awal_peremajaan, p.jumlah_masuk, s.id_semai
         FROM peremajaans p LEFT JOIN semais s ON s.id_semai = p.id_semai
        WHERE p.status = 'proses' AND p.id_meja IS NOT NULL
       UNION ALL
       SELECT d.id_meja, 'Pendewasaan', d.id_pendewasaan, s.id_tanaman, d.tgl_awal_pendewasaan, s.tgl_awal_semai,
-             coalesce(p.tgl_awal_peremajaan, d.tgl_awal_pendewasaan), d.jumlah_masuk
+             coalesce(p.tgl_awal_peremajaan, d.tgl_awal_pendewasaan), d.jumlah_masuk, s.id_semai
         FROM pendewasaans d LEFT JOIN peremajaans p ON p.id_peremajaan = d.id_peremajaan
         LEFT JOIN semais s ON s.id_semai = p.id_semai
        WHERE d.status = 'proses' AND d.id_meja IS NOT NULL
     )
     SELECT b.*, t.nama_tanaman, (current_date - coalesce(b.semai_mulai, b.mulai)) + 1 AS umur_hari,
            (current_date - b.netpot_mulai::date) AS hari_netpot, t.ppm_awal, t.ppm_target, t.hari_capai,
+           ks.kurva_ppm_awal, ks.kurva_ppm_target, ks.kurva_hari_capai, ks.kurva_mulai_hari, ks.kurva_mulai_ppm,
+           ks.kurva_cara, ks.kurva_ppm_semai, ks.kurva_ppm_peremajaan, ks.kurva_ppm_pendewasaan, ks.kurva_ph_min, ks.kurva_ph_max,
            count(*) OVER (PARTITION BY b.id_meja) AS jumlah_batch
       FROM b LEFT JOIN tanamen t ON t.id_tanaman = b.id_tanaman
+      LEFT JOIN semais ks ON ks.id_semai = b.id_semai
      ORDER BY b.id_meja, b.mulai DESC, b.id DESC`);
   const peta = new Map();
   for (const r of rows) if (!peta.has(String(r.id_meja))) peta.set(String(r.id_meja), r);
@@ -67,21 +70,87 @@ function pilihPreset(batch, presets) {
 }
 
 /**
- * Target ppm hari ini dari kurva naik harian tanaman, atau null bila tidak berlaku
+ * Kurva batch: salinan di semais.kurva_* (sejak 18 Nov 2026), atau kurva tanaman untuk batch lama tanpa salinan.
+ * mulai_hari/mulai_ppm = titik lanjut setelah kurva diubah di tengah jalan (0 / ppm_awal bila belum pernah).
+ */
+function kurvaBatch(batch) {
+  const salinan = angka(batch.kurva_ppm_awal) != null;
+  const awal = salinan ? angka(batch.kurva_ppm_awal) : angka(batch.ppm_awal);
+  const akhir = salinan ? angka(batch.kurva_ppm_target) : angka(batch.ppm_target);
+  const lama = salinan ? angka(batch.kurva_hari_capai) : angka(batch.hari_capai);
+  const mulaiHari = salinan ? angka(batch.kurva_mulai_hari) ?? 0 : 0;
+  const mulaiPpm = salinan ? angka(batch.kurva_mulai_ppm) ?? awal : awal;
+  if (awal == null || akhir == null || !lama) return null;
+  return { awal, akhir, lama, mulaiHari, mulaiPpm };
+}
+
+/**
+ * Target ppm hari ini dari kurva naik harian batch, atau null bila tidak berlaku
  * (Semai, tanaman tanpa pengaturan, atau tanggal pindah netpot tidak diketahui).
  * Hari ke-0 = tanggal mulai Peremajaan → ppm_awal; hari ≥ hari_capai → ppm_target (ditahan).
+ * Setelah kurva diubah pada hari m dengan target t_m: naik rata dari t_m ke target baru (tanpa lompatan).
  */
 function naikHarian(batch) {
   if (!batch || batch.tahap === 'Semai') return null;
-  const awal = angka(batch.ppm_awal); const akhir = angka(batch.ppm_target); const lama = angka(batch.hari_capai);
+  const k = kurvaBatch(batch);
   const hari = angka(batch.hari_netpot);
-  if (awal == null || akhir == null || !lama || hari == null) return null;
-  const h = Math.max(0, hari);
-  const perHari = (akhir - awal) / lama;
+  if (!k || hari == null) return null;
+  return ringkasKurva(k, Math.max(0, hari));
+}
+
+/** Satu titik kurva: hari ≥ capai → akhir; hari ≤ mulaiHari → mulaiPpm; di antaranya naik rata (tanpa lompatan). */
+function ringkasKurva(k, h) {
+  const sisa = Math.max(1, k.lama - k.mulaiHari);
+  const perHari = (k.akhir - k.mulaiPpm) / sisa;
+  const target = h >= k.lama ? k.akhir : h <= k.mulaiHari ? k.mulaiPpm : k.mulaiPpm + perHari * (h - k.mulaiHari);
   return {
-    hari: h, per_hari: Math.round(perHari * 10) / 10, ppm_awal: awal, ppm_target: akhir, hari_capai: lama,
-    target_hari_ini: Math.round(Math.min(akhir, awal + perHari * h)), tercapai: h >= lama,
+    hari: h, per_hari: Math.round(perHari * 10) / 10, ppm_awal: k.awal, ppm_target: k.akhir, hari_capai: k.lama,
+    diubah_hari: k.mulaiHari > 0 ? k.mulaiHari : null,
+    target_hari_ini: Math.round(target), tercapai: h >= k.lama,
   };
+}
+
+/** Hari sejak Mulai Semai (hari pertama = 0): hari_semai (dari /tanam) atau umur_hari − 1 (dari batchPerMeja). */
+function hariSemai(batch) {
+  const langsung = angka(batch?.hari_semai);
+  if (langsung != null) return Math.max(0, langsung);
+  const umur = angka(batch?.umur_hari);
+  return umur == null ? null : Math.max(0, umur - 1);
+}
+
+/**
+ * Kurva "per hari" batch baru: hari pertama Mulai Semai = ppm awal, tiap hari naik rata sampai ppm akhir di hari
+ * ke-`hari_capai` (dihitung sejak Mulai Semai), lalu ditahan sampai panen — di semua tahap, tanpa menunggu pindah netpot.
+ */
+function naikDariSemai(batch) {
+  if (!batch) return null;
+  const k = kurvaBatch(batch);
+  const h = hariSemai(batch);
+  if (!k || h == null) return null;
+  return ringkasKurva(k, h);
+}
+
+/**
+ * Target ppm & pH batch dari resep tanaman yang disalin ke batch (semais.kurva_*):
+ *  - per tahap : ppm tetap per tahap (kurva_ppm_semai / _peremajaan / _pendewasaan)
+ *  - per hari  : hari pertama Mulai Semai = ppm awal, lalu naik rata tiap hari (naikDariSemai)
+ *  - batch lama (tanpa kurva_cara): rumus lama sejak pindah netpot (naikHarian), supaya target tidak melompat
+ * null = batch tanpa resep → pemanggil memakai preset tahap.
+ */
+function targetBatch(batch) {
+  if (!batch) return null;
+  const ph = angka(batch.kurva_ph_min) != null && angka(batch.kurva_ph_max) != null
+    ? { ph_min: angka(batch.kurva_ph_min), ph_max: angka(batch.kurva_ph_max) } : { ph_min: null, ph_max: null };
+  if (batch.kurva_cara === 'tahap') {
+    const ppm = angka({ Semai: batch.kurva_ppm_semai, Peremajaan: batch.kurva_ppm_peremajaan, Pendewasaan: batch.kurva_ppm_pendewasaan }[batch.tahap]);
+    return ppm == null ? null : { ppm, ...ph, cara: 'tahap' };
+  }
+  if (batch.kurva_cara === 'harian') {
+    const ppm = naikDariSemai(batch)?.target_hari_ini ?? null;
+    return ppm == null ? null : { ppm, ...ph, cara: 'harian' };
+  }
+  const naik = naikHarian(batch); // batch lama (sebelum 19 Nov 2026): perilaku lama
+  return naik ? { ppm: naik.target_hari_ini, ...ph, cara: 'harian' } : null;
 }
 
 /** Titik tengah rentang (atau satu-satunya batas yang diisi). */
@@ -111,9 +180,9 @@ async function sinkronTarget() {
   for (const st of states) {
     const b = batch.get(String(st.id_meja));
     const p = pilihPreset(b, presets);
-    const naik = naikHarian(b);
-    const ec = naik ? naik.target_hari_ini : p ? tengah(p.ec_min_ppm, p.ec_max_ppm, 0) : null;
-    const ph = p ? tengah(p.ph_min, p.ph_max, 2) : null;
+    const t = targetBatch(b);
+    const ec = t ? t.ppm : p ? tengah(p.ec_min_ppm, p.ec_max_ppm, 0) : null;
+    const ph = t?.ph_min != null ? tengah(t.ph_min, t.ph_max, 2) : p ? tengah(p.ph_min, p.ph_max, 2) : null;
     const pid = p ? Number(p.id) : null;
     if (angka(st.target_ec_ppm) === ec && angka(st.target_ph) === ph && angka(st.target_preset_id) === pid) continue;
     await q(
@@ -127,7 +196,10 @@ async function sinkronTarget() {
 
 /** Sinkron tanpa menggagalkan pemanggil (dipakai setelah mulai/selesai tahap). */
 function sinkronDiam() {
-  sinkronTarget().catch((e) => console.error('[preset-dosing] gagal sinkron:', e.message));
+  sinkronTarget()
+    // target baru (naik harian / kurva diubah) diteruskan ke alat bila alat sedang SEMAI (require malas: hindari siklus modul)
+    .then(() => { const S = require('./sinkronAlat'); return S.diam(S.sinkronKeAlat); })
+    .catch((e) => console.error('[preset-dosing] gagal sinkron:', e.message));
 }
 
 /** Ringkasan per meja untuk halaman Dosing: batch berjalan, preset terpilih, target & mode. */
@@ -141,9 +213,10 @@ async function ringkasTarget() {
     const b = batch.get(String(m.id_meja)) || null;
     const p = pilihPreset(b, presets);
     const naik = naikHarian(b);
+    const tb = targetBatch(b);
     const catatan = m.target_mode === 'manual' ? 'Target diatur manual oleh admin.'
       : !b ? 'Tidak ada batch berjalan — dosing otomatis diam.'
-        : !p && !naik ? `Belum ada preset aktif untuk ${b.nama_tanaman || 'tanaman ini'} · ${b.tahap} (umur ${b.umur_hari} hari).`
+        : !p && !tb ? `Belum ada preset aktif untuk ${b.nama_tanaman || 'tanaman ini'} · ${b.tahap} (umur ${b.umur_hari} hari).`
           : null;
     return {
       ...m,
@@ -151,7 +224,8 @@ async function ringkasTarget() {
         jumlah: b.jumlah, jumlah_batch: Number(b.jumlah_batch) },
       preset_cocok: p && { id: p.id, id_tanaman: p.id_tanaman, tahap: p.tahap, ec_min_ppm: p.ec_min_ppm, ec_max_ppm: p.ec_max_ppm,
         ph_min: p.ph_min, ph_max: p.ph_max, umur_min_hari: p.umur_min_hari, umur_max_hari: p.umur_max_hari },
-      naik_harian: naik,
+      naik_harian: b?.kurva_cara === 'harian' ? naikDariSemai(b) : naik,
+      target_batch: tb,
       catatan,
     };
   });
@@ -164,4 +238,4 @@ function mulai() {
   if (timer.unref) timer.unref();
 }
 
-module.exports = { TAHAP, pilihPreset, tengah, naikHarian, sinkronTarget, sinkronDiam, ringkasTarget, mulai };
+module.exports = { TAHAP, pilihPreset, tengah, naikHarian, naikDariSemai, hariSemai, kurvaBatch, targetBatch, batchPerMeja, presetAktif, sinkronTarget, sinkronDiam, ringkasTarget, mulai };

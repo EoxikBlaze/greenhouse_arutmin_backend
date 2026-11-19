@@ -34,10 +34,16 @@ router.get('/status', pengelolaBaca, async (_req, res, next) => {
   try {
     const perangkat = await q(
       `SELECT kode, nama, peran, versi_firmware AS firmware, rssi, uptime_detik, estop_aktif, terakhir_terlihat,
+              float_bawah_rendah, float_atas_penuh, estop_fisik,
               (terakhir_terlihat IS NOT NULL AND terakhir_terlihat > now() - interval '120 seconds') AS online
          FROM perangkat WHERE peran IS NOT NULL ORDER BY kode`);
     const es = await A.statusEstop();
-    res.json({ estop: es.nilai === '1', estop_sejak: es.diubah_pada ?? null, perangkat });
+    const states = await q("SELECT kunci, nilai, diubah_pada FROM aktuator_state WHERE kunci LIKE 'v6_%'");
+    const v6 = {};
+    for (const s of states) {
+      v6[s.kunci.replace('v6_', '')] = s.nilai;
+    }
+    res.json({ estop: es.nilai === '1', estop_sejak: es.diubah_pada ?? null, perangkat, v6 });
   } catch (e) { next(e); }
 });
 
@@ -77,6 +83,67 @@ router.delete('/perintah/:id', adminSungguhan, async (req, res, next) => {
     if (!row) return json(res, 404, { message: 'Perintah tidak ditemukan atau sudah dikirim ke perangkat.' });
     res.json({ status: true });
   } catch (e) { next(e); }
+});
+
+router.post('/buka-kunci', adminSungguhan, async (req, res, next) => {
+  try {
+    const p = await A.buatPerintah({
+      tipe: 'BUKA_KUNCI', parameter: {}, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+      alasan: req.body?.alasan || 'Buka kunci alat dari antarmuka web',
+    });
+    res.status(201).json({ status: true, perintah: p, message: 'Perintah buka kunci dikirim ke alat.' });
+  } catch (e) { return galat(res, e) || next(e); }
+});
+
+router.post('/semai', adminSungguhan, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const p = await A.buatPerintah({
+      tipe: 'SEMAI', parameter: {
+        target_ppm: b.target_ppm, ph_min: b.ph_min, ph_max: b.ph_max
+      }, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+      alasan: b.alasan || 'Mulai mode semai hidroponik v6',
+    });
+    res.status(201).json({ status: true, perintah: p, message: 'Mode semai dikirim ke alat.' });
+  } catch (e) { return galat(res, e) || next(e); }
+});
+
+router.post('/panen', adminSungguhan, async (req, res, next) => {
+  try {
+    const p = await A.buatPerintah({
+      tipe: 'PANEN', parameter: {}, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+      alasan: req.body?.alasan || 'Selesai siklus panen',
+    });
+    res.status(201).json({ status: true, perintah: p, message: 'Perintah panen dikirim ke alat.' });
+  } catch (e) { return galat(res, e) || next(e); }
+});
+
+router.post('/konfigurasi', adminSungguhan, async (req, res, next) => {
+  try {
+    const p = await A.buatPerintah({
+      tipe: 'KONFIGURASI', parameter: req.body?.parameter || req.body, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+      alasan: req.body?.alasan || 'Pembaruan konfigurasi alat v6',
+    });
+    res.status(201).json({ status: true, perintah: p, message: 'Konfigurasi dikirim ke alat.' });
+  } catch (e) { return galat(res, e) || next(e); }
+});
+
+router.post('/target', adminSungguhan, async (req, res, next) => {
+  try {
+    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    const parameter = {};
+    if (b.target_ppm !== undefined) parameter.target_ppm = b.target_ppm;
+    if (b.ph_min !== undefined) parameter.ph_min = b.ph_min;
+    if (b.ph_max !== undefined) parameter.ph_max = b.ph_max;
+    const p = await A.buatPerintah({
+      tipe: 'TARGET', parameter, sumber: 'pengguna', userId: Number(req.user.sub) || null,
+      alasan: b.alasan || 'Pembaruan target nutrisi v6 dari web', ttlDetik: 300,
+    });
+    res.status(202).json({
+      status: true, antre: true, dikonfirmasi: false, id_perintah: p.id, perintah: p,
+      message: 'Perintah TARGET masuk antrean. Target di ESP32 belum berubah sampai alat mengonfirmasi.',
+    });
+  } catch (e) { return galat(res, e) || next(e); }
 });
 
 router.post('/estop', adminSungguhan, async (req, res, next) => {

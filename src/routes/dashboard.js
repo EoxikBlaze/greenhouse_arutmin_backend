@@ -8,6 +8,7 @@ const saklar = require('../saklar');
 
 const { statusEstop } = require('../aktuator');
 const { EKSEKUSI_DIIZINKAN } = require('../gerbangDosis');
+const { bacaKeadaanAlat } = require('../keadaanAlat');
 
 const router = express.Router();
 
@@ -48,7 +49,8 @@ router.get('/', async (req, res, next) => {
     if (req.user?.demo) {
       return res.json({
         page: 'dashboard',
-        iotStatus: { online: false, seconds_ago: null, diff_text: 'Mode Demo (Hanya Lihat)', last_seen: null },
+        iotStatus: { online: false, seconds_ago: null, diff_text: 'Mode Demo (Hanya Lihat)', last_seen: null, data_segar: false, data_seconds_ago: null },
+        keadaan_alat: null,
         total_tanaman: 0, total_meja: 0, total_siklus: 0,
         total_semai: 0, total_peremajaan: 0, total_pendewasaan: 0,
         total_panen: 0, total_panen_qty: 0,
@@ -90,18 +92,7 @@ router.get('/', async (req, res, next) => {
       one("SELECT count(*)::int AS n FROM pendewasaans WHERE status = 'proses'"),
     ]);
 
-    let iotStatus = { online: false, seconds_ago: null, diff_text: 'Belum pernah ada data', last_seen: null };
-    if (latest?.created_at) {
-      // updated_at = terakhir dikonfirmasi sensor (bacaan identik tidak menambah baris)
-      const dilihat = latest.updated_at || latest.created_at;
-      const secondsAgo = Math.round((Date.now() - new Date(dilihat).getTime()) / 1000);
-      iotStatus = {
-        online: secondsAgo <= 120,
-        seconds_ago: secondsAgo,
-        diff_text: `${secondsAgo} detik yang lalu`,
-        last_seen: dilihat,
-      };
-    }
+    const { iotStatus, keadaanAlat } = await bacaKeadaanAlat(latest);
 
     const recentPanen = await q(`
       SELECT p.*, tm.nama_tanaman
@@ -115,6 +106,7 @@ router.get('/', async (req, res, next) => {
     return {
       page: 'dashboard',
       iotStatus,
+      keadaan_alat: keadaanAlat,
       total_tanaman: tanaman.n, total_meja: meja.n, total_siklus: siklus.n,
       total_semai: semai.n, total_peremajaan: peremajaan.n, total_pendewasaan: pendewasaan.n,
       total_panen: panen.n, total_panen_qty: panenQty.n,

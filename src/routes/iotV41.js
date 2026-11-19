@@ -38,9 +38,61 @@ const {
 } = require('../iotV41');
 
 const router = express.Router();
+
+/** Baca status setup penampung — boleh dibaca semua peran login agar gerbang pasca-login seragam. */
+router.get('/setup-status', requireAuth, requireRole('all'), async (req, res, next) => {
+  try {
+    const rawId = req.query.id_meja;
+    const idMeja = rawId != null && /^[0-9]{1,12}$/.test(String(rawId))
+      ? Number(rawId)
+      : (await one('SELECT id_meja FROM mejas ORDER BY id_meja LIMIT 1'))?.id_meja ?? 1;
+    const row = await one(
+      'SELECT id_meja, setup_selesai, setup_selesai_pada, setup_progres, updated_at FROM penampung_states WHERE id_meja = $1',
+      [idMeja],
+    ).catch((e) => {
+      if (e && e.code === '42703') return null; // kolom belum dimigrasi
+      throw e;
+    });
+    return res.json({
+      id_meja: idMeja,
+      setup_selesai: Boolean(row?.setup_selesai),
+      setup_selesai_pada: row?.setup_selesai_pada ?? null,
+      setup_progres: row?.setup_progres && typeof row.setup_progres === 'object' ? row.setup_progres : {},
+      updated_at: row?.updated_at ?? null,
+      sumber: row ? 'penampung_states' : 'default',
+    });
+  } catch (e) { next(e); }
+});
+
 router.use(requireAuth, requireRole(['admin', 'demo']));
 
 const writeGuard = [requireRole(['admin']), demoGuard('iot_v41.write')];
+
+/** Simpan progres atau penyelesaian setup wizard penampung (admin only, lintas perangkat). */
+router.put('/setup-status', ...writeGuard, async (req, res, next) => {
+  try {
+    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    const idMeja = Number.isInteger(Number(b.id_meja)) && Number(b.id_meja) >= 1
+      ? Number(b.id_meja)
+      : (await one('SELECT id_meja FROM mejas ORDER BY id_meja LIMIT 1'))?.id_meja ?? 1;
+    const selesai = Boolean(b.setup_selesai);
+    const progres = b.setup_progres && typeof b.setup_progres === 'object' && !Array.isArray(b.setup_progres)
+      ? b.setup_progres
+      : {};
+    await q('INSERT INTO penampung_states (id_meja) VALUES ($1) ON CONFLICT (id_meja) DO NOTHING', [idMeja]);
+    const row = await one(
+      `UPDATE penampung_states
+          SET setup_selesai = $2,
+              setup_selesai_pada = CASE WHEN $2 THEN COALESCE(setup_selesai_pada, now()) ELSE setup_selesai_pada END,
+              setup_progres = $3::jsonb,
+              updated_at = now()
+        WHERE id_meja = $1
+        RETURNING id_meja, setup_selesai, setup_selesai_pada, setup_progres, updated_at`,
+      [idMeja, selesai, JSON.stringify(progres)],
+    );
+    return res.json({ status: true, ...row });
+  } catch (e) { next(e); }
+});
 
 /** Simpan atau perbarui satu baris parameter di konfigurasi_dosis / timing_operasi. */
 async function simpanParam(runner, tabel, param, nilai, satuan, keterangan) {
@@ -213,11 +265,11 @@ router.get('/state', async (_req, res, next) => {
         : online ? 'online' : 'offline';
 
     const arsipUjiLab = arsipKal.filter((a) => a.catatan && a.catatan.startsWith('[UJI LAB'));
-    const takaranBuah = Object.fromEntries((await q(
-      "SELECT param, nilai FROM konfigurasi_dosis WHERE param IN ('ppm_per_ml_buah','ph_up_ml_per_ph_l_buah','ph_down_ml_per_ph_l_buah')", []))
-      .map((r) => [r.param, r.nilai === null ? null : Number(r.nilai)]));
 
+    // izin otomasi yang DILAPORKAN alat (bukti saklar sampai ke alat); null = alat belum melapor
+    const { keadaanAlat: keadaanV6 } = await require('../keadaanAlat').bacaKeadaanAlat(null);
     res.json({
+      otomasi_alat: keadaanV6.otomasi,
       params_belum_diatur: _belum_diatur,
       // Bukti jadwal di NVS ESP32 = perintah JADWAL terakhir berstatus 'selesai' (laporan alat), bukan isi database.
       jadwal_alat: jadwalAlat ?? null,
@@ -267,11 +319,6 @@ router.get('/state', async (_req, res, next) => {
       },
       arsip_kalibrasi: arsipKal,
       arsip_ujilab: arsipUjiLab,
-      takaran_buah: {
-        ppm_per_ml: takaranBuah.ppm_per_ml_buah ?? null,
-        ph_up_ml: takaranBuah.ph_up_ml_per_ph_l_buah ?? null,
-        ph_down_ml: takaranBuah.ph_down_ml_per_ph_l_buah ?? null,
-      },
     });
   } catch (e) { next(e); }
 });
@@ -302,10 +349,16 @@ router.put('/saklar', ...writeGuard, async (req, res, next) => {
     await client.query('COMMIT');
 
     const params = await muatKonfigV41(q);
+    // saklar ke alat: alat berhenti/mulai menyalakan aktuator itu sendiri (firmware v6 perintah OTOMASI)
+    const S = require('../sinkronAlat');
+    const kirim = await S.diam(S.kirimOtomasi, uid);
     res.json({
       status: true,
-      message: 'Saklar tindakan dan mode pengisian air disimpan.',
+      message: kirim.dikirim
+        ? 'Saklar disimpan dan dikirim ke alat; tunggu alat menjawab.'
+        : 'Saklar disimpan di sistem, tetapi belum bisa dikirim ke alat (belum ada alat terdaftar / perintah sebelumnya masih menunggu).',
       data: params,
+      kirim_alat: { dikirim: Boolean(kirim.dikirim), ket: kirim.ket ?? null },
     });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
@@ -383,10 +436,9 @@ router.post('/ujilab', ...writeGuard, async (req, res, next) => {
   try {
     const b = req.body && typeof req.body === 'object' ? req.body : {};
     const jenis = String(b.aksi || b.jenis || 'ec').toLowerCase();
-    // takaran dipisah per kategori: 'tanaman' (bawaan, kunci lama) dan 'buah' (kunci berakhiran _buah)
-    const buah = String(b.kategori || 'tanaman').toLowerCase() === 'buah';
-    const sfx = buah ? '_buah' : '';
-    const tag = buah ? ' BUAH' : '';
+    // satu takaran per alat (firmware v6 hanya punya satu ppm_per_ml_ab dan satu ph_ml_per_100l)
+    const sfx = '';
+    const tag = '';
 
     if (jenis === 'ec') {
       const hasil = hitungUjiLabEc(b);
@@ -466,12 +518,18 @@ router.post('/pemeliharaan', ...writeGuard, async (req, res, next) => {
     await client.query('UPDATE penampung_states SET mode_pemeliharaan = $1, updated_at = CURRENT_TIMESTAMP', [aktif]);
     await simpanParam(run, 'konfigurasi_dosis', 'mode_pemeliharaan_v41', aktif ? 1 : 0, 'bool', 'Status mode pemeliharaan v4.1');
     await client.query('COMMIT');
+    const alat = await kirimKeAlat(req, {
+      tipe: 'PEMELIHARAAN',
+      parameter: { aksi: aktif ? 'MULAI' : 'SELESAI' },
+      alasan: aktif ? 'Aktifkan mode pemeliharaan dari web' : 'Matikan mode pemeliharaan dari web',
+    });
     return res.json({
       status: true,
       pemeliharaan: aktif,
+      id_perintah: alat.id,
       message: aktif
-        ? 'Mode pemeliharaan AKTIF: semua tindakan OFF dan hitungan harian dibekukan.'
-        : 'Mode pemeliharaan dimatikan. Alat menunggu tenang sebelum bertindak kembali.',
+        ? `Mode pemeliharaan disimpan di server; perintah PEMELIHARAAN (MULAI) ${alat.ket}.`
+        : `Mode pemeliharaan dimatikan di server; perintah PEMELIHARAAN (SELESAI) ${alat.ket}.`,
     });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
@@ -497,14 +555,49 @@ async function kirimKeAlat(req, perintah) {
  * Pagar: UJI_POMPA_DIIZINKAN=1 di .env, admin, mode pemeliharaan aktif, satu uji pada satu waktu, E-STOP menolak.
  * Balasan 202 = diantre, BUKAN pompa sudah jalan; hasil datang dari alat (GET /api/aktuator/perintah).
  */
+/** Riwayat lengkap kalibrasi pH, EC, dan laju pompa (terbaru dulu). */
+router.get('/riwayat-kalibrasi', async (_req, res, next) => {
+  try {
+    res.json(await q(
+      `SELECT id, sensor, dilakukan_pada, nilai_ref, bacaan_sebelum, bacaan_sesudah, lulus, konstanta_baru, catatan, oleh_label
+         FROM kalibrasi_log WHERE sensor = ANY($1::text[]) ORDER BY dilakukan_pada DESC, id DESC LIMIT 200`,
+      [['ph', 'ec', 'pulsa_peristaltik']]));
+  } catch (e) { next(e); }
+});
+
+/** Mode pemeliharaan aktif menurut alat (v6) atau penampung (lama). */
+async function pemeliharaanAktif() {
+  const { keadaanAlat } = await require('../keadaanAlat').bacaKeadaanAlat(null);
+  if (keadaanAlat.pemeliharaan === true) return true;
+  return (await q('SELECT 1 FROM penampung_states WHERE mode_pemeliharaan LIMIT 1', [])).length > 0;
+}
+
+/**
+ * Kalibrasi pH/EC firmware v6 (Kontrak MQTT: KAL_SENSOR). Alat mengukur tegangan probe sendiri (UKUR), lalu menyimpannya (SIMPAN)
+ * dengan acuan bawaan (pH 4,01 / 6,86; EC 1,413 / 12,88 mS/cm dengan kompensasi suhu). Titik 1 lalu titik 2.
+ * Balasan 202 = diantre; hasil (tegangan, acuan) datang dari alat lewat /api/aktuator/perintah.
+ */
+router.post('/kal-sensor', ...writeGuard, async (req, res, next) => {
+  try {
+    const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (String(b.aksi).toUpperCase() !== 'BATAL' && !(await pemeliharaanAktif())) {
+      return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan dulu sebelum kalibrasi sensor.' });
+    }
+    const alat = await kirimKeAlat(req, {
+      tipe: 'KAL_SENSOR', parameter: { sensor: b.sensor, titik: b.titik, aksi: b.aksi }, alasan: `Kalibrasi ${String(b.sensor).toUpperCase()} titik ${b.titik} ${String(b.aksi).toUpperCase()}`,
+    });
+    if (!alat.id) return json(res, 422, { message: alat.ket });
+    return res.status(202).json({ status: true, antre: true, dikonfirmasi: false, id_perintah: alat.id, message: `Perintah kalibrasi ${alat.ket}.` });
+  } catch (e) { next(e); }
+});
+
 router.post('/uji-pompa', ...writeGuard, async (req, res, next) => {
   try {
     if (!config.ujiPompaDiizinkan) {
       return json(res, 423, { kode: 'uji_pompa_dikunci', message: 'Uji pompa dari aplikasi dikunci. Admin server harus mengisi UJI_POMPA_DIIZINKAN=1 di .env lalu memulai ulang layanan.' });
     }
     const b = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const pemeliharaan = (await q('SELECT 1 FROM penampung_states WHERE mode_pemeliharaan LIMIT 1', [])).length > 0;
-    if (!pemeliharaan) return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan sebelum menyalakan pompa uji.' });
+    if (!(await pemeliharaanAktif())) return json(res, 409, { kode: 'bukan_pemeliharaan', message: 'Aktifkan mode pemeliharaan sebelum menyalakan pompa uji.' });
     const jalan = await q("SELECT id FROM perintah_aktuator WHERE tipe = 'UJI_POMPA' AND status IN ('menunggu','dikirim') LIMIT 1", []);
     if (jalan.length) return json(res, 409, { kode: 'uji_pompa_berjalan', message: 'Masih ada uji pompa yang belum selesai. Tunggu atau tekan STOP.' });
     let perintah;
@@ -586,31 +679,38 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
         'SELECT * FROM kalibrasi_log WHERE sensor = $1 AND konstanta_lama IS NOT NULL ORDER BY dilakukan_pada DESC, id DESC LIMIT 1',
         [sensor],
       )).rows[0];
-      if (!logTerakhir || !logTerakhir.konstanta_lama) {
-        await client.query('ROLLBACK');
-        return json(res, 404, { message: 'Belum ada kalibrasi sebelumnya yang dapat dipulihkan.' });
+      // Kalibrasi v6 (KAL_SENSOR) tersimpan di alat, bukan sebagai konstanta di server: alat yang punya cadangannya.
+      // Konstanta server hanya dipulihkan bila ada (kalibrasi lama); selebihnya perintah tetap dikirim ke alat.
+      if (logTerakhir?.konstanta_lama) {
+        await client.query(
+          'UPDATE kalibrasi_sensor SET konstanta = $2, terakhir_dikalibrasi = CURRENT_TIMESTAMP WHERE sensor = $1',
+          [sensor, logTerakhir.konstanta_lama],
+        );
       }
       await client.query(
-        'UPDATE kalibrasi_sensor SET konstanta = $2, terakhir_dikalibrasi = CURRENT_TIMESTAMP WHERE sensor = $1',
-        [sensor, logTerakhir.konstanta_lama],
-      );
-      await client.query(
         `INSERT INTO kalibrasi_log (sensor, konstanta_lama, konstanta_baru, lulus, catatan, oleh_user_id, oleh_label)
-         VALUES ($1, $2, $3, true, 'Balik ke kalibrasi sebelumnya (balik_kalibrasi)', $4, $5)`,
-        [sensor, baris?.konstanta ?? null, logTerakhir.konstanta_lama, Number(req.user.sub) || null, req.user.username || null],
+         VALUES ($1, $2, $3, true, 'Dikembalikan ke kalibrasi sebelumnya (balik_kalibrasi)', $4, $5)`,
+        [sensor, baris?.konstanta ?? null, logTerakhir?.konstanta_lama ?? null, Number(req.user.sub) || null, req.user.username || null],
       );
       await client.query('COMMIT');
       // Alat hanya menyimpan SATU nilai lama per sensor; balik kedua kali berturut-turut tidak mundur lebih jauh di alat.
-      const alat = sensor === 'ph'
-        ? await kirimKeAlat(req, { tipe: 'BALIK_KALIBRASI', parameter: { sensor: 'ph' }, alasan: 'Balik kalibrasi pH' })
-        : { id: null, ket: 'BELUM dikirim ke alat (kalibrasi EC belum tersambung)' };
+      const alat = await kirimKeAlat(req, {
+        tipe: 'BALIK_KALIBRASI',
+        parameter: { sensor },
+        alasan: `Balik kalibrasi ${sensor.toUpperCase()}`,
+      });
       return res.json({
         status: true,
         id_perintah: alat.id,
-        message: `Kalibrasi ${sensor.toUpperCase()} di server dikembalikan ke nilai sebelumnya; ${alat.ket}.`,
-        data: logTerakhir.konstanta_lama,
+        message: `Perintah mengembalikan kalibrasi ${sensor.toUpperCase()} ke nilai sebelumnya: ${alat.ket}.`,
+        data: logTerakhir?.konstanta_lama ?? null,
       });
     }
+
+    let konstantaBaru;
+    let pesanSimpan;
+    let paramAlat = null;
+    let alasanAlat = '';
 
     if (sensor === 'ec') {
       const baca1 = Number(b.baca1 ?? b.titik_1);
@@ -619,11 +719,21 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
         await client.query('ROLLBACK');
         return json(res, 422, { message: 'Kedua titik EC (1.413 µS/cm dan 12.880 µS/cm) wajib diisi.', errors: { baca1: ['Ambil titik 1.413 dan 12.880 µS/cm dulu.'] } });
       }
-      const faktor1 = Math.round((1413 / baca1) * 10000) / 10000;
-      const faktor2 = Math.round((12880 / baca2) * 10000) / 10000;
-      const faktorGabung = Math.round(((faktor1 + faktor2) / 2) * 10000) / 10000;
+      // Kalikan faktor koreksi lama karena bacaan alat (ec_us) sudah memakai TDS_FAKTOR_KOREKSI aktif di NVS.
       const konstantaLamaEc = baris?.konstanta || { TDS_FAKTOR_KOREKSI: 1.0, EC_TITIK_1413: 1413, EC_TITIK_12880: 12880 };
-      const konstantaBaru = { TDS_FAKTOR_KOREKSI: faktorGabung, EC_TITIK_1413: baca1, EC_TITIK_12880: baca2 };
+      const faktorLamaRaw = Number(konstantaLamaEc.TDS_FAKTOR_KOREKSI);
+      const faktorLama = Number.isFinite(faktorLamaRaw) && faktorLamaRaw > 0 ? faktorLamaRaw : 1.0;
+      const faktor1 = 1413 / baca1;
+      const faktor2 = 12880 / baca2;
+      const faktorGabung = Math.round(faktorLama * ((faktor1 + faktor2) / 2) * 10000) / 10000;
+      if (!Number.isFinite(faktorGabung) || faktorGabung <= 0.01 || faktorGabung > 20) {
+        await client.query('ROLLBACK');
+        return json(res, 422, {
+          message: `Faktor koreksi EC hasil (${faktorGabung}) di luar batas aman firmware (0,01–20). Periksa probe dan larutan standar.`,
+          errors: { baca1: ['Hasil rasio kalibrasi di luar rentang wajar.'] },
+        });
+      }
+      konstantaBaru = { TDS_FAKTOR_KOREKSI: faktorGabung, EC_TITIK_1413: baca1, EC_TITIK_12880: baca2 };
       if (baris) {
         await client.query(
           'UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = CURRENT_TIMESTAMP, hasil_ukur = $2, konstanta = $3 WHERE sensor = $1',
@@ -635,51 +745,52 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
          VALUES ('ec', 12880, $1, $2, true, $3, $4, $5, $6, $7)`,
         [baca1, baca2, konstantaLamaEc, konstantaBaru, `Kalibrasi EC 2-titik (1413 µS/cm -> ${baca1}; 12880 µS/cm -> ${baca2})`, Number(req.user.sub) || null, req.user.username || null],
       );
-      await client.query('COMMIT');
-      return res.status(201).json({
-        status: true,
-        message: 'Kalibrasi EC dua titik (1.413 & 12.880 µS/cm) disimpan di server. Belum dikirim ke alat (jalur perintah ke alat belum tersedia).',
-        data: konstantaBaru,
-      });
+      paramAlat = { tds_faktor: faktorGabung };
+      alasanAlat = 'Kalibrasi EC dua titik';
+      pesanSimpan = 'Kalibrasi EC dua titik (1.413 & 12.880 µS/cm) disimpan di server';
+    } else {
+      const baca4 = Number(b.baca4 ?? b.titik_1);
+      const baca7 = Number(b.baca7 ?? b.titik_2);
+      if (!Number.isFinite(baca4) || baca4 <= 0 || !Number.isFinite(baca7) || baca7 <= 0 || Math.abs(baca7 - baca4) < 0.3) {
+        await client.query('ROLLBACK');
+        return json(res, 422, { message: 'Kedua titik buffer pH (4,0 dan 7,0) wajib diambil dan berbeda minimal 0,3 pH.', errors: { baca4: ['Periksa bacaan buffer 4,0 dan 7,0.'] } });
+      }
+      const konstantaLamaPh = baris?.konstanta || { PH_BACA_4: 4.0, PH_BACA_7: 7.0, PH_SLOPE: 1.0 };
+      // Tegangan probe di tiap buffer (dari alat, kondisi.ph_volt). Tanpa keduanya, kalibrasi hanya tercatat di server.
+      const adaVolt = b.volt4 !== undefined && b.volt7 !== undefined;
+      const volt4 = Number(b.volt4); const volt7 = Number(b.volt7);
+      if (adaVolt && !(teganganPh.sah(volt4) && teganganPh.sah(volt7) && Math.abs(volt4 - volt7) >= 0.05)) {
+        await client.query('ROLLBACK');
+        return json(res, 422, { message: 'Tegangan probe pH tidak sah: kedua titik harus 0–5 V dan berselisih minimal 0,05 V. Periksa probe dan larutan buffer.', errors: { volt4: ['Periksa tegangan buffer 4,0 dan 7,0.'] } });
+      }
+      konstantaBaru = {
+        PH_BACA_4: baca4, PH_BACA_7: baca7, PH_SLOPE: Math.round(((7.0 - 4.0) / (baca7 - baca4)) * 10000) / 10000,
+        ...(adaVolt ? { PH_V4: volt4, PH_V7: volt7 } : {}),
+      };
+      if (baris) {
+        await client.query(
+          'UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = CURRENT_TIMESTAMP, hasil_ukur = $2, konstanta = coalesce(konstanta, \'{}\'::jsonb) || $3::jsonb WHERE sensor = $1',
+          ['ph', baca7, JSON.stringify(konstantaBaru)],
+        );
+      }
+      await client.query(
+        `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sebelum, bacaan_sesudah, lulus, konstanta_lama, konstanta_baru, catatan, oleh_user_id, oleh_label)
+         VALUES ('ph', 7.0, $1, $2, true, $3, $4, $5, $6, $7)`,
+        [baca4, baca7, konstantaLamaPh, konstantaBaru, `Kalibrasi pH 2-titik (buffer 4,0 -> ${baca4}; buffer 7,0 -> ${baca7})`, Number(req.user.sub) || null, req.user.username || null],
+      );
+      paramAlat = adaVolt ? { ph_v7: volt7, ph_v4: volt4 } : null;
+      alasanAlat = 'Kalibrasi pH dua titik';
+      pesanSimpan = 'Kalibrasi pH dua titik (buffer 4,0 & 7,0) disimpan di server';
     }
 
-    const baca4 = Number(b.baca4 ?? b.titik_1);
-    const baca7 = Number(b.baca7 ?? b.titik_2);
-    if (!Number.isFinite(baca4) || baca4 <= 0 || !Number.isFinite(baca7) || baca7 <= 0 || Math.abs(baca7 - baca4) < 0.3) {
-      await client.query('ROLLBACK');
-      return json(res, 422, { message: 'Kedua titik buffer pH (4,0 dan 7,0) wajib diambil dan berbeda minimal 0,3 pH.', errors: { baca4: ['Periksa bacaan buffer 4,0 dan 7,0.'] } });
-    }
-    const konstantaLamaPh = baris?.konstanta || { PH_BACA_4: 4.0, PH_BACA_7: 7.0, PH_SLOPE: 1.0 };
-    // Tegangan probe di tiap buffer (dari alat, kondisi.ph_volt). Tanpa keduanya, kalibrasi hanya tercatat di server.
-    const adaVolt = b.volt4 !== undefined && b.volt7 !== undefined;
-    const volt4 = Number(b.volt4); const volt7 = Number(b.volt7);
-    if (adaVolt && !(teganganPh.sah(volt4) && teganganPh.sah(volt7) && Math.abs(volt4 - volt7) >= 0.05)) {
-      await client.query('ROLLBACK');
-      return json(res, 422, { message: 'Tegangan probe pH tidak sah: kedua titik harus 0–5 V dan berselisih minimal 0,05 V. Periksa probe dan larutan buffer.', errors: { volt4: ['Periksa tegangan buffer 4,0 dan 7,0.'] } });
-    }
-    const konstantaBaru = {
-      PH_BACA_4: baca4, PH_BACA_7: baca7, PH_SLOPE: Math.round(((7.0 - 4.0) / (baca7 - baca4)) * 10000) / 10000,
-      ...(adaVolt ? { PH_V4: volt4, PH_V7: volt7 } : {}),
-    };
-    if (baris) {
-      await client.query(
-        'UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = CURRENT_TIMESTAMP, hasil_ukur = $2, konstanta = coalesce(konstanta, \'{}\'::jsonb) || $3::jsonb WHERE sensor = $1',
-        ['ph', baca7, JSON.stringify(konstantaBaru)],
-      );
-    }
-    await client.query(
-      `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sebelum, bacaan_sesudah, lulus, konstanta_lama, konstanta_baru, catatan, oleh_user_id, oleh_label)
-       VALUES ('ph', 7.0, $1, $2, true, $3, $4, $5, $6, $7)`,
-      [baca4, baca7, konstantaLamaPh, konstantaBaru, `Kalibrasi pH 2-titik (buffer 4,0 -> ${baca4}; buffer 7,0 -> ${baca7})`, Number(req.user.sub) || null, req.user.username || null],
-    );
     await client.query('COMMIT');
-    const alat = adaVolt
-      ? await kirimKeAlat(req, { tipe: 'KALIBRASI', parameter: { ph_v7: volt7, ph_v4: volt4 }, alasan: 'Kalibrasi pH dua titik' })
+    const alat = paramAlat
+      ? await kirimKeAlat(req, { tipe: 'KALIBRASI', parameter: paramAlat, alasan: alasanAlat })
       : { id: null, ket: 'BELUM dikirim ke alat (alat belum mengirim tegangan probe; perlu firmware yang mengirim ph_volt)' };
     return res.status(201).json({
       status: true,
       id_perintah: alat.id,
-      message: `Kalibrasi pH dua titik (buffer 4,0 & 7,0) disimpan di server; ${alat.ket}.`,
+      message: `${pesanSimpan}; ${alat.ket}.`,
       data: konstantaBaru,
     });
   } catch (e) {

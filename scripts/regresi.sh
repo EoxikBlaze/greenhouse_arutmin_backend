@@ -94,7 +94,7 @@ jalankan() { # $1 = indeks, $2 = berkas
   psqlAdmin -c "CREATE DATABASE $db TEMPLATE $TPL OWNER \"$APP_USER\"" >/dev/null
   local hasil
   hasil=$(DATABASE_URL="$(urlDb "$db")" JWT_SECRET="$(openssl rand -hex 32)" MQTT_URL="" \
-    SIKLUS_PENJADWAL=0 RATE_LIMIT_OFF=1 timeout 600 node --test "$2" >"$log" 2>&1; echo $?)
+    SIKLUS_PENJADWAL=0 AI_ANALISIS_HARIAN=0 RATE_LIMIT_OFF=1 timeout 600 node --test "$2" >"$log" 2>&1; echo $?)
   local lulus gagal lewat
   lulus=$(grep -E '^# pass ' "$log" | awk '{print $3}' | tail -1)
   gagal=$(grep -E '^# fail ' "$log" | awk '{print $3}' | tail -1)

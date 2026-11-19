@@ -17,7 +17,7 @@ const SANITY = { ph: [3, 9], tds: [50, 2500], suhuAir: [5, 45] };
 /** Batas FISIK: di luar ini bukan bacaan (pH tidak bisa 99, TDS tidak bisa negatif) — ditolak di pintu masuk, tidak disimpan.
  *  Sama dengan saringan firmware (deploy-pi/firmware/sensor/sensor.ino). SANITY di atas lebih sempit dan tetap DISIMPAN
  *  supaya probe lepas terlihat di riwayat dan menahan gerbang dosis. */
-const FISIK = { ph: [0, 14], tds: [0, 5000], waterTemp: [-50, 80], airTemp: [-50, 80], humidity: [0, 100] };
+const FISIK = { ph: [0, 14], tds: [0, 5000], ec: [0, 10], waterTemp: [-50, 80], airTemp: [-50, 80], humidity: [0, 100] };
 
 /** Bacaan mustahil → teks sebab; wajar → null. Nilai yang tidak dikirim (null) tidak diperiksa. */
 function bacaanMustahil({ ph, tds, suhuAir }) {

@@ -502,3 +502,23 @@ test('unit & HTTP: model menjawab bahasa Inggris → dideteksi dan ditolak dari 
   assert.ok(!res.body.jawaban.includes('current water temperature'));
   assert.ok(!res.body.jawaban.includes('degrees'));
 });
+
+test('unit & HTTP: keluaran basa-basi kosong ("Tentu, saya akan membantu...") diganti ringkasan data', async () => {
+  assert.equal(guard.apakahBasaBasiKosong('Tentu, saya akan membantu menjawab dengan solusi terbaik dan patut diikuti tindakan praktik lapangan.'), true);
+  assert.equal(guard.apakahBasaBasiKosong('Tentu, kondisi pH air saat ini 6,2 masih berada dalam batas aman.'), false);
+
+  mock.state.balas = 'Tentu, saya akan membantu menjawab dengan solusi terbaik dan patut diikuti tindakan praktik lapangan.';
+  const res = await kirim(334, 'Bagaimana kondisi pH sekarang?');
+  assert.equal(res.body.sumber, 'heuristik');
+  assert.equal(res.body.fallback_karena, 'basa_basi');
+  assert.match(res.body.jawaban, /Ringkasan data kebun terkini/);
+});
+
+test('deteksiNiat mengenali niat cepat non-pH (alert, batch semai, suhu air) sambil tetap menjaga pH ke LLM', () => {
+  const n = (s) => diag.deteksiNiat(guard.normalisasi(s));
+  assert.equal(n('ada peringatan atau alert gak hari ini?'), 'alert');
+  assert.equal(n('berapa jumlah benih yang sedang disemai sekarang?'), 'tahap');
+  assert.equal(n('berapa suhu air sekarang?'), 'sensor');
+  assert.equal(n('apakah tanaman melon saya aman hari ini?'), 'diagnosa');
+  assert.equal(n('Bagaimana kondisi pH sekarang?'), null);
+});

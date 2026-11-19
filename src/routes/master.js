@@ -1,12 +1,61 @@
 'use strict';
 /** Master data: meja, tanaman (jenis), siklus (+csv), ambang — path 1:1 resource Laravel. */
 const express = require('express');
-const { q } = require('../db');
+const { q, one } = require('../db');
+const { konfigurasiMeja } = require('../konfigurasiAlat');
 const { demoGuard, requireAuth, requireRole } = require('../auth');
 const { crudRouter } = require('./_crud');
 
 const router = express.Router();
 const guard = [requireAuth, requireRole(['admin', 'demo'])];
+
+/**
+ * Konfigurasi alat per meja (yang dikirim KONFIGURASI saat Mulai Semai) + alat yang terpasang.
+ * GET /meja/konfigurasi-alat → { data: [{ id_meja, volume_l, monitoring_menit, jeda_ab_dtk, otomatis, alat }], alat: [...] }
+ */
+router.get('/meja/konfigurasi-alat', ...guard, async (_req, res, next) => {
+  try {
+    const [meja, alat] = await Promise.all([
+      q('SELECT * FROM mejas ORDER BY id_meja'),
+      q(`SELECT kode, nama, id_meja, (terakhir_terlihat > now() - interval '120 seconds') AS online
+           FROM perangkat WHERE peran IN ('gabungan', 'aktuator') ORDER BY kode`),
+    ]);
+    res.json({
+      data: meja.map((m) => {
+        const a = alat.find((x) => String(x.id_meja) === String(m.id_meja));
+        return { id_meja: m.id_meja, ...konfigurasiMeja(m), alat: a?.kode ?? null, alat_nama: a ? a.nama || a.kode : null };
+      }),
+      alat,
+    });
+  } catch (e) { next(e); }
+});
+
+/**
+ * Pasang / lepas alat di meja (perangkat.id_meja) dan, opsional, ganti nama tampilannya (perangkat.nama).
+ * Satu alat hanya di satu meja; satu meja satu alat. Kode alat (login MQTT, topik garap/<kode>/…) tidak pernah diubah.
+ */
+router.put('/meja/:id/alat', ...guard, demoGuard('meja.alat'), async (req, res, next) => {
+  try {
+    if (!/^\d{1,18}$/.test(req.params.id)) return res.status(404).json({ message: 'Data tidak ditemukan.' });
+    const kode = req.body?.kode ?? null;
+    if (kode !== null && (typeof kode !== 'string' || !kode.trim())) {
+      return res.status(422).json({ message: 'Data tidak valid.', errors: { kode: ['Pilih alat atau kosongkan.'] } });
+    }
+    if (!(await one('SELECT 1 AS x FROM mejas WHERE id_meja = $1', [req.params.id]))) return res.status(404).json({ message: 'Data tidak ditemukan.' });
+    if (kode && !(await one("SELECT 1 AS x FROM perangkat WHERE kode = $1 AND peran IN ('gabungan','aktuator')", [kode]))) {
+      return res.status(422).json({ message: 'Data tidak valid.', errors: { kode: ['Alat tidak dikenal.'] } });
+    }
+    const nama = req.body?.nama;
+    if (nama !== undefined && nama !== null && (typeof nama !== 'string' || nama.trim().length > 100)) {
+      return res.status(422).json({ message: 'Data tidak valid.', errors: { nama: ['Nama alat maksimal 100 karakter.'] } });
+    }
+    await q('UPDATE perangkat SET id_meja = NULL, updated_at = now() WHERE id_meja = $1 AND ($2::text IS NULL OR kode <> $2)', [req.params.id, kode]);
+    if (kode) await q('UPDATE perangkat SET id_meja = $1, updated_at = now() WHERE kode = $2', [req.params.id, kode]);
+    if (kode && typeof nama === 'string' && nama.trim()) await q('UPDATE perangkat SET nama = $1 WHERE kode = $2', [nama.trim(), kode]);
+    req.audit = { aksi: 'update', tabel: 'perangkat', row_id: kode ?? String(req.params.id), after: { id_meja: kode ? Number(req.params.id) : null } };
+    res.json({ status: true, message: kode ? `Alat ${kode} dipasang di meja ini.` : 'Alat dilepas dari meja ini.' });
+  } catch (e) { next(e); }
+});
 
 router.use('/meja', ...guard,
   demoGuard('meja.store'),
@@ -22,6 +71,7 @@ router.use('/meja', ...guard,
       'meja', 'jumlah_lubang',
       'jenis_talang', 'kapasitas_penampung_l', 'jumlah_talang', 'lubang_per_talang',
       'panjang_talang_m', 'laju_per_talang_lpm', 'kenaikan_air_cm',
+      'monitoring_menit', 'jeda_ab_dtk', // kosong = dihitung otomatis (src/konfigurasiAlat.js)
     ],
     // Kolom baca-saja: ikut GET (baris berjumlah 13 kolom = 1 PK + 9 tulis + 3 waktu)
     // tetapi tetap ditolak/divalidasi sebagai kolom di luar whitelist saat POST/PUT.
@@ -31,7 +81,13 @@ router.use('/meja', ...guard,
 
 router.use('/tanaman', ...guard,
   demoGuard('tanaman.store'),
-  crudRouter({ table: 'tanamen', pk: 'id_tanaman', columns: ['nama_tanaman', 'id_meja'], name: 'tanaman', orderBy: 'id_tanaman' }));
+  crudRouter({
+    table: 'tanamen', pk: 'id_tanaman',
+    // dua resep (per hari & per siklus) + rentang pH; cara yang dipakai dipilih saat Mulai Semai lalu disalin ke batch
+    columns: ['nama_tanaman', 'id_meja', 'ppm_awal', 'ppm_target', 'hari_capai',
+      'ppm_semai', 'ppm_peremajaan', 'ppm_pendewasaan', 'ph_min', 'ph_max'],
+    name: 'tanaman', orderBy: 'id_tanaman',
+  }));
 
 // CSV SEBELUM route /siklus/:id (kontrak Laravel: 'siklus/csv' di depan resource)
 router.get('/siklus/csv', ...guard, async (_req, res, next) => {

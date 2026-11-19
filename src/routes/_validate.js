@@ -181,6 +181,22 @@ const TABLE_SPECS = {
     panjang_talang_m: { tipe: 'number', min: 0, max: 99.99 },        // numeric(4,2)
     laju_per_talang_lpm: { tipe: 'number', min: 0, max: 999.99 },    // numeric(5,2)
     kenaikan_air_cm: { tipe: 'integer', min: 0 },                    // DEFAULT 40 di DB (dipasang lewat DEFAULT, bukan Zod)
+    // migrasi 2026-11-19_01 — rentang firmware v6 (Kontrak §6.4); null = dihitung otomatis
+    monitoring_menit: { tipe: 'integer', min: 5, max: 720, nullable: true },
+    jeda_ab_dtk: { tipe: 'integer', min: 10, max: 900, nullable: true },
+  },
+  // Jenis tanaman: resep per hari (2026-10-27) & per siklus + pH (2026-11-19_01). Aturan antar-kolom
+  // (awal ≤ target, resep diisi lengkap atau kosong semua, selisih pH ≥ 0,2) dijaga CHECK DB → 422.
+  tanamen: {
+    nama_tanaman: { tipe: 'string', requiredCreate: true, minLen: 1, maxLen: 50 },
+    ppm_awal: { tipe: 'integer', min: 50, max: 2500, nullable: true },
+    ppm_target: { tipe: 'integer', min: 50, max: 2500, nullable: true },
+    hari_capai: { tipe: 'integer', min: 1, max: 365, nullable: true },
+    ppm_semai: { tipe: 'integer', min: 50, max: 2500, nullable: true },
+    ppm_peremajaan: { tipe: 'integer', min: 50, max: 2500, nullable: true },
+    ppm_pendewasaan: { tipe: 'integer', min: 50, max: 2500, nullable: true },
+    ph_min: { tipe: 'number', min: 4, max: 8.5, nullable: true },
+    ph_max: { tipe: 'number', min: 4, max: 8.5, nullable: true },
   },
   sensor_thresholds: {
     // Daftar nilai tertutup sesuai docs/DB_SCHEMA.md (feed ESP32).

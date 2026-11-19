@@ -28,6 +28,8 @@ router.put('/:kode', requireRole(['admin']), demoGuard('saklar.ubah'), async (re
       before: { aktif: r.sebelum.aktif }, after: { aktif: r.sesudah.aktif },
       meta: { dari: r.sebelum.aktif ? 'ON' : 'OFF', ke: r.sesudah.aktif ? 'ON' : 'OFF' },
     };
+    const S = require('../sinkronAlat');
+    await S.diam(S.kirimOtomasi, Number(req.user.sub) || null);
     return json(res, 200, { status: true, message: `Saklar ${r.sesudah.nama} ${r.sesudah.aktif ? 'ON' : 'OFF'}.`, data: await saklar.daftar() });
   } catch (e) { return next(e); }
 });

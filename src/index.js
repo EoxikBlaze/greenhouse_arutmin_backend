@@ -212,6 +212,8 @@ app.use('/user', ...adminDemo, user);
 // supaya rute tak dikenal tetap 404 JSON. requireRole(['admin']) meneruskan
 // token demo (kontrak requireRole) → halaman /audit diizinkan untuk admin+demo,
 // sedangkan token petani tetap 403 PetaniGuard.
+// Catatan Aktivitas (linimasa gabungan) di bawah /audit-logs/aktivitas: awalan /audit-logs sudah diteruskan nginx di Pi.
+app.use('/audit-logs/aktivitas', requireAuth, requireRole(['admin']), require('./routes/aktivitas'));
 app.use('/audit-logs', requireAuth, requireRole(['admin']), auditLogs);
 // Guard role sudah ada di dalam modul master/tahap (per sub-router) — tanpa
 // wrapper di sini agar rute tak dikenal tetap 404 JSON (bukan 401).
@@ -345,10 +347,14 @@ loadColumnLengths()
     startServers(); require('./presetDosing').mulai();
     // penjadwal konfirmasi siklus budidaya: default MATI (SIKLUS_PENJADWAL=1), tanpa aktuator
     require('./siklusBudidaya').mulaiPenjadwal().catch((e) => console.error('[SIKLUS] gagal mulai:', e.message));
+    // analisis AI harian 07.00 WIB (hanya baca + simpan laporan/notifikasi); AI_ANALISIS_HARIAN=0 mematikan
+    require('./penjadwalAnalisisHarian').mulai().catch((e) => console.error('[ANALISIS HARIAN] gagal mulai:', e.message));
     // Hangatkan model AI lokal di RAM saat boot awal agar selalu standby & respon instan (AI_WARMUP=1 di .env)
     if (process.env.AI_WARMUP === '1') {
       require('./routes/ai').hangatkanModel();
     }
+    // penilai peringatan tiap 30 dtk (Kontrak MQTT v2.0 §9: web yang menilai); PERINGATAN_OTOMATIS=0 mematikan
+    require('./peringatan').mulai();
     if (config.mqttUrl) {
       require('./mqttJembatan').mulai({ url: config.mqttUrl, username: config.mqttUser || undefined, password: config.mqttPass || undefined });
     }
