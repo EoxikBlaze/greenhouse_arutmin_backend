@@ -24,10 +24,10 @@ const pembulatan = (v, d = 2) => (v == null ? null : Math.round(Number(v) * 10 *
 
 async function laporanBatch(r) {
   const baris = await q(
-    `SELECT s.id_semai, t.nama_tanaman AS tanaman, m.meja, s.tgl_awal_semai AS mulai, s.status,
+    `SELECT s.id_semai, t.nama_tanaman AS tanaman, m.meja, s.tgl_awal_semai::text AS mulai, s.status,
             s.jumlah_benih, s.benih_berhasil, s.benih_gagal,
-            per.tgl_awal_peremajaan AS peremajaan, de.tgl_awal_pendewasaan AS pendewasaan,
-            pa.tgl_panen AS panen, pa.panen_berhasil, pa.panen_gagal,
+            per.tgl_awal_peremajaan::text AS peremajaan, de.tgl_awal_pendewasaan::text AS pendewasaan,
+            pa.tgl_panen::text AS panen, pa.panen_berhasil, pa.panen_gagal,
             (coalesce(pa.tgl_panen::date, current_date) - s.tgl_awal_semai::date) AS hari,
             st.n_baca, st.ppm_rata, st.ppm_min, st.ppm_maks, st.ph_rata, st.ph_min, st.ph_maks,
             dk.ab, dk.ph, dk.encer, dk.isi, pr.peringatan
@@ -76,7 +76,7 @@ async function laporanSensor(r) {
   const b = (k) => [Number(amb[k]?.min ?? -1e9), Number(amb[k]?.max ?? 1e9)];
   const [phA, phB] = b('ph'); const [tdA, tdB] = b('tds'); const [tmA, tmB] = b('waterTemp');
   const baris = await q(
-    `SELECT (created_at AT TIME ZONE 'UTC')::date AS hari, count(*)::int AS n_baca,
+    `SELECT (created_at AT TIME ZONE 'UTC')::date::text AS hari, count(*)::int AS n_baca,
             avg(ph) AS ph_rata, min(ph) AS ph_min, max(ph) AS ph_maks,
             avg(tds) AS ppm_rata, min(tds) AS ppm_min, max(tds) AS ppm_maks,
             avg("waterTemp") AS suhu_air_rata, min("waterTemp") AS suhu_air_min, max("waterTemp") AS suhu_air_maks,
@@ -108,7 +108,7 @@ async function laporanSensor(r) {
 
 async function laporanDosing(r) {
   const baris = await q(
-    `SELECT (terjadi_pada AT TIME ZONE 'UTC')::date AS hari,
+    `SELECT (terjadi_pada AT TIME ZONE 'UTC')::date::text AS hari,
             count(*) FILTER (WHERE jenis = 'AB')::int AS ab, count(*) FILTER (WHERE jenis = 'PH')::int AS ph,
             count(*) FILTER (WHERE jenis = 'ENCER')::int AS encer, count(*) FILTER (WHERE jenis = 'ISI')::int AS isi,
             count(*)::int AS total
