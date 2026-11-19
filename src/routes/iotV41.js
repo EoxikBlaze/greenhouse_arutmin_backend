@@ -564,6 +564,16 @@ async function kirimKeAlat(req, perintah) {
  * Pagar: UJI_POMPA_DIIZINKAN=1 di .env, admin, mode pemeliharaan aktif, satu uji pada satu waktu, E-STOP menolak.
  * Balasan 202 = diantre, BUKAN pompa sudah jalan; hasil datang dari alat (GET /api/aktuator/perintah).
  */
+/** Riwayat lengkap kalibrasi pH, EC, dan laju pompa (terbaru dulu). */
+router.get('/riwayat-kalibrasi', async (_req, res, next) => {
+  try {
+    res.json(await q(
+      `SELECT id, sensor, dilakukan_pada, nilai_ref, bacaan_sebelum, bacaan_sesudah, lulus, konstanta_baru, catatan, oleh_label
+         FROM kalibrasi_log WHERE sensor = ANY($1::text[]) ORDER BY dilakukan_pada DESC, id DESC LIMIT 200`,
+      [['ph', 'ec', 'pulsa_peristaltik']]));
+  } catch (e) { next(e); }
+});
+
 /** Mode pemeliharaan aktif menurut alat (v6) atau penampung (lama). */
 async function pemeliharaanAktif() {
   const { keadaanAlat } = await require('../keadaanAlat').bacaKeadaanAlat(null);
@@ -678,18 +688,18 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
         'SELECT * FROM kalibrasi_log WHERE sensor = $1 AND konstanta_lama IS NOT NULL ORDER BY dilakukan_pada DESC, id DESC LIMIT 1',
         [sensor],
       )).rows[0];
-      if (!logTerakhir || !logTerakhir.konstanta_lama) {
-        await client.query('ROLLBACK');
-        return json(res, 404, { message: 'Belum ada kalibrasi sebelumnya yang dapat dipulihkan.' });
+      // Kalibrasi v6 (KAL_SENSOR) tersimpan di alat, bukan sebagai konstanta di server: alat yang punya cadangannya.
+      // Konstanta server hanya dipulihkan bila ada (kalibrasi lama); selebihnya perintah tetap dikirim ke alat.
+      if (logTerakhir?.konstanta_lama) {
+        await client.query(
+          'UPDATE kalibrasi_sensor SET konstanta = $2, terakhir_dikalibrasi = CURRENT_TIMESTAMP WHERE sensor = $1',
+          [sensor, logTerakhir.konstanta_lama],
+        );
       }
       await client.query(
-        'UPDATE kalibrasi_sensor SET konstanta = $2, terakhir_dikalibrasi = CURRENT_TIMESTAMP WHERE sensor = $1',
-        [sensor, logTerakhir.konstanta_lama],
-      );
-      await client.query(
         `INSERT INTO kalibrasi_log (sensor, konstanta_lama, konstanta_baru, lulus, catatan, oleh_user_id, oleh_label)
-         VALUES ($1, $2, $3, true, 'Balik ke kalibrasi sebelumnya (balik_kalibrasi)', $4, $5)`,
-        [sensor, baris?.konstanta ?? null, logTerakhir.konstanta_lama, Number(req.user.sub) || null, req.user.username || null],
+         VALUES ($1, $2, $3, true, 'Dikembalikan ke kalibrasi sebelumnya (balik_kalibrasi)', $4, $5)`,
+        [sensor, baris?.konstanta ?? null, logTerakhir?.konstanta_lama ?? null, Number(req.user.sub) || null, req.user.username || null],
       );
       await client.query('COMMIT');
       // Alat hanya menyimpan SATU nilai lama per sensor; balik kedua kali berturut-turut tidak mundur lebih jauh di alat.
@@ -701,8 +711,8 @@ router.post('/kalibrasi-dua-titik', ...writeGuard, async (req, res, next) => {
       return res.json({
         status: true,
         id_perintah: alat.id,
-        message: `Kalibrasi ${sensor.toUpperCase()} di server dikembalikan ke nilai sebelumnya; ${alat.ket}.`,
-        data: logTerakhir.konstanta_lama,
+        message: `Perintah mengembalikan kalibrasi ${sensor.toUpperCase()} ke nilai sebelumnya: ${alat.ket}.`,
+        data: logTerakhir?.konstanta_lama ?? null,
       });
     }
 

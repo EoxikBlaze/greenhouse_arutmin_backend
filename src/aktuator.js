@@ -501,9 +501,10 @@ async function catatKalibrasiAlat(row) {
   const tegangan = Number.isFinite(Number(h.tegangan)) ? Number(h.tegangan) : null;
   const acuan = Number.isFinite(Number(h.acuan)) ? Number(h.acuan) : null;
   await q(
-    `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sesudah, lulus, catatan, oleh_label)
-     VALUES ($1, $2, $3, true, $4, 'alat')`,
-    [sensor, acuan, tegangan, `[KAL_SENSOR] titik ${row.parameter.titik} tersimpan di alat (acuan ${acuan ?? '-'}, ${tegangan ?? '-'} V)`]);
+    `INSERT INTO kalibrasi_log (sensor, nilai_ref, bacaan_sesudah, lulus, konstanta_baru, catatan, oleh_label)
+     VALUES ($1, $2, $3, true, $4, $5, 'alat')`,
+    [sensor, acuan, tegangan, JSON.stringify({ titik: row.parameter.titik, tegangan, acuan }),
+      `Titik ${row.parameter.titik} tersimpan di alat (acuan ${acuan ?? '-'}, ${tegangan ?? '-'} V)`]);
   if (Number(h.titik_terisi) >= 2) {
     await q('UPDATE kalibrasi_sensor SET terakhir_dikalibrasi = now(), hasil_ukur = coalesce($2, hasil_ukur) WHERE sensor = $1', [sensor, tegangan]);
   }
