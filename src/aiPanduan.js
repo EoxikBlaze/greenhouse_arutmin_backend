@@ -184,7 +184,7 @@ const TEKS = {
     'Urutan lengkap cara input data di aplikasi GARAP dari awal untuk petani & pengelola:',
     '1. Input Jenis Tanaman & Siklus: Masuk ke menu Jenis Tanaman untuk mendaftarkan varietas melon, lalu atur lama hari tiap tahap (Semai, Peremajaan, Pendewasaan).',
     '2. Input Meja & Penampung: Buka menu Pengaturan Alat / Master Meja untuk mendaftarkan nomor meja hidroponik dan penampung air nutrisi yang terhubung ke sensor.',
-    '3. Input Ambang Sensor & Target Nutrisi: Buka menu Ambang Sensor untuk mengatur batas aman pH (5,8–6,5), PPM nutrisi, dan suhu air, serta buka menu Dosing untuk mengisi target nutrisi per tahap.',
+    '3. Input Ambang Sensor & Target Nutrisi: Buka menu Ambang Sensor untuk mengatur batas aman pH (5,8–6,5), PPM nutrisi, dan suhu air, serta buka Master Data → Jenis Tanaman untuk mengisi resep nutrisi (naik per hari dan per siklus) dan rentang pH. Cara naik dipilih saat Mulai Semai di Kebun Saya.',
     '4. Input Batch Tanam Baru (Mulai Menanam): Buka menu Kebun Saya (ikon tanaman di navigasi bawah), klik tombol "Mulai Semai Baru", pilih tanaman, tanggal semai, dan jumlah benih, lalu klik Simpan.',
     '5. Input Pindah Tahap & Panen: Saat umur melon bertambah dan muncul tanda "Siap Pindah", klik tombol pindah tahap (dari Semai ke Peremajaan, lalu ke Pendewasaan), dan catat hasil panen di menu Panen serta Uji Lab.',
   ].join('\n'),
@@ -230,7 +230,7 @@ const TEKS = {
     '2. Pada layar Login GARAP, masukkan Nama pengguna dan Kata sandi, centang "Ingatkan saya" bila perlu, lalu klik "Masuk ke Dashboard" (atau coba pratinjau baca-saja dengan akun Demo).',
     '3. Pembagian Peran Login:',
     '   • Petani: memantau Dashboard, Telemetri & Sensor, Peringatan, CCTV, Asisten AI, Kebun Saya, dan Akun Saya.',
-    '   • Admin: akses penuh seluruh menu termasuk Saklar, Target Nutrisi/Dosing, Kalibrasi, Uji Lab, Pengaturan Alat, dan Siklus Tanam.',
+    '   • Admin: akses penuh seluruh menu termasuk Saklar, Kalibrasi, Uji Lab, Pengaturan Alat, dan Siklus Tanam.',
     '   • Demo: hanya melihat seluruh halaman dalam mode baca-saja (perubahan ditolak server).',
   ].join('\n'),
 
@@ -388,11 +388,6 @@ const GAMBAR = {
   ],
   nutrisi_melon: [
     {
-      url: '/panduan/dosing.png',
-      judul: 'Pengaturan Target Nutrisi & Kenaikan Harian',
-      kenapa: 'Petani melihat target PPM dan menaikkan dosis AB Mix harian sesuai fase tanaman.',
-    },
-    {
       url: '/panduan/sensor.png',
       judul: 'Pantauan Telemetri TDS & pH Realtime',
       kenapa: 'Melihat bacaan sensor nutrisi saat ini di penampung air greenhouse.',
@@ -478,11 +473,6 @@ const GAMBAR = {
       judul: 'Langkah 3: Formulir Mulai Semai Baru (Kebun Saya)',
       kenapa: 'Klik tombol "+ Mulai Semai Baru" untuk mendaftarkan benih melon hasil perendaman bawang merah & kecambah.',
     },
-    {
-      url: '/panduan/dosing.png',
-      judul: 'Langkah 4: Pengaturan Target Nutrisi & Kenaikan Harian',
-      kenapa: 'Mengatur target kenaikan PPM nutrisi harian agar pupuk AB Mix bertambah stabil sesuai umur tanaman.',
-    },
   ],
   fitur: [
     {
@@ -540,13 +530,6 @@ const GAMBAR = {
       url: '/panduan/tanam.png',
       judul: 'Menu Kebun Saya — Pencatatan Panen',
       kenapa: 'Petani mencatat jumlah buah melon yang dipanen beserta hasil timbangan bobot dan rasa manis (brix).',
-    },
-  ],
-  dosing: [
-    {
-      url: '/panduan/dosing.png',
-      judul: 'Menu Parameter & Keamanan (/parameter)',
-      kenapa: 'Menampilkan parameter penting, batas peringatan dari Ambang Sensor, status E-STOP/RESET, serta pengaturan dosis & jadwal alat.',
     },
   ],
   saklar: [
@@ -636,11 +619,6 @@ const GAMBAR = {
       url: '/panduan/hp-tanam.png',
       judul: 'Langkah 3: Kebun Saya & Tombol Mulai Semai Baru',
       kenapa: 'Memantau umur melon tiap batch atau mendaftarkan semai baru hasil rendam bawang merah + kain hitam.',
-    },
-    {
-      url: '/panduan/dosing.png',
-      judul: 'Langkah 4: Target Nutrisi AB Mix & Kurva Naik Harian',
-      kenapa: 'Admin memantau target PPM per meja/penampung sesuai umur pertumbuhan melon.',
     },
   ],
 };
