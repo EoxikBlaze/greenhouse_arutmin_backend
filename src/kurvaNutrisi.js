@@ -7,7 +7,7 @@
  *   (tidak ada lompatan; hitungan hari semai → panen tidak berubah).
  */
 const { one } = require('./db');
-const { naikHarian, kurvaBatch } = require('./presetDosing');
+const { naikHarian, naikDariSemai, hariSemai, kurvaBatch } = require('./presetDosing');
 
 /** Batas kenaikan per hari: alat maksimal menaikkan 150 ppm per dosing (Firmware v6 §7.3, maks_ppm_sekali). */
 const MAKS_NAIK_PER_HARI = 150;
@@ -130,22 +130,23 @@ function rencanaUbah(batch, isian) {
   const capai = nilai.hari_capai ?? lama?.lama ?? null;
   if (target == null || capai == null) return { errors: { kurva: ['Isi ppm target dan hari capai.'] } };
 
-  const sudahNetpot = batch.tahap !== 'Semai' && batch.hari_netpot != null;
-  if (!sudahNetpot) {
+  // Hari dihitung sejak Mulai Semai. Hari pertama (h = 0): kurva diganti seluruhnya; sesudahnya lanjut dari target hari ini.
+  const h = hariSemai(batch) ?? 0;
+  if (h === 0) {
     const awal = nilai.ppm_awal ?? lama?.awal ?? null;
-    if (awal == null) return { errors: { ppm_awal: ['Isi ppm awal (ppm saat pindah netpot).'] } };
+    if (awal == null) return { errors: { ppm_awal: ['Isi ppm awal (ppm di hari pertama semai).'] } };
     if (awal > target) return { errors: { ppm_target: ['ppm target harus ≥ ppm awal.'] } };
     return {
-      kolom: { kurva_ppm_awal: awal, kurva_ppm_target: target, kurva_hari_capai: capai, kurva_mulai_hari: 0, kurva_mulai_ppm: awal, ...ph },
+      kolom: { kurva_cara: 'harian', kurva_ppm_awal: awal, kurva_ppm_target: target, kurva_hari_capai: capai, kurva_mulai_hari: 0, kurva_mulai_ppm: awal, ...ph },
       peringatan: null, target_hari_ini: null,
     };
   }
 
-  const h = Math.max(0, Number(batch.hari_netpot));
-  const kini = naikHarian(batch)?.target_hari_ini ?? lama?.awal ?? null;
+  // batch lama (rumus sejak pindah netpot) ikut dialihkan ke hitungan sejak Mulai Semai dengan melanjutkan dari target hari ini
+  const kini = (batch.kurva_cara === 'harian' ? naikDariSemai(batch) : naikHarian(batch))?.target_hari_ini ?? lama?.awal ?? null;
   if (kini == null) return { errors: { kurva: ['Target hari ini tidak diketahui; isi kurva tanaman dulu.'] } };
   if (capai <= h) {
-    return { errors: { hari_capai: [`Hari capai harus lebih dari ${h} (hari sejak pindah netpot sekarang).`] } };
+    return { errors: { hari_capai: [`Hari capai harus lebih dari ${h} (hari ke-${h} sejak mulai semai sekarang).`] } };
   }
   const perHari = (target - kini) / (capai - h);
   if (perHari > MAKS_NAIK_PER_HARI) {
@@ -153,7 +154,7 @@ function rencanaUbah(batch, isian) {
   }
   return {
     kolom: {
-      kurva_ppm_awal: lama?.awal ?? kini, kurva_ppm_target: target, kurva_hari_capai: capai,
+      kurva_cara: 'harian', kurva_ppm_awal: lama?.awal ?? kini, kurva_ppm_target: target, kurva_hari_capai: capai,
       kurva_mulai_hari: h, kurva_mulai_ppm: kini, ...ph,
     },
     peringatan: target < kini
@@ -163,7 +164,7 @@ function rencanaUbah(batch, isian) {
   };
 }
 
-/** Batch (akar = id_semai) beserta tahap berjalan dan hari sejak pindah netpot. */
+/** Batch (akar = id_semai) beserta tahap berjalan, hari sejak Mulai Semai, dan hari sejak pindah netpot. */
 async function bacaBatch(idSemai) {
   return one(`
     SELECT s.id_semai, s.status AS status_semai, s.id_meja, s.kurva_ppm_awal, s.kurva_ppm_target, s.kurva_hari_capai,
@@ -171,6 +172,7 @@ async function bacaBatch(idSemai) {
            s.kurva_ppm_pendewasaan, s.kurva_ph_min, s.kurva_ph_max, t.ppm_awal, t.ppm_target, t.hari_capai,
            CASE WHEN d.status = 'proses' THEN 'Pendewasaan' WHEN p.status = 'proses' THEN 'Peremajaan'
                 WHEN s.status = 'proses' THEN 'Semai' ELSE NULL END AS tahap,
+           current_date - s.tgl_awal_semai::date AS hari_semai,
            current_date - coalesce(p.tgl_awal_peremajaan, d.tgl_awal_pendewasaan)::date AS hari_netpot
       FROM semais s LEFT JOIN tanamen t ON t.id_tanaman = s.id_tanaman
       LEFT JOIN LATERAL (SELECT * FROM peremajaans x WHERE x.id_semai = s.id_semai ORDER BY x.id_peremajaan DESC LIMIT 1) p ON true

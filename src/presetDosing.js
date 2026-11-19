@@ -95,7 +95,11 @@ function naikHarian(batch) {
   const k = kurvaBatch(batch);
   const hari = angka(batch.hari_netpot);
   if (!k || hari == null) return null;
-  const h = Math.max(0, hari);
+  return ringkasKurva(k, Math.max(0, hari));
+}
+
+/** Satu titik kurva: hari ≥ capai → akhir; hari ≤ mulaiHari → mulaiPpm; di antaranya naik rata (tanpa lompatan). */
+function ringkasKurva(k, h) {
   const sisa = Math.max(1, k.lama - k.mulaiHari);
   const perHari = (k.akhir - k.mulaiPpm) / sisa;
   const target = h >= k.lama ? k.akhir : h <= k.mulaiHari ? k.mulaiPpm : k.mulaiPpm + perHari * (h - k.mulaiHari);
@@ -106,11 +110,32 @@ function naikHarian(batch) {
   };
 }
 
+/** Hari sejak Mulai Semai (hari pertama = 0): hari_semai (dari /tanam) atau umur_hari − 1 (dari batchPerMeja). */
+function hariSemai(batch) {
+  const langsung = angka(batch?.hari_semai);
+  if (langsung != null) return Math.max(0, langsung);
+  const umur = angka(batch?.umur_hari);
+  return umur == null ? null : Math.max(0, umur - 1);
+}
+
+/**
+ * Kurva "per hari" batch baru: hari pertama Mulai Semai = ppm awal, tiap hari naik rata sampai ppm akhir di hari
+ * ke-`hari_capai` (dihitung sejak Mulai Semai), lalu ditahan sampai panen — di semua tahap, tanpa menunggu pindah netpot.
+ */
+function naikDariSemai(batch) {
+  if (!batch) return null;
+  const k = kurvaBatch(batch);
+  const h = hariSemai(batch);
+  if (!k || h == null) return null;
+  return ringkasKurva(k, h);
+}
+
 /**
  * Target ppm & pH batch dari resep tanaman yang disalin ke batch (semais.kurva_*):
  *  - per tahap : ppm tetap per tahap (kurva_ppm_semai / _peremajaan / _pendewasaan)
- *  - per hari  : saat Semai = ppm awal; sejak pindah netpot naik rata (naikHarian)
- * null = batch tanpa resep (batch lama) → pemanggil memakai preset tahap.
+ *  - per hari  : hari pertama Mulai Semai = ppm awal, lalu naik rata tiap hari (naikDariSemai)
+ *  - batch lama (tanpa kurva_cara): rumus lama sejak pindah netpot (naikHarian), supaya target tidak melompat
+ * null = batch tanpa resep → pemanggil memakai preset tahap.
  */
 function targetBatch(batch) {
   if (!batch) return null;
@@ -121,7 +146,7 @@ function targetBatch(batch) {
     return ppm == null ? null : { ppm, ...ph, cara: 'tahap' };
   }
   if (batch.kurva_cara === 'harian') {
-    const ppm = batch.tahap === 'Semai' ? angka(batch.kurva_ppm_awal) : naikHarian(batch)?.target_hari_ini ?? null;
+    const ppm = naikDariSemai(batch)?.target_hari_ini ?? null;
     return ppm == null ? null : { ppm, ...ph, cara: 'harian' };
   }
   const naik = naikHarian(batch); // batch lama (sebelum 19 Nov 2026): perilaku lama
@@ -199,7 +224,7 @@ async function ringkasTarget() {
         jumlah: b.jumlah, jumlah_batch: Number(b.jumlah_batch) },
       preset_cocok: p && { id: p.id, id_tanaman: p.id_tanaman, tahap: p.tahap, ec_min_ppm: p.ec_min_ppm, ec_max_ppm: p.ec_max_ppm,
         ph_min: p.ph_min, ph_max: p.ph_max, umur_min_hari: p.umur_min_hari, umur_max_hari: p.umur_max_hari },
-      naik_harian: naik,
+      naik_harian: b?.kurva_cara === 'harian' ? naikDariSemai(b) : naik,
       target_batch: tb,
       catatan,
     };
@@ -213,4 +238,4 @@ function mulai() {
   if (timer.unref) timer.unref();
 }
 
-module.exports = { TAHAP, pilihPreset, tengah, naikHarian, kurvaBatch, targetBatch, batchPerMeja, presetAktif, sinkronTarget, sinkronDiam, ringkasTarget, mulai };
+module.exports = { TAHAP, pilihPreset, tengah, naikHarian, naikDariSemai, hariSemai, kurvaBatch, targetBatch, batchPerMeja, presetAktif, sinkronTarget, sinkronDiam, ringkasTarget, mulai };

@@ -7,7 +7,7 @@ const { idValid, notFound } = require('./_id');
 const { halaman } = require('./_halaman');
 const { fkErrors, FK_TARGETS } = require('./_crud');
 const { isDateString } = require('./_validate');
-const { sinkronDiam, sinkronTarget, naikHarian, targetBatch } = require('../presetDosing');
+const { sinkronDiam, sinkronTarget, naikHarian, naikDariSemai, targetBatch } = require('../presetDosing');
 const S = require('../sinkronAlat');
 const K = require('../kurvaNutrisi');
 
@@ -84,7 +84,7 @@ const TAHAP = {
 
 // durasi (hari) tahap $tipe untuk tanaman t.id_tanaman; NULL bila siklusnya belum diisi admin
 /** Kolom kurva batch (akar semai `s`) + kurva tanaman `t` untuk presetDosing.naikHarian. */
-const KURVA = `s.id_semai, s.kurva_ppm_awal, s.kurva_ppm_target, s.kurva_hari_capai, s.kurva_mulai_hari, s.kurva_mulai_ppm,
+const KURVA = `s.id_semai, current_date - s.tgl_awal_semai::date AS hari_semai, s.kurva_ppm_awal, s.kurva_ppm_target, s.kurva_hari_capai, s.kurva_mulai_hari, s.kurva_mulai_ppm,
                 s.kurva_cara, s.kurva_ppm_semai, s.kurva_ppm_peremajaan, s.kurva_ppm_pendewasaan, s.kurva_ph_min, s.kurva_ph_max,
                 t.ppm_awal, t.ppm_target, t.hari_capai`;
 
@@ -125,7 +125,7 @@ router.get('/', async (req, res, next) => {
       const hari = Math.max(1, Math.round((new Date(hariIni.d) - new Date(r.mulai)) / 86_400_000) + 1);
       const durasi = r.durasi_hari == null ? null : Number(r.durasi_hari);
       const tahap = { semai: 'Semai', peremajaan: 'Peremajaan', pendewasaan: 'Pendewasaan' }[r.tipe];
-      const naik = naikHarian({ ...r, tahap });
+      const naik = r.kurva_cara === 'harian' ? naikDariSemai({ ...r, tahap }) : naikHarian({ ...r, tahap });
       const target = targetBatch({ ...r, tahap });
       const angka = (v) => (v == null ? null : Number(v));
       const kurva = r.kurva_cara === 'tahap'
@@ -137,7 +137,7 @@ router.get('/', async (req, res, next) => {
       return {
         ...sisa, durasi_hari: durasi, hari_ke: hari, siap: durasi != null && hari >= durasi, tahap_berikut: TAHAP[r.tipe].lanjut,
         nutrisi: {
-          kurva, hari_netpot: r.hari_netpot, target_hari_ini: target?.ppm ?? null, per_hari: naik?.per_hari ?? null,
+          kurva, hari_semai: angka(r.hari_semai), hari_netpot: r.hari_netpot, target_hari_ini: target?.ppm ?? null, per_hari: naik?.per_hari ?? null,
           ph_min: angka(r.kurva_ph_min), ph_max: angka(r.kurva_ph_max),
         },
       };

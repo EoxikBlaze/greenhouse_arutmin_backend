@@ -37,10 +37,11 @@ COMMENT ON COLUMN mejas.monitoring_menit IS 'NULL = dihitung otomatis (2 × satu
 COMMENT ON COLUMN mejas.jeda_ab_dtk IS 'NULL = dihitung otomatis dari satu putaran larutan';
 
 ALTER TABLE semais ADD COLUMN IF NOT EXISTS kurva_cara varchar(10);
-COMMENT ON COLUMN semais.kurva_cara IS 'cara naik ppm yang dipilih saat Mulai Semai: harian (per hari) | tahap (per siklus)';
+COMMENT ON COLUMN semais.kurva_cara IS 'cara naik ppm yang dipilih saat Mulai Semai: harian (per hari, sejak Mulai Semai) | tahap (per siklus) | NULL = batch lama (sejak pindah netpot)';
 ALTER TABLE semais ADD COLUMN IF NOT EXISTS kurva_ppm_semai integer;
 ALTER TABLE semais ADD COLUMN IF NOT EXISTS kurva_ppm_peremajaan integer;
 ALTER TABLE semais ADD COLUMN IF NOT EXISTS kurva_ppm_pendewasaan integer;
 ALTER TABLE semais ADD COLUMN IF NOT EXISTS kurva_ph_min numeric(4,2);
 ALTER TABLE semais ADD COLUMN IF NOT EXISTS kurva_ph_max numeric(4,2);
-UPDATE semais SET kurva_cara = 'harian' WHERE kurva_cara IS NULL AND kurva_ppm_awal IS NOT NULL;
+-- Batch lama (kurva_cara NULL) memakai rumus lama sejak pindah netpot supaya targetnya tidak melompat;
+-- batch baru 'harian' dihitung sejak Mulai Semai (hari pertama = ppm awal).
