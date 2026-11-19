@@ -33,6 +33,11 @@ function bersihkanStatus(ekstra = {}) {
     rssi: bulat(ekstra.rssi, -32768, 32767),
     uptime: bulat(ekstra.uptime, 0, 2147483647),
     estop: typeof ekstra.estop === 'boolean' ? ekstra.estop : null,
+    // pelampung & E-STOP fisik hanya boolean (selain itu null = belum dilaporkan, BUKAN dianggap aman); RESET = peristiwa tombol
+    floatBawahRendah: typeof ekstra.float_bawah_rendah === 'boolean' ? ekstra.float_bawah_rendah : null,
+    floatAtasPenuh: typeof ekstra.float_atas_penuh === 'boolean' ? ekstra.float_atas_penuh : null,
+    estopFisik: typeof ekstra.estop_fisik === 'boolean' ? ekstra.estop_fisik : (typeof ekstra.estop === 'boolean' ? ekstra.estop : null),
+    reset: ekstra.peristiwa === 'reset',
   };
 }
 
@@ -55,10 +60,7 @@ async function catatPeringatanAlat(kode, info, estopFisikLama) {
 async function tandaiTerlihat(kode, ip, mentah = {}) {
   if (!kode) return;
   const ekstra = bersihkanStatus(mentah);
-  const floatBawahRendah = typeof mentah.float_bawah_rendah === 'boolean' ? mentah.float_bawah_rendah : null;
-  const floatAtasPenuh = typeof mentah.float_atas_penuh === 'boolean' ? mentah.float_atas_penuh : null;
-  const estopFisik = typeof mentah.estop_fisik === 'boolean' ? mentah.estop_fisik : (typeof mentah.estop === 'boolean' ? mentah.estop : null);
-  const reset = mentah.peristiwa === 'reset';
+  const { floatBawahRendah, floatAtasPenuh, estopFisik, reset } = ekstra;
   const levelAir = typeof mentah.level_air === 'string' ? mentah.level_air.slice(0, 20) : null;
   const mode = typeof mentah.mode === 'string' ? mentah.mode.slice(0, 20) : null;
   const kegiatan = typeof mentah.kegiatan === 'string' ? mentah.kegiatan.slice(0, 30) : null;
