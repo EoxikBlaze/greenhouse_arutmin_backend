@@ -7,7 +7,7 @@ const { idValid, notFound } = require('./_id');
 const { halaman } = require('./_halaman');
 const { fkErrors, FK_TARGETS } = require('./_crud');
 const { isDateString } = require('./_validate');
-const { sinkronDiam, sinkronTarget, naikHarian } = require('../presetDosing');
+const { sinkronDiam, sinkronTarget, naikHarian, targetBatch } = require('../presetDosing');
 const S = require('../sinkronAlat');
 const K = require('../kurvaNutrisi');
 
@@ -85,6 +85,7 @@ const TAHAP = {
 // durasi (hari) tahap $tipe untuk tanaman t.id_tanaman; NULL bila siklusnya belum diisi admin
 /** Kolom kurva batch (akar semai `s`) + kurva tanaman `t` untuk presetDosing.naikHarian. */
 const KURVA = `s.id_semai, s.kurva_ppm_awal, s.kurva_ppm_target, s.kurva_hari_capai, s.kurva_mulai_hari, s.kurva_mulai_ppm,
+                s.kurva_cara, s.kurva_ppm_semai, s.kurva_ppm_peremajaan, s.kurva_ppm_pendewasaan, s.kurva_ph_min, s.kurva_ph_max,
                 t.ppm_awal, t.ppm_target, t.hari_capai`;
 
 const DURASI = (tipe) => `(SELECT k.waktu_siklus FROM sikluses k
@@ -125,14 +126,20 @@ router.get('/', async (req, res, next) => {
       const durasi = r.durasi_hari == null ? null : Number(r.durasi_hari);
       const tahap = { semai: 'Semai', peremajaan: 'Peremajaan', pendewasaan: 'Pendewasaan' }[r.tipe];
       const naik = naikHarian({ ...r, tahap });
-      const kurva = r.kurva_ppm_awal != null
-        ? { ppm_awal: r.kurva_ppm_awal, ppm_target: r.kurva_ppm_target, hari_capai: r.kurva_hari_capai, diubah_hari: r.kurva_mulai_hari || null }
-        : r.ppm_awal != null ? { ppm_awal: r.ppm_awal, ppm_target: r.ppm_target, hari_capai: r.hari_capai, diubah_hari: null } : null;
-      const { kurva_ppm_awal: _a, kurva_ppm_target: _b, kurva_hari_capai: _c, kurva_mulai_hari: _d, kurva_mulai_ppm: _e,
-        ppm_awal: _f, ppm_target: _g, hari_capai: _h, ...sisa } = r;
+      const target = targetBatch({ ...r, tahap });
+      const angka = (v) => (v == null ? null : Number(v));
+      const kurva = r.kurva_cara === 'tahap'
+        ? { cara: 'tahap', ppm_semai: angka(r.kurva_ppm_semai), ppm_peremajaan: angka(r.kurva_ppm_peremajaan), ppm_pendewasaan: angka(r.kurva_ppm_pendewasaan) }
+        : r.kurva_ppm_awal != null
+          ? { cara: 'harian', ppm_awal: angka(r.kurva_ppm_awal), ppm_target: angka(r.kurva_ppm_target), hari_capai: r.kurva_hari_capai, diubah_hari: r.kurva_mulai_hari || null }
+          : r.ppm_awal != null ? { cara: 'harian', ppm_awal: angka(r.ppm_awal), ppm_target: angka(r.ppm_target), hari_capai: r.hari_capai, diubah_hari: null } : null;
+      const sisa = Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('kurva_') && !['ppm_awal', 'ppm_target', 'hari_capai'].includes(k)));
       return {
         ...sisa, durasi_hari: durasi, hari_ke: hari, siap: durasi != null && hari >= durasi, tahap_berikut: TAHAP[r.tipe].lanjut,
-        nutrisi: { kurva, hari_netpot: r.hari_netpot, target_hari_ini: naik?.target_hari_ini ?? null, per_hari: naik?.per_hari ?? null },
+        nutrisi: {
+          kurva, hari_netpot: r.hari_netpot, target_hari_ini: target?.ppm ?? null, per_hari: naik?.per_hari ?? null,
+          ph_min: angka(r.kurva_ph_min), ph_max: angka(r.kurva_ph_max),
+        },
       };
     });
     res.json({ page: 'tanam', list, terpotong });
@@ -144,9 +151,13 @@ router.get('/pilihan', async (_req, res, next) => {
   try {
     const [tanaman, meja] = await Promise.all([
       q(`SELECT t.id_tanaman AS id, t.nama_tanaman AS nama, t.id_meja, t.ppm_awal, t.ppm_target, t.hari_capai,
+                t.cara_naik, t.ppm_semai, t.ppm_peremajaan, t.ppm_pendewasaan, t.ph_min, t.ph_max,
                 ${DURASI('semai')} AS semai, ${DURASI('peremajaan')} AS peremajaan, ${DURASI('pendewasaan')} AS pendewasaan
            FROM tanamen t ORDER BY t.nama_tanaman`),
-      q('SELECT id_meja AS id, meja AS nama FROM mejas ORDER BY meja'),
+      // alat yang terpasang di meja (perangkat.id_meja) — Mulai Semai mengirim KONFIGURASI + SEMAI ke alat ini
+      q(`SELECT m.id_meja AS id, m.meja AS nama, m.kapasitas_penampung_l AS volume_l,
+                (SELECT p.kode FROM perangkat p WHERE p.id_meja = m.id_meja AND p.peran IN ('gabungan','aktuator') ORDER BY p.kode LIMIT 1) AS alat
+           FROM mejas m ORDER BY m.meja`),
     ]);
     res.json({ tanaman, meja });
   } catch (e) { next(e); }
@@ -161,7 +172,8 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
     if (Object.keys(errors).length) return json(res, 422, { message: 'Data tidak valid.', errors });
     // kurva naik harian disalin ke batch (isian dialog menimpa kurva tanaman) — ubah kurva tanaman nanti tidak menggeser batch ini
     const tanaman = b.id_tanaman == null ? null
-      : await one('SELECT ppm_awal, ppm_target, hari_capai FROM tanamen WHERE id_tanaman = $1', [b.id_tanaman]);
+      : await one(`SELECT cara_naik, ppm_awal, ppm_target, hari_capai, ppm_semai, ppm_peremajaan, ppm_pendewasaan, ph_min, ph_max
+                     FROM tanamen WHERE id_tanaman = $1`, [b.id_tanaman]);
     const kurva = K.kurvaAwal(tanaman, b);
     if (Object.keys(kurva.errors).length) return json(res, 422, { message: 'Data tidak valid.', errors: kurva.errors });
     const kv = kurva.kolom || {};
@@ -176,17 +188,21 @@ router.post('/mulai', demoGuard('tanam.mulai'), async (req, res, next) => {
       // validasi tetap 500). Diisi = tgl_awal (penanda 'belum ditutup'); penutupan
       // asli terjadi di handler /:tipe/:id/selesai via CASE (lihat bawah).
       `INSERT INTO semais (id_tanaman, id_siklus, id_meja, jumlah_benih, tgl_awal_semai, tgl_akhir_semai, status, keterangan, benih_berhasil, benih_gagal, expires_at, created_at, updated_at,
-                           kurva_ppm_awal, kurva_ppm_target, kurva_hari_capai, kurva_mulai_hari, kurva_mulai_ppm)
-       VALUES ($1,$2,$3,$4, coalesce($5::date, now()::date), coalesce($5::date, now()::date), 'proses', $6, 0, 0, $7, now(), now(), $8, $9, $10, $11, $12)
+                           kurva_ppm_awal, kurva_ppm_target, kurva_hari_capai, kurva_mulai_hari, kurva_mulai_ppm,
+                           kurva_cara, kurva_ppm_semai, kurva_ppm_peremajaan, kurva_ppm_pendewasaan, kurva_ph_min, kurva_ph_max)
+       VALUES ($1,$2,$3,$4, coalesce($5::date, now()::date), coalesce($5::date, now()::date), 'proses', $6, 0, 0, $7, now(), now(),
+               $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING *`,
       [b.id_tanaman ?? null, idSiklus, b.id_meja ?? null, b.jumlah_benih ?? 0, b.tgl_awal_semai ?? null, b.keterangan ?? null, exp,
-        kv.kurva_ppm_awal ?? null, kv.kurva_ppm_target ?? null, kv.kurva_hari_capai ?? null, kv.kurva_mulai_hari ?? null, kv.kurva_mulai_ppm ?? null],
+        kv.kurva_ppm_awal ?? null, kv.kurva_ppm_target ?? null, kv.kurva_hari_capai ?? null, kv.kurva_mulai_hari ?? null, kv.kurva_mulai_ppm ?? null,
+        kv.kurva_cara ?? null, kv.kurva_ppm_semai ?? null, kv.kurva_ppm_peremajaan ?? null, kv.kurva_ppm_pendewasaan ?? null,
+        kv.kurva_ph_min ?? null, kv.kurva_ph_max ?? null],
     );
     // target penampung ikut batch baru, lalu alat diminta mulai menjaga (SEMAI). Mode demo tidak menyentuh alat.
     let alat = { dikirim: false, ket: 'Mode demo: alat tidak diperintah.' };
     if (!req.user.demo) {
       await sinkronTarget().catch((e) => console.error('[tanam] sinkron target gagal:', e.message));
-      alat = await S.diam(S.sinkronKeAlat, { mulaiSemai: true, userId: Number(req.user.sub) || null });
+      alat = await S.diam(S.mulaiSemaiAlat, row.id_meja, Number(req.user.sub) || null);
     }
     res.status(201).json({ status: true, message: 'Tanam baru dimulai.', data: row, alat });
   } catch (e) { next(e); }
@@ -270,7 +286,7 @@ router.post('/:tipe/:id/selesai', demoGuard('tanam.selesai'), async (req, res, n
     await client.query('COMMIT');
     sinkronDiam(); // tahap berganti → preset target penampung ikut berganti
     // batch terakhir selesai → PANEN ke alat (dosing & isi otomatis berhenti)
-    if (!req.user.demo && (lanjut?.tipe === 'panen' || berhasil === 0)) S.diam(S.panenBilaKosong, Number(req.user.sub) || null);
+    if (!req.user.demo && (lanjut?.tipe === 'panen' || berhasil === 0)) S.diam(S.panenBilaKosong, lama.id_meja, Number(req.user.sub) || null);
     const pesan = lanjut?.tipe === 'panen' ? `Panen dicatat: ${berhasil} berhasil, ${gagal} gagal.`
       : lanjut ? `${berhasil} tanaman pindah ke ${t.lanjut}${gagal ? ` (${gagal} gagal)` : ''}.`
         : `Semua ${jumlah} tanaman gagal — batch ditutup.`;
@@ -296,11 +312,12 @@ router.put('/semai/:id/kurva', demoGuard('tanam.kurva'), async (req, res, next) 
     const r = K.rencanaUbah(batch, req.body || {});
     if (r.errors) return json(res, 422, { message: 'Data tidak valid.', errors: r.errors });
     const k = r.kolom;
-    const sebelum = { ppm_awal: batch.kurva_ppm_awal, ppm_target: batch.kurva_ppm_target, hari_capai: batch.kurva_hari_capai,
-      mulai_hari: batch.kurva_mulai_hari, mulai_ppm: batch.kurva_mulai_ppm };
-    await q(`UPDATE semais SET kurva_ppm_awal = $2, kurva_ppm_target = $3, kurva_hari_capai = $4, kurva_mulai_hari = $5,
-                    kurva_mulai_ppm = $6, kurva_diubah_pada = now(), updated_at = now() WHERE id_semai = $1`,
-    [req.params.id, k.kurva_ppm_awal, k.kurva_ppm_target, k.kurva_hari_capai, k.kurva_mulai_hari, k.kurva_mulai_ppm]);
+    const sebelum = Object.fromEntries(Object.keys(k).map((x) => [x, batch[x] ?? null]));
+    // kunci kolom berasal dari K.rencanaUbah (daftar tetap kurva_*), bukan dari isian pengguna
+    const kunci = Object.keys(k).filter((x) => /^kurva_[a-z_]+$/.test(x));
+    const set = kunci.map((x, i) => x + ' = $' + (i + 2)).join(', ');
+    await q(`UPDATE semais SET ${set}, kurva_diubah_pada = now(), updated_at = now() WHERE id_semai = $1`,
+      [req.params.id, ...kunci.map((x) => k[x])]);
     req.audit = { aksi: 'update', tabel: 'semais', row_id: String(req.params.id), before: { kurva: sebelum }, after: { kurva: k } };
     sinkronDiam(); // target penampung + TARGET ke alat bila sedang SEMAI
     res.json({
@@ -315,8 +332,11 @@ router.put('/semai/:id/kurva', demoGuard('tanam.kurva'), async (req, res, next) 
 /** Minta alat menjaga batch yang berjalan (SEMAI / TARGET) — dipakai bila kiriman saat mulai semai ditolak alat. */
 router.post('/kirim-alat', demoGuard('tanam.kirim-alat'), async (req, res, next) => {
   try {
+    // meja batch berjalan terbaru (atau ?id_meja=) — alat di meja itu diberi KONFIGURASI lalu SEMAI
+    const idMeja = /^\d{1,18}$/.test(String(req.query.id_meja ?? '')) ? req.query.id_meja : await S.mejaBatchTerbaru();
+    if (!idMeja) return res.json({ status: true, alat: { dikirim: false, ket: 'Tidak ada batch berjalan.' }, message: 'Tidak ada batch berjalan.' });
     await sinkronTarget();
-    const alat = await S.sinkronKeAlat({ mulaiSemai: true, userId: Number(req.user.sub) || null });
+    const alat = await S.mulaiSemaiAlat(idMeja, Number(req.user.sub) || null);
     res.status(alat.dikirim ? 202 : 200).json({ status: true, alat, message: alat.ket });
   } catch (e) { next(e); }
 });

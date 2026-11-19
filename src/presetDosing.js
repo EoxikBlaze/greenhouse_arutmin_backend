@@ -43,6 +43,7 @@ async function batchPerMeja() {
     SELECT b.*, t.nama_tanaman, (current_date - coalesce(b.semai_mulai, b.mulai)) + 1 AS umur_hari,
            (current_date - b.netpot_mulai::date) AS hari_netpot, t.ppm_awal, t.ppm_target, t.hari_capai,
            ks.kurva_ppm_awal, ks.kurva_ppm_target, ks.kurva_hari_capai, ks.kurva_mulai_hari, ks.kurva_mulai_ppm,
+           ks.kurva_cara, ks.kurva_ppm_semai, ks.kurva_ppm_peremajaan, ks.kurva_ppm_pendewasaan, ks.kurva_ph_min, ks.kurva_ph_max,
            count(*) OVER (PARTITION BY b.id_meja) AS jumlah_batch
       FROM b LEFT JOIN tanamen t ON t.id_tanaman = b.id_tanaman
       LEFT JOIN semais ks ON ks.id_semai = b.id_semai
@@ -105,6 +106,28 @@ function naikHarian(batch) {
   };
 }
 
+/**
+ * Target ppm & pH batch dari resep tanaman yang disalin ke batch (semais.kurva_*):
+ *  - per tahap : ppm tetap per tahap (kurva_ppm_semai / _peremajaan / _pendewasaan)
+ *  - per hari  : saat Semai = ppm awal; sejak pindah netpot naik rata (naikHarian)
+ * null = batch tanpa resep (batch lama) → pemanggil memakai preset tahap.
+ */
+function targetBatch(batch) {
+  if (!batch) return null;
+  const ph = angka(batch.kurva_ph_min) != null && angka(batch.kurva_ph_max) != null
+    ? { ph_min: angka(batch.kurva_ph_min), ph_max: angka(batch.kurva_ph_max) } : { ph_min: null, ph_max: null };
+  if (batch.kurva_cara === 'tahap') {
+    const ppm = angka({ Semai: batch.kurva_ppm_semai, Peremajaan: batch.kurva_ppm_peremajaan, Pendewasaan: batch.kurva_ppm_pendewasaan }[batch.tahap]);
+    return ppm == null ? null : { ppm, ...ph, cara: 'tahap' };
+  }
+  if (batch.kurva_cara === 'harian') {
+    const ppm = batch.tahap === 'Semai' ? angka(batch.kurva_ppm_awal) : naikHarian(batch)?.target_hari_ini ?? null;
+    return ppm == null ? null : { ppm, ...ph, cara: 'harian' };
+  }
+  const naik = naikHarian(batch); // batch lama (sebelum 19 Nov 2026): perilaku lama
+  return naik ? { ppm: naik.target_hari_ini, ...ph, cara: 'harian' } : null;
+}
+
 /** Titik tengah rentang (atau satu-satunya batas yang diisi). */
 function tengah(min, max, desimal) {
   const a = angka(min); const b = angka(max);
@@ -132,9 +155,9 @@ async function sinkronTarget() {
   for (const st of states) {
     const b = batch.get(String(st.id_meja));
     const p = pilihPreset(b, presets);
-    const naik = naikHarian(b);
-    const ec = naik ? naik.target_hari_ini : p ? tengah(p.ec_min_ppm, p.ec_max_ppm, 0) : null;
-    const ph = p ? tengah(p.ph_min, p.ph_max, 2) : null;
+    const t = targetBatch(b);
+    const ec = t ? t.ppm : p ? tengah(p.ec_min_ppm, p.ec_max_ppm, 0) : null;
+    const ph = t?.ph_min != null ? tengah(t.ph_min, t.ph_max, 2) : p ? tengah(p.ph_min, p.ph_max, 2) : null;
     const pid = p ? Number(p.id) : null;
     if (angka(st.target_ec_ppm) === ec && angka(st.target_ph) === ph && angka(st.target_preset_id) === pid) continue;
     await q(
@@ -165,9 +188,10 @@ async function ringkasTarget() {
     const b = batch.get(String(m.id_meja)) || null;
     const p = pilihPreset(b, presets);
     const naik = naikHarian(b);
+    const tb = targetBatch(b);
     const catatan = m.target_mode === 'manual' ? 'Target diatur manual oleh admin.'
       : !b ? 'Tidak ada batch berjalan — dosing otomatis diam.'
-        : !p && !naik ? `Belum ada preset aktif untuk ${b.nama_tanaman || 'tanaman ini'} · ${b.tahap} (umur ${b.umur_hari} hari).`
+        : !p && !tb ? `Belum ada preset aktif untuk ${b.nama_tanaman || 'tanaman ini'} · ${b.tahap} (umur ${b.umur_hari} hari).`
           : null;
     return {
       ...m,
@@ -176,6 +200,7 @@ async function ringkasTarget() {
       preset_cocok: p && { id: p.id, id_tanaman: p.id_tanaman, tahap: p.tahap, ec_min_ppm: p.ec_min_ppm, ec_max_ppm: p.ec_max_ppm,
         ph_min: p.ph_min, ph_max: p.ph_max, umur_min_hari: p.umur_min_hari, umur_max_hari: p.umur_max_hari },
       naik_harian: naik,
+      target_batch: tb,
       catatan,
     };
   });
@@ -188,4 +213,4 @@ function mulai() {
   if (timer.unref) timer.unref();
 }
 
-module.exports = { TAHAP, pilihPreset, tengah, naikHarian, kurvaBatch, batchPerMeja, presetAktif, sinkronTarget, sinkronDiam, ringkasTarget, mulai };
+module.exports = { TAHAP, pilihPreset, tengah, naikHarian, kurvaBatch, targetBatch, batchPerMeja, presetAktif, sinkronTarget, sinkronDiam, ringkasTarget, mulai };

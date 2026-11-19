@@ -18,39 +18,76 @@ function bulatDalam(v, [min, max]) {
   const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN;
   return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
 }
+/** pH 4,0–8,5 (rentang firmware); koma boleh. */
+function phDalam(v) {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.trim().replace(',', '.')) : NaN;
+  return Number.isFinite(n) && n >= 4 && n <= 8.5 ? Math.round(n * 100) / 100 : null;
+}
+
+const ISIAN_PPM = [['ppm_awal', RENTANG_PPM], ['ppm_target', RENTANG_PPM], ['hari_capai', RENTANG_HARI],
+  ['ppm_semai', RENTANG_PPM], ['ppm_peremajaan', RENTANG_PPM], ['ppm_pendewasaan', RENTANG_PPM]];
 
 /**
  * Validasi isian kurva. Field yang tidak dikirim = null (dipakai bawaan).
- * @returns {{nilai: {ppm_awal: number|null, ppm_target: number|null, hari_capai: number|null}, errors: Record<string,string[]>}}
+ * @returns {{nilai: Record<string, number|string|null>, errors: Record<string,string[]>}}
  */
 function bacaIsian(b) {
   const errors = {};
   const nilai = {};
-  for (const [k, rentang, nama] of [['ppm_awal', RENTANG_PPM, 'ppm'], ['ppm_target', RENTANG_PPM, 'ppm'], ['hari_capai', RENTANG_HARI, 'hari']]) {
-    if (b?.[k] === undefined || b[k] === null || b[k] === '') { nilai[k] = null; continue; }
+  const kosong = (k) => b?.[k] === undefined || b[k] === null || b[k] === '';
+  for (const [k, rentang] of ISIAN_PPM) {
+    if (kosong(k)) { nilai[k] = null; continue; }
     nilai[k] = bulatDalam(b[k], rentang);
-    if (nilai[k] == null) errors[k] = [`${k} harus bilangan bulat ${rentang[0]}–${rentang[1]} ${nama}.`];
+    if (nilai[k] == null) errors[k] = [`${k} harus bilangan bulat ${rentang[0]}–${rentang[1]}.`];
   }
+  for (const k of ['ph_min', 'ph_max']) {
+    if (kosong(k)) { nilai[k] = null; continue; }
+    nilai[k] = phDalam(b[k]);
+    if (nilai[k] == null) errors[k] = ['pH harus 4,0–8,5.'];
+  }
+  nilai.cara_naik = kosong('cara_naik') ? null : b.cara_naik;
+  if (nilai.cara_naik != null && !['harian', 'tahap'].includes(nilai.cara_naik)) errors.cara_naik = ['Pilih per hari atau per tahap.'];
   return { nilai, errors };
 }
 
+/** Rentang pH: keduanya kosong, atau keduanya terisi dengan selisih ≥ 0,2 (Kontrak §6.2 SEMAI). */
+function cekPh(min, max) {
+  if (min == null && max == null) return null;
+  if (min == null || max == null) return { ph_max: ['Isi pH min dan pH maks sekaligus.'] };
+  if (max - min < 0.2) return { ph_max: ['pH maks harus ≥ pH min + 0,2.'] };
+  return null;
+}
+
 /**
- * Kurva awal batch baru: isian dialog menimpa kurva tanaman. null = tanaman belum punya kurva dan isian kosong.
+ * Resep batch baru: isian dialog Mulai Semai menimpa resep tanaman. kolom null = tanaman belum punya resep.
  * @returns {{kolom: object|null, errors: object}}
  */
 function kurvaAwal(tanaman, isian) {
   const { nilai, errors } = bacaIsian(isian);
   if (Object.keys(errors).length) return { kolom: null, errors };
-  const awal = nilai.ppm_awal ?? tanaman?.ppm_awal ?? null;
-  const target = nilai.ppm_target ?? tanaman?.ppm_target ?? null;
-  const capai = nilai.hari_capai ?? tanaman?.hari_capai ?? null;
-  if (awal == null && target == null && capai == null) return { kolom: null, errors: {} };
+  const pilih = (k) => nilai[k] ?? (tanaman?.[k] == null ? null : Number(tanaman[k]));
+  const cara = nilai.cara_naik ?? tanaman?.cara_naik ?? 'harian';
+  const ph = { kurva_ph_min: pilih('ph_min'), kurva_ph_max: pilih('ph_max') };
+  const galatPh = cekPh(ph.kurva_ph_min, ph.kurva_ph_max);
+  if (galatPh) return { kolom: null, errors: galatPh };
+  if (cara === 'tahap') {
+    const t = { kurva_ppm_semai: pilih('ppm_semai'), kurva_ppm_peremajaan: pilih('ppm_peremajaan'), kurva_ppm_pendewasaan: pilih('ppm_pendewasaan') };
+    if (Object.values(t).some((v) => v == null)) return { kolom: null, errors: { kurva: ['Isi ppm Semai, Peremajaan, dan Pendewasaan.'] } };
+    return { kolom: { kurva_cara: 'tahap', ...t, ...ph }, errors: {} };
+  }
+  const awal = pilih('ppm_awal');
+  const target = pilih('ppm_target');
+  const capai = pilih('hari_capai');
+  if (awal == null && target == null && capai == null) return { kolom: ph.kurva_ph_min != null ? { kurva_cara: 'harian', ...ph } : null, errors: {} };
   if (awal == null || target == null || capai == null) {
     return { kolom: null, errors: { kurva: ['Isi ppm awal, ppm target, dan hari capai sekaligus.'] } };
   }
-  if (Number(awal) > Number(target)) return { kolom: null, errors: { ppm_target: ['ppm target harus ≥ ppm awal.'] } };
+  if (awal > target) return { kolom: null, errors: { ppm_target: ['ppm target harus ≥ ppm awal.'] } };
   return {
-    kolom: { kurva_ppm_awal: Number(awal), kurva_ppm_target: Number(target), kurva_hari_capai: Number(capai), kurva_mulai_hari: 0, kurva_mulai_ppm: Number(awal) },
+    kolom: {
+      kurva_cara: 'harian', kurva_ppm_awal: awal, kurva_ppm_target: target, kurva_hari_capai: capai,
+      kurva_mulai_hari: 0, kurva_mulai_ppm: awal, ...ph,
+    },
     errors: {},
   };
 }
@@ -63,6 +100,22 @@ function kurvaAwal(tanaman, isian) {
 function rencanaUbah(batch, isian) {
   const { nilai, errors } = bacaIsian(isian);
   if (Object.keys(errors).length) return { errors };
+  const ph = {
+    kurva_ph_min: nilai.ph_min ?? (batch.kurva_ph_min == null ? null : Number(batch.kurva_ph_min)),
+    kurva_ph_max: nilai.ph_max ?? (batch.kurva_ph_max == null ? null : Number(batch.kurva_ph_max)),
+  };
+  const galatPh = cekPh(ph.kurva_ph_min, ph.kurva_ph_max);
+  if (galatPh) return { errors: galatPh };
+  if (batch.kurva_cara === 'tahap') {
+    // per tahap: ppm memang tetap per tahap; angka tahap berjalan berlaku mulai kiriman TARGET berikutnya
+    const t = {
+      kurva_ppm_semai: nilai.ppm_semai ?? Number(batch.kurva_ppm_semai),
+      kurva_ppm_peremajaan: nilai.ppm_peremajaan ?? Number(batch.kurva_ppm_peremajaan),
+      kurva_ppm_pendewasaan: nilai.ppm_pendewasaan ?? Number(batch.kurva_ppm_pendewasaan),
+    };
+    if (Object.values(t).some((v) => !Number.isFinite(v))) return { errors: { kurva: ['Isi ppm Semai, Peremajaan, dan Pendewasaan.'] } };
+    return { kolom: { ...t, ...ph }, peringatan: null, target_hari_ini: null };
+  }
   const lama = kurvaBatch(batch);
   const target = nilai.ppm_target ?? lama?.akhir ?? null;
   const capai = nilai.hari_capai ?? lama?.lama ?? null;
@@ -74,7 +127,7 @@ function rencanaUbah(batch, isian) {
     if (awal == null) return { errors: { ppm_awal: ['Isi ppm awal (ppm saat pindah netpot).'] } };
     if (awal > target) return { errors: { ppm_target: ['ppm target harus ≥ ppm awal.'] } };
     return {
-      kolom: { kurva_ppm_awal: awal, kurva_ppm_target: target, kurva_hari_capai: capai, kurva_mulai_hari: 0, kurva_mulai_ppm: awal },
+      kolom: { kurva_ppm_awal: awal, kurva_ppm_target: target, kurva_hari_capai: capai, kurva_mulai_hari: 0, kurva_mulai_ppm: awal, ...ph },
       peringatan: null, target_hari_ini: null,
     };
   }
@@ -92,7 +145,7 @@ function rencanaUbah(batch, isian) {
   return {
     kolom: {
       kurva_ppm_awal: lama?.awal ?? kini, kurva_ppm_target: target, kurva_hari_capai: capai,
-      kurva_mulai_hari: h, kurva_mulai_ppm: kini,
+      kurva_mulai_hari: h, kurva_mulai_ppm: kini, ...ph,
     },
     peringatan: target < kini
       ? `Target turun dari ${kini} ppm: alat harus mengencerkan, dan hanya bisa bila air di penampung SEDANG (bukan PENUH).`
@@ -105,7 +158,8 @@ function rencanaUbah(batch, isian) {
 async function bacaBatch(idSemai) {
   return one(`
     SELECT s.id_semai, s.status AS status_semai, s.id_meja, s.kurva_ppm_awal, s.kurva_ppm_target, s.kurva_hari_capai,
-           s.kurva_mulai_hari, s.kurva_mulai_ppm, t.ppm_awal, t.ppm_target, t.hari_capai,
+           s.kurva_mulai_hari, s.kurva_mulai_ppm, s.kurva_cara, s.kurva_ppm_semai, s.kurva_ppm_peremajaan,
+           s.kurva_ppm_pendewasaan, s.kurva_ph_min, s.kurva_ph_max, t.ppm_awal, t.ppm_target, t.hari_capai,
            CASE WHEN d.status = 'proses' THEN 'Pendewasaan' WHEN p.status = 'proses' THEN 'Peremajaan'
                 WHEN s.status = 'proses' THEN 'Semai' ELSE NULL END AS tahap,
            current_date - coalesce(p.tgl_awal_peremajaan, d.tgl_awal_pendewasaan)::date AS hari_netpot
