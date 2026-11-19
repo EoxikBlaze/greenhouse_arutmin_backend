@@ -4,6 +4,7 @@ const express = require('express');
 const { q } = require('../db');
 const { queryParam } = require('./_id');
 const { tanggalErrors } = require('./_validate');
+const { LAPORAN, rentangLaporan, MAKS_HARI } = require('../laporanLengkap');
 
 const router = express.Router();
 
@@ -60,6 +61,35 @@ router.get('/csv', async (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename="${nama}"`);
     res.send('\uFEFF' + lines.join('\n'));
   } catch (e) { next(e); }
+});
+
+/** Sel CSV: kutip + netralkan rumus Excel (awalan = + - @). */
+const sel = (v) => {
+  let t = v == null ? '' : v instanceof Date ? v.toISOString() : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
+  return `"${t.replace(/"/g, '""')}"`;
+};
+
+/** GET /laporan/{batch|sensor|dosing|peringatan|kalibrasi}?dari&sampai[&format=csv] — rentang maks 92 hari. */
+router.get('/:jenis', async (req, res, next) => {
+  try {
+    const buat = Object.hasOwn(LAPORAN, req.params.jenis) ? LAPORAN[req.params.jenis] : null;
+    if (!buat) return res.status(404).json({ message: 'Jenis laporan tidak dikenal.' });
+    const dari = queryParam(req.query, 'dari');
+    const sampai = queryParam(req.query, 'sampai');
+    const errors = tanggalErrors(dari, sampai);
+    if (Object.keys(errors).length) return res.status(422).json({ message: 'Data tidak valid.', errors });
+    const r = rentangLaporan({ dari, sampai });
+    const lap = await buat(r);
+    if (String(req.query.format || '').toLowerCase() === 'csv') {
+      const lines = [lap.kolom.map((k) => sel(k.label)).join(',')];
+      for (const b of lap.baris) lines.push(lap.kolom.map((k) => sel(b[k.kunci])).join(','));
+      res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
+      res.setHeader('Content-Disposition', `attachment; filename="laporan-${req.params.jenis}-${r.awal.slice(0, 10)}_${r.akhir.slice(0, 10)}.csv"`);
+      return res.send(`\uFEFF${lines.join('\n')}`);
+    }
+    return res.json({ ...lap, dari: r.awal, sampai: r.akhir, terpotong: r.terpotong, maks_hari: MAKS_HARI });
+  } catch (e) { return next(e); }
 });
 
 module.exports = router;

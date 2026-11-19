@@ -212,6 +212,8 @@ app.use('/user', ...adminDemo, user);
 // supaya rute tak dikenal tetap 404 JSON. requireRole(['admin']) meneruskan
 // token demo (kontrak requireRole) → halaman /audit diizinkan untuk admin+demo,
 // sedangkan token petani tetap 403 PetaniGuard.
+// Catatan Aktivitas (linimasa gabungan) di bawah /audit-logs/aktivitas: awalan /audit-logs sudah diteruskan nginx di Pi.
+app.use('/audit-logs/aktivitas', requireAuth, requireRole(['admin']), require('./routes/aktivitas'));
 app.use('/audit-logs', requireAuth, requireRole(['admin']), auditLogs);
 // Guard role sudah ada di dalam modul master/tahap (per sub-router) — tanpa
 // wrapper di sini agar rute tak dikenal tetap 404 JSON (bukan 401).
