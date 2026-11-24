@@ -22,10 +22,11 @@ module.exports = {
   appKey: process.env.APP_KEY || '',
   esp32ApiKey: process.env.ESP32_API_KEY || 'HARVEST123',
   https: process.env.HTTPS === '1',
-  /* Asisten AI lokal (Ollama) — dipakai src/routes/ai.js.
-   * Default aman: model ringan 1,5B & Ollama di mesin yang sama (lihat docs/AI_LOKAL_PI.md). */
-  aiModel: process.env.AI_MODEL || 'qwen2.5:1.5b',
-  aiOllamaUrl: String(process.env.AI_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, ''),
+  /* Asisten AI — default Cloud AI Gratis tanpa API key (Pollinations OpenAI-compatible)
+   * sehingga hemat 100% RAM/CPU di Raspberry Pi; tetap mendukung URL Ollama lokal untuk pengujian. */
+  aiModel: process.env.AI_MODEL || 'openai',
+  aiOllamaUrl: String(process.env.AI_OLLAMA_URL || 'https://text.pollinations.ai/openai').replace(/\/+$/, ''),
+  aiApiKey: process.env.AI_API_KEY || '',
   /* Broker MQTT lokal untuk 2 ESP32 (src/mqttJembatan.js). Kosong = jembatan MQTT mati, HTTP tetap jalan. */
   /* Uji pompa dari aplikasi (kalibrasi laju). Bawaan MATI: pompa sungguhan menyala. Nyalakan sadar di .env: UJI_POMPA_DIIZINKAN=1. */
   ujiPompaDiizinkan: process.env.UJI_POMPA_DIIZINKAN === '1',

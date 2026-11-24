@@ -10,6 +10,7 @@
  */
 
 const STATUS_DIPERBARUI = '4 Nov 2026';
+const { SOP_SEMAI_MELON_LAPANGAN } = require('./aiMelonModul');
 
 const TEKS = {
   alur: [
@@ -22,15 +23,15 @@ const TEKS = {
   ].join('\n'),
 
   semai: [
-    'Langkah menyemai melon (memulai batch baru):',
-    'Persiapan: media semai dan benih siap, penampung berisi air, sensor mengirim data (cek Dashboard). Target nutrisi tanaman diatur di Pengaturan Nutrisi bila ingin naik harian.',
-    '1. Masuk sebagai admin, buka menu Kebun Saya.',
-    '2. Tekan "Mulai Semai Baru" (juga ada di Dashboard).',
-    '3. Pilih tanaman, atur tanggal mulai semai, isi jumlah benih, dan boleh menambah keterangan singkat.',
-    '4. Simpan. Batch muncul di daftar dengan tahap Semai dan hitungan "Hari ke-X dari Y".',
-    '5. Selama semai, pantau pH dan nutrisi di Dashboard; peringatan muncul di menu Peringatan.',
-    '6. Saat umurnya cukup, batch bertanda "Siap pindah"; lanjut ke tahap Peremajaan (tanya "cara pindah tahap").',
-    'Catatan: saat ini hanya admin yang bisa memulai semai. Petani memantau batch dan target nutrisi di Kebun Saya. Kalau petani perlu memulai semai sendiri, itu keputusan pemilik.',
+    'Panduan Lengkap Cara Menanam & Menyemai Benih Melon (SOP Kebun GARAP):',
+    'Persiapan: benih melon, bawang merah segar, kain hitam bersih, nampan/tray, dadu rockwool, serta sensor & penampung berisi air (cek Dashboard).',
+    SOP_SEMAI_MELON_LAPANGAN,
+    '',
+    'Pencatatan di Aplikasi GARAP:',
+    '1. Masuk sebagai admin, buka menu Kebun Saya, lalu tekan "Mulai Semai Baru" (juga ada di Dashboard).',
+    '2. Pilih Melon, atur tanggal awal semai, isi jumlah benih terpilih (yang tenggelam & berkecambah), lalu simpan.',
+    '3. Selama semai di rockwool, pantau pH (5,8–6,5) dan nutrisi di Dashboard; lanjut ke Peremajaan bila sudah tumbuh 2–4 daun sejati (tanya "cara pindah tahap").',
+    'Catatan: hanya admin yang bisa memulai semai di aplikasi; petani memantau perkembangan batch dan target nutrisi di menu Kebun Saya.',
   ].join('\n'),
 
   pindah_tahap: [
@@ -61,13 +62,14 @@ const TEKS = {
   ].join('\n'),
 
   nutrisi_melon: [
-    'Panduan Target Nutrisi AB Mix & pH untuk Melon Hidroponik:',
+    'Panduan Target Nutrisi AB Mix, Naik Harian, & pH untuk Melon Hidroponik:',
     '• pH Air Ideal: 5,8 – 6,5 (menjamin penyerapan unsur hara mikro dan makro optimal).',
     '• Tahap Semai: 400 – 600 PPM (EC 0,8 – 1,2 mS/cm).',
     '• Tahap Vegetatif / Peremajaan: 800 – 1.000 PPM (EC 1,6 – 2,0 mS/cm).',
     '• Tahap Pembungaan / Polinasi: 1.000 – 1.200 PPM (EC 2,0 – 2,4 mS/cm).',
     '• Tahap Pembesaran Buah (Netting): 1.400 – 1.800 PPM (EC 2,8 – 3,6 mS/cm).',
-    '• Tahap Pematangan (10 hari sebelum panen): Turunkan kembali ke 800–1000 PPM dan kurangi air agar rasa buah manis pekat (Brix tinggi).',
+    '• Tahap Pematangan (10 hari sebelum panen): Turunkan kembali ke 800–1.000 PPM dan kurangi air agar rasa buah manis pekat (Brix tinggi).',
+    '• Mode Naik Harian GARAP: Di menu Dosing, Anda bisa mengatur target nutrisi agar otomatis naik bertahap setiap hari sesuai umur tanaman (tanpa perlu membagi siklus manual), cukup masukkan batas awal, batas akhir, dan kenaikan per hari.',
   ].join('\n'),
 
   polinasi_melon: [
@@ -77,6 +79,7 @@ const TEKS = {
     '3. Cara: Petik bunga jantan yang mekar sempurna, buang kelopak mahkotanya, lalu oleskan kepala sari jantan ke kepala putik betina secara merata.',
     '4. Pemangkasan (Pruning): Buang semua tunas air di bawah ruas ke-8. Di atas ruas tempat buah dipelihara, sisakan 2–3 helai daun lalu pangkas pucuk cabangnya.',
     '5. Seleksi Buah: Setelah bakal buah sebesar telur ayam, pilih 1 buah yang paling bulat simetris dan sehat, lalu buang calon buah lainnya.',
+    '6. Jumlah Cabang: Pelihara 1 batang utama per tanaman. Buang cabang di ruas 1–8, sisakan 2–3 cabang di ruas 9–12 sebagai tempat calon buah, lalu pilih 1 buah.',
   ].join('\n'),
 
   hama_melon: [
@@ -168,6 +171,15 @@ const TEKS = {
     '4. Riwayat dan grafik per parameter ada di halaman yang sama.',
   ].join('\n'),
 
+  kalibrasi: [
+    'Cara Kalibrasi Sensor pH & Nutrisi (EC/TDS) via Website + MQTT:',
+    '1. Pastikan alat ESP32 terhubung ke broker MQTT (cek status di menu Kalibrasi atau Telemetri & Sensor).',
+    '2. Buka menu Kalibrasi pada website GARAP (hak akses admin).',
+    '3. Untuk Kalibrasi pH: bilas probe pH dengan air bersih, celupkan ke cairan buffer pH 6,86 (atau pH 4,01 / 9,18), tunggu nilai tegangan/sensor stabil di panel Kalibrasi Langsung MQTT, lalu tekan tombol Kalibrasi.',
+    '4. Untuk Kalibrasi Nutrisi/EC: bilas probe TDS/EC dengan air bersih, celupkan ke cairan standar EC 1413 µS/cm (setara ±706 PPM skala 500), tunggu pembacaan mentah stabil lewat MQTT, lalu klik tombol kirim kalibrasi EC.',
+    '5. Setelah alat mengirim balasan ACK sukses lewat MQTT, faktor koreksi tersimpan permanen di memori NVS ESP32 dan tercatat di riwayat kalibrasi.',
+  ].join('\n'),
+
   input_data: [
     'Urutan lengkap cara input data di aplikasi GARAP dari awal untuk petani & pengelola:',
     '1. Input Jenis Tanaman & Siklus: Masuk ke menu Jenis Tanaman untuk mendaftarkan varietas melon, lalu atur lama hari tiap tahap (Semai, Peremajaan, Pendewasaan).',
@@ -211,15 +223,57 @@ const TEKS = {
     '• Belum siap dosing fisik: gerbang eksekusi dikunci, firmware aktuator v0.3 belum ada, kalibrasi dan keputusan A–G belum selesai.',
     'Ringkasnya: perangkat lunak persetujuan sudah jauh, perangkat keras dan keputusan keselamatan belum.',
   ].join('\n'),
+
+  login_akses: [
+    'Langkah Membuka Website GARAP & Login Akun (Sesuai Poster & Modul Juknas):',
+    '1. Sambungkan HP atau laptop ke jaringan Wi-Fi greenhouse yang sama dengan Raspberry Pi (misal Pokjar Permata / VertonikModem), lalu buka http://vertonik.local atau http://<IP-Pi>. Bila router mati dan Pi memancarkan hotspot Vertoniksmartfarm, sambungkan lalu buka http://10.42.0.1.',
+    '2. Pada layar Login GARAP, masukkan Nama pengguna dan Kata sandi, centang "Ingatkan saya" bila perlu, lalu klik "Masuk ke Dashboard" (atau coba pratinjau baca-saja dengan akun Demo).',
+    '3. Pembagian Peran Login:',
+    '   • Petani: memantau Dashboard, Telemetri & Sensor, Peringatan, CCTV, Asisten AI, Kebun Saya, dan Akun Saya.',
+    '   • Admin: akses penuh seluruh menu termasuk Saklar, Target Nutrisi/Dosing, Kalibrasi, Uji Lab, Pengaturan Alat, dan Siklus Tanam.',
+    '   • Demo: hanya melihat seluruh halaman dalam mode baca-saja (perubahan ditolak server).',
+  ].join('\n'),
+
+  alat_iot_k3: [
+    'Panduan Pengoperasian Panel Alat IoT ESP32 (gabungan-0.6) & Keselamatan K3:',
+    '1. Cek Fisik Sebelum Nyala: pastikan tandon terisi air, probe pH & EC terendam, lantai sekitar panel kering, tidak ada bau hangus atau selang bocor, serta tombol jamur merah E-STOP dalam keadaan tertarik/lepas.',
+    '2. Nyalakan Raspberry Pi dulu (±1 menit) lalu hidupkan panel ESP32. Tunggu LCD 20x4 beralih dari WIFI MATI / TUNGGU SERVER... ke PENAMPUNG CUKUP.',
+    '3. Arti Lampu Pilot 3 Warna:',
+    '   • Hijau saja: normal (Wi-Fi & MQTT terhubung, air penampung cukup).',
+    '   • Merah + Hijau: waspada (air tandon kurang dari pelampung bawah atau koneksi MQTT/server terputus).',
+    '   • Merah saja: DARURAT E-STOP aktif! Semua pompa dimatikan dan dikunci.',
+    '   • Biru menyala: salah satu pompa sedang aktif bekerja — jangan mencabut selang.',
+    '4. Arti Baris ke-4 LCD & Tombol RESET (GPIO 19): tekan singkat RESET untuk melihat SSID Wi-Fi, IP ESP, IP Server Pi, dan mode (MQTT/HTTP) selama 4 detik di LCD. Jika muncul HTTP SENSOR ONLY, port 1883 terblokir firewall/Client Isolation router dan pompa terkunci aman.',
+    '5. Protokol K3 Darurat: bila selang lepas, tandon bocor, atau ada bau hangus/korsleting, TEKAN TOMBOL MERAH E-STOP FISIK SEGERA tanpa menunggu website. Semua uji pompa wajib memakai air bersih ke gelas ukur.',
+  ].join('\n'),
+
+  langkah_petani: [
+    'Urutan Lengkap Langkah Petani & Operator Harian (Berdasarkan Modul Juknas/Juknis & Poster GARAP):',
+    'A. Checklist Harian Petani (5–10 Menit Pagi & Sore):',
+    '   1. Cek Panel & Tandon: pastikan lampu pilot menyala Hijau, LCD baris ke-4 bertuliskan PENAMPUNG CUKUP, dan tidak ada selang bocor.',
+    '   2. Buka & Login Website/HP: buka http://vertonik.local (atau http://10.42.0.1 di hotspot Pi), lalu masuk dengan akun Petani/Admin.',
+    '   3. Pantau Dashboard: pastikan status "Alat terhubung" (hijau) dan periksa nilai pH, TDS/EC, suhu air, suhu udara, kelembapan, serta level tandon.',
+    '   4. Cek Sensor & Peringatan: buka Telemetri & Sensor (rentang 6 Jam / 24 Jam / 7 Hari) dan menu Peringatan; periksa kondisi fisik tandon sebelum menekan Tandai selesai.',
+    '   5. Pantau Kebun, CCTV & Asisten AI: cek usia tanam/HST melon dan estimasi panen di Kebun Saya, lihat visual daun di CCTV, atau tanyakan gejala ke Asisten AI.',
+    'B. Urutan Setup & Kendali Teknis (Admin dari Awal hingga Panen):',
+    '   1. Pengaturan Alat: isi volume tandon (liter), jumlah talang, dan debit (liter/menit).',
+    '   2. Kalibrasi: aktifkan Mode Pemeliharaan, kalibrasi 2-titik EC (1413 & 12880 uS/cm) + pH (4,0 & 7,0), serta ukur laju pompa dengan gelas ukur lalu matikan pemeliharaan.',
+    '   3. Uji Lab & Saklar: catat kekuatan larutan di Data → Uji Lab, lalu atur 5 saklar izin di menu Saklar.',
+    '   4. Mulai Semai Melon & Dosing Naik Harian: jalankan SOP bawang merah 1 hari → kain hitam 2 hari → jemur pagi 2 hari → rockwool, catat via Mulai Semai Baru di Kebun Saya, lalu atur kurva PPM Naik Harian di Dosing.',
+  ].join('\n'),
 };
 
 /** Pola pada teks yang SUDAH dinormalisasi (huruf kecil, tanpa diakritik). Urutan = prioritas. */
 const POLA = [
+  ['kalibrasi', /\b(?:kalibrasi|kalibrator|buffer ph|1413|6\.?86|4\.?01|9\.?18|tera ulang)\b/],
+  ['login_akses', /\b(?:login|masuk akun|buka website|alamat website|hotspot|10\.42\.0\.1|vertonik\.local|akun demo|akun petani)\b/],
+  ['alat_iot_k3', /\b(?:lampu pilot|e-?stop|baris (?:ke-?)?4 lcd|layar lcd|tombol reset|gpio ?19|panel iot|juknis alat|poster alat|poster iot|http sensor only|penampung kurang|penampung cukup|keselamatan k3)\b/],
+  ['langkah_petani', /\b(?:langkah petani|juknas|juknis|sop harian|checklist harian|panduan harian|langkah pengoperasian|cara pengoperasian|poster website|dari awal sampai panen)\b|\bcara pakai di hp\b/],
   ['logbook', /\blog ?book\b|catatan kegiatan|riwayat kegiatan|kegiatan (?:terakhir|minggu ini|hari ini|kemarin)/],
   ['tim', /\b(?:anggota|biodata|bio data|profil tim|susunan tim)\b|\bsiapa\b.{0,20}\b(?:tim|anggota|pembuat|pengembang)\b/],
   ['durasi_melon', /\b(?:berapa hari|berapa lama|kapan|kapan saja)\b.{0,30}\b(?:(?:siap|bisa|sudah|boleh|dapat)\s+(?:di\s*)?(?:makan|panen|petik)|panen|umur panen|masa tanam|matang)\b|\b(?:(?:siap|bisa|sudah)\s+(?:di\s*)?(?:makan|panen|petik)|panen)\b.{0,30}\b(?:berapa hari|berapa lama|kapan)\b|\b(?:umur|masa|durasi|lama)\b.{0,20}\b(?:panen|tanam|hidup)\b.{0,15}\bmelon\b|\bmelon\b.{0,25}\b(?:berapa hari|berapa lama|kapan|(?:siap|bisa|sudah|boleh)\s+(?:di\s*)?(?:makan|panen|petik)|matang)\b|\b(?:ciri|tanda)\b.{0,20}\bmelon\b.{0,25}\b(?:matang|panen|siap|petik|makan)\b/],
-  ['nutrisi_melon', /\b(?:nutrisi|ppm|tds|ec|ab mix|abmix|pupuk|dosis)\b.{0,25}\b(?:melon|tanaman buah)\b|\bmelon\b.{0,25}\b(?:nutrisi|ppm|tds|ec|ab mix|pupuk)\b|\btarget (?:ppm|nutrisi|tds)\b/],
-  ['polinasi_melon', /\b(?:polinasi|penyerbukan|kawin|kawinkan|bunga betina|bunga jantan)\b|\b(?:pruning|pemangkasan|pangkas|tunas air|seleksi buah)\b/],
+  ['nutrisi_melon', /\b(?:nutrisi|ppm|tds|ec|ab mix|abmix|pupuk|dosis)\b.{0,25}\b(?:melon|tanaman buah)\b|\bmelon\b.{0,25}\b(?:nutrisi|ppm|tds|ec|ab mix|pupuk)\b|\btarget (?:ppm|nutrisi|tds)\b|\b(?:naik harian|kenaikan harian)\b.{0,25}\b(?:nutrisi|ppm|ec|melon)\b/],
+  ['polinasi_melon', /\b(?:polinasi|penyerbukan|kawin|kawinkan|bunga betina|bunga jantan)\b|\b(?:pruning|pemangkasan|pangkas|tunas air|seleksi buah|cabang)\b/],
   ['tanaman_buah', /\b(?:cabai|cabe|tomat|stroberi|strawberry)\b/],
   ['durasi_sayuran', /\b(?:sayur|sayuran|selada|pakcoy|kangkung|bayam|sawi|seledri)\b.{0,25}\b(?:berapa hari|berapa lama|panen|masa tanam)\b|\b(?:berapa hari|berapa lama)\b.{0,25}\b(?:selada|pakcoy|kangkung|bayam|sawi)\b/],
   ['nutrisi_ab_mix', /\b(?:ab mix|abmix|campur nutrisi|larutan pekatan|pekatan a|pekatan b|cara buat nutrisi|cara melarutkan|endapan)\b/],
@@ -228,14 +282,14 @@ const POLA = [
   ['input_data', /\b(?:cara|langkah|bagaimana|gimana|panduan|urutan)\b.{0,25}\b(?:input|masukkan|memasukkan|mengisi|isi|tambah|menambah)\b.{0,20}\bdata\b|\binput data\b|\bisi data\b/],
   ['fitur', /\b(?:semua|seluruh|daftar|apa saja)\b.{0,20}\b(?:fitur|menu|halaman)\b|\b(?:fitur|menu)\b.{0,20}\b(?:aplikasi|website|web|garap|lengkap)\b|\bjelaskan (?:semua )?fitur\b/],
   ['saklar', /\bsaklar\b/],
-  ['uji_lab', /\buji lab\b|\bhasil lab\b|\bbrix\b/],
+  ['uji_lab', /\b(?:uji lab|hasil lab)\b|\b(?:catat|mencatat|input|isi|simpan|lihat|data|riwayat|grafik)\b.{0,15}\bbrix\b|\bbrix\b.{0,15}\b(?:uji lab|panen|data)\b/],
   ['fase', /\bfase\b|sudah sampai (?:mana|fase)|sampai (?:mana|fase)|status (?:proyek|pengembangan)|progres (?:proyek|pengembangan)/],
   ['keputusan', /\bkeputusan\b|belum diputuskan|menunggu (?:pemilik|keputusan)/],
   ['dosing', /\b(?:dosing|dosis|pompa nutrisi)\b.{0,20}\b(?:otomatis|aktif|jalan|menyala)\b|\bnutrisi otomatis\b|kenapa (?:dosing|pompa)/],
   ['alat_baru', /\balat\b.{0,20}\b(?:baru|belum ada|belum terpasang)\b|\b(?:pasang|memasang|pemasangan|konfigurasi|mengonfigurasi|menyambung\w*|menghubung\w*)\b.{0,20}\b(?:alat|sensor|esp32|mqtt)\b|\bmqtt\b/],
   ['pindah_tahap', /\bpindah\w*\b.{0,15}\btahap\b|\bnaik tahap\b|\bsiap pindah\b|\bpeming?ndahan\b.{0,10}\btahap\b/],
   ['panen', /\b(?:cara|langkah|bagaimana|gimana)\b.{0,25}\b(?:panen|memanen|mencatat panen)\b|\b(?:mencatat|catat)\b.{0,10}\bpanen\b/],
-  ['semai', /\b(?:cara|langkah|bagaimana|gimana|mulai|memulai)\b.{0,30}\b(?:semai|menyemai|nyemai|menanam|tanam|batch|budidaya)\b|\b(?:semai|menyemai|nyemai|menanam)\b.{0,30}\b(?:cara|langkah|bagaimana|gimana)\b|\bmenyemai\b|\bsemai baru\b|\bcara menanam\b/],
+  ['semai', /\b(?:cara|langkah|bagaimana|gimana|mulai|memulai|sop|tutorial|urutan)\b.{0,30}\b(?:semai|menyemai|nyemai|menanam|tanam|batch|budidaya)\b|\b(?:semai|menyemai|nyemai|menanam)\b.{0,30}\b(?:cara|langkah|bagaimana|gimana|melon|benih|bibit)\b|\bmenyemai\b|\bsemai baru\b|\bcara menanam\b|\b(?:bawang merah|kain hitam)\b.{0,25}\b(?:melon|bibit|benih|semai)\b/],
   ['alur', /\balur\b|\bcara kerja\b|bagaimana (?:aplikasi|sistem|website|web) (?:ini )?(?:bekerja|jalan)|\b(?:panduan|tutorial)\b|\bcara (?:pakai|memakai|menggunakan)\b.{0,15}\b(?:aplikasi|website|web|garap)\b/],
 ];
 
@@ -257,11 +311,10 @@ const HALAMAN = {
   tanaman: { to: '/tanaman', label: 'Jenis Tanaman', izin: ADMIN },
   ambang: { to: '/ambang', label: 'Ambang Sensor', izin: ADMIN },
   kalibrasi: { to: '/kalibrasi', label: 'Kalibrasi', izin: ADMIN },
-  dosing: { to: '/dosing', label: 'Dosing', izin: ADMIN },
+  dosing: { to: '/parameter', label: 'Parameter & Keamanan', izin: ADMIN },
   saklar: { to: '/saklar', label: 'Saklar', izin: ADMIN },
   data: { to: '/data', label: 'Data', izin: ADMIN },
   pengaturanAlat: { to: '/pengaturan-alat', label: 'Pengaturan Alat', izin: ADMIN },
-  mqtt: { to: '/mqtt-diagnostik', label: 'Diagnostik MQTT', izin: ADMIN },
 };
 
 const TAUTAN_TOPIK = {
@@ -277,12 +330,16 @@ const TAUTAN_TOPIK = {
   semai: ['tanam', 'semai', 'tanaman'],
   pindah_tahap: ['tanam', 'semai', 'peremajaan', 'pendewasaan'],
   panen: ['tanam', 'panen'],
-  alat_baru: ['sensor', 'ambang', 'kalibrasi', 'pengaturanAlat', 'mqtt'],
+  alat_baru: ['sensor', 'ambang', 'kalibrasi', 'pengaturanAlat'],
   dosing: ['dosing', 'saklar', 'peringatan'],
   saklar: ['saklar'],
   uji_lab: ['data'],
+  kalibrasi: ['kalibrasi', 'sensor'],
   input_data: ['tanam', 'tanaman', 'ambang', 'dosing', 'data'],
   fitur: ['dashboard', 'sensor', 'tanam', 'peringatan', 'dosing', 'saklar', 'kalibrasi', 'data'],
+  login_akses: ['dashboard'],
+  alat_iot_k3: ['kalibrasi', 'dosing', 'peringatan'],
+  langkah_petani: ['dashboard', 'sensor', 'peringatan', 'tanam', 'kalibrasi', 'dosing', 'saklar'],
   logbook: [],
   tim: [],
   keputusan: [],
@@ -385,39 +442,54 @@ const GAMBAR = {
   ],
   alur: [
     {
+      url: '/panduan/login.png',
+      judul: 'Langkah 1: Layar Login GARAP',
+      kenapa: 'Petani/admin membuka alamat kebun lalu masuk memakai akun masing-masing sebelum memantau Dashboard.',
+    },
+    {
       url: '/panduan/beranda.png',
-      judul: '1. Layar Beranda Utama (Dashboard)',
-      kenapa: 'Petani diarahkan ke sini untuk melihat status greenhouse hari ini secara sekilas (kondisi tandon, sensor pH/TDS, dan peringatan penting).',
+      judul: 'Langkah 2: Layar Beranda Utama (Dashboard)',
+      kenapa: 'Melihat status perangkat IoT online, kartu sensor pH/TDS/suhu, dan peringatan penting hari ini.',
     },
     {
       url: '/panduan/tanam.png',
-      judul: '2. Layar Kebun Saya & Tahap Tanam',
-      kenapa: 'Petani diarahkan ke sini untuk melihat umur tanaman melon (hari ke-X), target nutrisi harian, dan tanda siap pindah tahap.',
+      judul: 'Langkah 3: Layar Kebun Saya & Tahap Tanam',
+      kenapa: 'Melihat umur tanaman melon (hari ke-X), target nutrisi harian, dan tanda siap pindah tahap.',
     },
     {
       url: '/panduan/kontrol.png',
-      judul: '3. Layar Kontrol Air & Saklar Pompa',
-      kenapa: 'Petani diarahkan ke sini untuk memeriksa saklar pompa pengisian air tandon dan sirkulasi nutrisi.',
+      judul: 'Langkah 4: Layar Kontrol Air & Saklar Pompa',
+      kenapa: 'Memeriksa saklar pompa pengisian air tandon dan sirkulasi nutrisi.',
     },
   ],
   input_data: [
     {
-      url: '/panduan/tanam.png',
-      judul: 'Langkah Input: Formulir Mulai Tanam & Pindah Tahap',
-      kenapa: 'Petani membuka menu Kebun Saya untuk mendaftarkan benih melon baru dan mencatat bibit yang tumbuh berhasil.',
+      url: '/panduan/login.png',
+      judul: 'Langkah 1: Login Akun Pengelola / Admin',
+      kenapa: 'Untuk menginput master tanaman, meja, ambang batas, dan memulai batch semai, masuk dengan akun Admin.',
     },
     {
       url: '/panduan/web-dashboard.png',
-      judul: 'Pusat Manajemen Kebun (Dashboard Web)',
+      judul: 'Langkah 2: Pusat Manajemen Kebun (Dashboard Web)',
       kenapa: 'Admin mendaftarkan jenis tanaman melon, meja hidroponik, dan batas ambang sensor.',
     },
     {
+      url: '/panduan/tanam.png',
+      judul: 'Langkah 3: Formulir Mulai Semai Baru (Kebun Saya)',
+      kenapa: 'Klik tombol "+ Mulai Semai Baru" untuk mendaftarkan benih melon hasil perendaman bawang merah & kecambah.',
+    },
+    {
       url: '/panduan/dosing.png',
-      judul: 'Pengaturan Target Nutrisi & Kenaikan Harian',
-      kenapa: 'Petani mengatur target kenaikan PPM nutrisi harian agar pupuk AB Mix bertambah stabil sesuai umur tanaman.',
+      judul: 'Langkah 4: Pengaturan Target Nutrisi & Kenaikan Harian',
+      kenapa: 'Mengatur target kenaikan PPM nutrisi harian agar pupuk AB Mix bertambah stabil sesuai umur tanaman.',
     },
   ],
   fitur: [
+    {
+      url: '/panduan/poster-website.png',
+      judul: 'Poster Panduan Lengkap Pengoperasian Website & Aplikasi',
+      kenapa: 'Klik gambar untuk melihat peta ringkas seluruh menu Pantau, Kendali, Data, Sistem, dan cara buka di HP.',
+    },
     {
       url: '/panduan/beranda.png',
       judul: 'Menu Beranda (Ringkasan Kebun)',
@@ -446,9 +518,14 @@ const GAMBAR = {
   ],
   semai: [
     {
-      url: '/panduan/tanam.png',
-      judul: 'Menu Kebun Saya — Mulai Semai Baru',
-      kenapa: 'Petani diarahkan ke tombol "Mulai Semai Baru" di menu Kebun Saya untuk mendaftarkan benih melon yang disemai.',
+      url: '/panduan/hp-tanam.png',
+      judul: 'Tampilan HP: Kebun Saya & Tombol Mulai Semai Baru',
+      kenapa: 'Setelah benih melewati air bawang merah (1 hari), kain hitam (2 hari), & jemur pagi (2 hari) lalu masuk rockwool, admin mencatat batch baru di sini.',
+    },
+    {
+      url: '/panduan/web-tanam.png',
+      judul: 'Tampilan Web: Daftar Batch & Progres Tahap Melon',
+      kenapa: 'Petani memantau jumlah benih, tanggal mulai semai, serta estimasi siap pindah ke tahap Peremajaan.',
     },
   ],
   pindah_tahap: [
@@ -468,8 +545,8 @@ const GAMBAR = {
   dosing: [
     {
       url: '/panduan/dosing.png',
-      judul: 'Menu Pengaturan Target Nutrisi & Dosing',
-      kenapa: 'Petani diarahkan ke sini untuk melihat target PPM nutrisi melon dan rekomendasi penambahan AB Mix.',
+      judul: 'Menu Parameter & Keamanan (/parameter)',
+      kenapa: 'Menampilkan parameter penting, batas peringatan dari Ambang Sensor, status E-STOP/RESET, serta pengaturan dosis & jadwal alat.',
     },
   ],
   saklar: [
@@ -478,8 +555,130 @@ const GAMBAR = {
       judul: 'Menu Kontrol Air & Saklar Aktuator',
       kenapa: 'Petani memeriksa apakah pompa sirkulasi dan katup nutrisi dalam status aman (ON/OFF).',
     },
+    {
+      url: '/panduan/poster-iot.png',
+      judul: 'Poster Panel Alat IoT, Pin Pompa, & E-STOP K3',
+      kenapa: 'Panduan arti lampu pilot 3 warna, pesan LCD, dan prosedur darurat tombol merah E-STOP.',
+    },
+  ],
+  kalibrasi: [
+    {
+      url: '/panduan/poster-iot.png',
+      judul: 'Panduan Kalibrasi 4 Langkah & Panel Alat IoT (Poster 1/2)',
+      kenapa: 'Aktifkan Mode Pemeliharaan dulu -> kalibrasi 2 titik EC (1.413 & 12.880) & pH (4,0 & 7,0) -> takar laju pompa pakai gelas ukur.',
+    },
+    {
+      url: '/panduan/sensor.png',
+      judul: 'Pantauan Kestabilan Nilai Sensor Realtime',
+      kenapa: 'Memastikan pembacaan pH & EC sudah stabil setelah proses kalibrasi MQTT dikirim ke ESP32.',
+    },
+  ],
+  alat_baru: [
+    {
+      url: '/panduan/poster-iot.png',
+      judul: 'Poster Panel Alat IoT ESP32 (gabungan-0.6) & Peta Pin',
+      kenapa: 'Urutan menyalakan Pi & ESP32, arti lampu pilot Hijau/Merah/Biru, serta pesan LCD 20x4.',
+    },
+    {
+      url: '/panduan/sensor.png',
+      judul: 'Menu Sensor — Verifikasi Data Alat Masuk',
+      kenapa: 'Setelah menyambung Wi-Fi/MQTT, pastikan angka pH & TDS bergerak dan status "Alat Terhubung" hijau.',
+    },
+  ],
+  uji_lab: [
+    {
+      url: '/panduan/tanam.png',
+      judul: 'Kebun Saya — Pantauan Batch Panen Melon',
+      kenapa: 'Bandingkan batch melon yang dipanen sebelum mencatat kadar gula (Brix), bobot buah, & dosis uji lab.',
+    },
+  ],
+  login_akses: [
+    {
+      url: '/panduan/login.png',
+      judul: 'Halaman Login Sistem GARAP',
+      kenapa: 'Masukkan Nama pengguna & Kata sandi lalu klik Masuk ke Dashboard (atau pilih Akun Demo untuk pratinjau).',
+    },
+    {
+      url: '/panduan/poster-website.png',
+      judul: 'Poster Alamat Website, Hotspot Pi, & Hak Akses Peran',
+      kenapa: 'Klik gambar untuk melihat alamat http://vertonik.local, http://10.42.0.1, dan perbedaan izin Admin vs Petani.',
+    },
+  ],
+  alat_iot_k3: [
+    {
+      url: '/panduan/poster-iot.png',
+      judul: 'Poster Pengoperasian Alat IoT, Lampu Pilot, LCD, & K3 (Poster 1/2)',
+      kenapa: 'Klik gambar untuk melihat arti 4 warna lampu pilot, 6 pesan baris ke-4 LCD, fungsi tombol RESET GPIO 19, dan tombol darurat E-STOP.',
+    },
+    {
+      url: '/panduan/kontrol.png',
+      judul: 'Layar Kontrol Air & Status Lock E-STOP di Aplikasi',
+      kenapa: 'Bila tandon berstatus LOCK / pemeliharaan, cek halaman ini dan panel fisik sebelum membuka kunci.',
+    },
+  ],
+  langkah_petani: [
+    {
+      url: '/panduan/poster-website.png',
+      judul: 'Poster Panduan Langkah Pengoperasian Website & HP (Poster 2/2)',
+      kenapa: 'Klik gambar untuk melihat ringkasan login, 5 langkah pantau harian pagi-sore, dan penanganan kendala umum.',
+    },
+    {
+      url: '/panduan/login.png',
+      judul: 'Langkah 1: Layar Login GARAP',
+      kenapa: 'Buka http://vertonik.local (atau hotspot 10.42.0.1) dan masuk dengan akun Petani/Admin.',
+    },
+    {
+      url: '/panduan/hp-beranda.png',
+      judul: 'Langkah 2: Pantau Dashboard di HP (Status IoT & 7 Kartu Sensor)',
+      kenapa: 'Pastikan status "Alat Terhubung" hijau dan nilai pH, TDS, serta suhu berada dalam batas aman.',
+    },
+    {
+      url: '/panduan/hp-tanam.png',
+      judul: 'Langkah 3: Kebun Saya & Tombol Mulai Semai Baru',
+      kenapa: 'Memantau umur melon tiap batch atau mendaftarkan semai baru hasil rendam bawang merah + kain hitam.',
+    },
+    {
+      url: '/panduan/dosing.png',
+      judul: 'Langkah 4: Target Nutrisi AB Mix & Kurva Naik Harian',
+      kenapa: 'Admin memantau target PPM per meja/penampung sesuai umur pertumbuhan melon.',
+    },
   ],
 };
+
+/** Peta hasil matriks pengetahuan cerdas → topik GAMBAR panduan terkait. */
+const MATRIKS_KE_GAMBAR = {
+  semai_bawang_merah_kain_hitam: 'semai',
+  melon_manis_brix: 'uji_lab',
+  perbedaan_ppm_ec: 'nutrisi_melon',
+  ujung_daun_kering_melon: 'nutrisi_melon',
+  sanitasi_tandon_lumut: 'saklar',
+  pompa_mati_listrik_mati: 'alat_iot_k3',
+  bunga_buah_melon_masalah: 'polinasi_melon',
+  varietas_unggul_melon: 'durasi_melon',
+  jadwal_hst_lengkap_melon: 'durasi_melon',
+  racik_stok_ab_mix_melon: 'nutrisi_melon',
+  media_tanam_hidroponik_melon: 'semai',
+  pruning_pewiwilan_topping_melon: 'polinasi_melon',
+  ciri_matang_dan_panen_melon: 'panen',
+  kualitas_air_baku_dan_oksigen: 'nutrisi_melon',
+  persiapan_greenhouse_sterilisasi: 'alat_iot_k3',
+};
+
+/** Kembalikan maksimal 2 tangkapan layar kontekstual untuk jalur matriks/LLM/panduan. */
+function gambarKontekstual({ kunciPanduan = null, idMatriks = null, pesan = '' } = {}) {
+  if (kunciPanduan && GAMBAR[kunciPanduan]) return GAMBAR[kunciPanduan];
+  if (idMatriks) {
+    const k = MATRIKS_KE_GAMBAR[idMatriks] || 'hama_melon';
+    return (GAMBAR[k] || []).slice(0, 2);
+  }
+  const s = String(pesan || '').toLowerCase();
+  if (/\b(?:kalibrasi|buffer|1413|6\.?86|4\.?01|9\.?18)\b/.test(s)) return GAMBAR.kalibrasi.slice(0, 2);
+  if (/\b(?:e-?stop|lampu pilot|lcd|panel|reset gpio|pompa|saklar)\b/.test(s)) return GAMBAR.alat_iot_k3.slice(0, 2);
+  if (/\b(?:semai|bibit|benih|bawang merah|kain hitam|jemur|rockwool|kecambah)\b/.test(s)) return GAMBAR.semai.slice(0, 2);
+  if (/\b(?:login|masuk|hotspot|vertonik\.local)\b/.test(s)) return GAMBAR.login_akses.slice(0, 2);
+  if (/\b(?:ph|tds|ec|ppm|suhu|kelembap|sensor|tandon)\b/.test(s)) return [GAMBAR.alur[1], GAMBAR.nutrisi_melon[1]].filter(Boolean);
+  return [];
+}
 
 function jawabPanduan(kunci) {
   const jawaban = TEKS[kunci];
@@ -492,4 +691,4 @@ function apakahMintaSaran(pesanTernormalisasi) {
   return /\b(?:saran|masukan|rekomendasi|langkah selanjutnya|langkah berikutnya)\b|\bapa (?:yang )?(?:harus|sebaiknya|perlu) (?:saya |aku |kami )?(?:lakukan|kerjakan)\b/.test(String(pesanTernormalisasi || ''));
 }
 
-module.exports = { deteksiPanduan, jawabPanduan, apakahMintaSaran, tautanUntuk, PATH_SAH, HALAMAN, TAUTAN_TOPIK, STATUS_DIPERBARUI, TEKS, GAMBAR };
+module.exports = { deteksiPanduan, jawabPanduan, gambarKontekstual, apakahMintaSaran, tautanUntuk, PATH_SAH, HALAMAN, TAUTAN_TOPIK, STATUS_DIPERBARUI, TEKS, GAMBAR };

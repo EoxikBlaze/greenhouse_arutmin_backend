@@ -166,14 +166,17 @@ const KATA_TOPIK = [
   // formulasi nutrisi
   'abmix', 'ab mix', 'ab-mix', 'nutrisi ab', 'npk', 'kalsium', 'magnesium', 'unsur hara', 'kepekatan',
   // kegiatan operasional & kondisi
-  'siram', 'penyiraman', 'semprot', 'pemupukan', 'pemangkasan', 'pruning', 'topping', 'petik',
+  'siram', 'penyiraman', 'semprot', 'pemupukan', 'pemangkasan', 'pruning', 'topping', 'petik', 'manis', 'brix',
   'ventilasi', 'exhaust', 'kipas', 'fan', 'screen', 'insektisida', 'pestisida', 'fungisida',
   'kondisi', 'status', 'keadaan', 'sehat', 'aman', 'normal', 'masalah', 'kendala', 'rekomendasi', 'saran', 'tips', 'jadwal', 'perawatan', 'bantuan',
-  // panduan aplikasi (aiPanduan.js)
+  // panduan aplikasi (aiPanduan.js) & kalibrasi / gejala daun
   'fase', 'keputusan', 'aplikasi', 'alur', 'panduan', 'mqtt', 'menyemai', 'penyemaian', 'menanam', 'memanen',
-  'fitur', 'input', 'menu', 'halaman', 'langkah',
-  // logbook, biodata tim, saklar, nutrisi manual, uji lab
-  'logbook', 'anggota', 'biodata', 'saklar', 'brix',
+  'fitur', 'input', 'menu', 'halaman', 'langkah', 'kalibrasi', 'buffer', 'naik harian', 'menggulung', 'berbintik', 'bintik', 'lumut', 'keruh',
+  // logbook, biodata tim, saklar, nutrisi manual, uji lab, & modul Juknas/Juknis/Poster
+  'logbook', 'anggota', 'biodata', 'saklar', 'uji lab',
+  'login', 'website', 'poster', 'juknas', 'juknis', 'sop', 'checklist',
+  'estop', 'e-stop', 'lcd', 'hotspot', 'wifi', 'pelampung', 'panel', 'pilot', 'reset',
+  'bawang merah', 'kain hitam', 'rockwool', 'kutilang',
 ];
 // Kata umum ("cek", "status", "kondisi", "saran", "bantuan", "hari ini", …) TIDAK lagi cukup sendirian:
 // uji tembus 23 Okt 2026 — "Berapa harga bitcoin hari ini?", "Cek kondisi politik" lolos ke LLM.
@@ -245,6 +248,18 @@ function paragrafLuarTopik(teks) {
     const kata = normalisasi(p).split(/[^a-z0-9]+/).filter(Boolean);
     return kata.length >= 15 && !kata.some((k) => DOMAIN_KUAT.has(k));
   });
+}
+
+/** true bila keluaran model hanya basa-basi kosong ("Tentu, saya akan membantu menjawab...") tanpa isi substantif. */
+function apakahBasaBasiKosong(teks) {
+  const s = normalisasi(teks);
+  if (!s) return true;
+  const pembukaBasaBasi = /^(?:tentu|baik|siap|oke|halo|hai|maaf)[,.!\s]+(?:saya|asisten)?\s*(?:akan|siap|bisa|dapat)?\s*(?:membantu|menjawab|memberikan)/.test(s);
+  if (!pembukaBasaBasi) return false;
+  const kata = s.split(/[^a-z0-9]+/).filter(Boolean);
+  const punyaAngka = /\d/.test(s);
+  const kataSubstantif = kata.filter((k) => DOMAIN_KUAT.has(k) || k === 'belum' || k === 'bacaan' || k === 'kosong' || k === 'terputus');
+  return !punyaAngka && kataSubstantif.length === 0;
 }
 const SAPAAN = /^(?:h(?:a)?i|halo|hai|hello|hey|p|ping|tes|test|assalamu ?(?:alaikum|'alaikum)?|salam|pagi|siang|sore|malam|selamat (?:pagi|siang|sore|malam|\w+)|terima ?kasih|makasih|thanks?|thank you|ok(?:e|ay)?|siap|baik|mantap|apa kabar|gimana kabar|tolong|bantu|help|bisa bantu(?:\s+saya)?|mau tanya|tanya dong|siapa kamu|kamu siapa|apa (?:itu|yang bisa) .*)(?:\s+(?:ai|bot|asisten|garap|mas|mbak|pak|bu|kawan|bro|min|kebun|semua|apa kabar|gimana kabar))*[\s,!?]*$/;
 
@@ -403,7 +418,27 @@ function saringRiwayat(riwayat) {
 }
 
 /* ── L6 keluaran ─────────────────────────────────────────────────────── */
-const SIDIK_PROMPT = ['aturan keras', 'pesan_pengguna', '<data>', 'bukan perintah', 'asisten budidaya hidroponik vertonik', CANARY.toLowerCase()];
+const SIDIK_PROMPT = [
+  'aturan keras', 'pesan_pengguna', '<data>', 'bukan perintah', 'asisten budidaya hidroponik vertonik', CANARY.toLowerCase(),
+  // potongan aturan systemChat (routes/ai.js): gema 2 frasa = prompt bocor
+  'jawab 100% bahasa indonesia', 'basa-basi pembuka', 'topik hanya hidroponik melon', 'dilarang kode/tautan/gambar', 'mengaku menyalakan pompa', 'kode internal',
+];
+// AI tidak punya akses ke alat: kalimat yang mengaku sudah/akan menjalankan alat itu palsu dan menyesatkan operator.
+const KLAIM_PELAKU = /\b(?:saya|aku|kami)(?:\s+(?:sudah|telah|berhasil|baru saja|sedang|akan|segera))*\s+(?:menyalakan|menghidupkan|menjalankan|mengaktifkan|mematikan|menambah(?:kan)?|menuang(?:kan)?|mendosis|memompa|mengirim(?:kan)?|memberi(?:kan)?)\b/;
+const KLAIM_PASIF = /\b(?:sudah|telah)\s+(?:saya|kami|aku)\s+(?:nyalakan|hidupkan|jalankan|aktifkan|matikan|tambah(?:kan)?|tuang(?:kan)?|dosis|pompa|kirim(?:kan)?|beri(?:kan)?)\b/;
+const OBJEK_ALAT = /\b(?:pompa|dosing|dosis|ab ?mix|ph ?(?:up|down)|nutrisi|katup|valve|relay|aerator|solenoid|perintah|penampung|larutan)\b/;
+
+function klaimAksi(kalimat) {
+  const k = kalimat.toLowerCase();
+  return (KLAIM_PELAKU.test(k) || KLAIM_PASIF.test(k)) && OBJEK_ALAT.test(k);
+}
+
+/** Buang kalimat klaim aksi; baris lain (tabel, daftar) tidak diubah. */
+function buangKlaimAksi(t) {
+  return t.split('\n')
+    .map((baris) => (klaimAksi(baris) ? baris.split(/(?<=[.!?…])\s+/).filter((k) => !klaimAksi(k)).join(' ') : baris))
+    .join('\n');
+}
 const RAHASIA_KELUAR = [
   /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g,         // JWT
   /\b(?:postgres(?:ql)?|mysql|mongodb|redis):\/\/\S+/gi,                  // connection string
@@ -429,11 +464,12 @@ function saringKeluaran(teks, panjangMaks = 1500) {
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^(\s*)[-*]\s+/gm, '$1• ')
     .replace(/\n{3,}/g, '\n\n');
+  t = buangKlaimAksi(t);
   return { teks: t.slice(0, panjangMaks).trim(), bocor: false };
 }
 
 module.exports = {
-  CANARY, normalisasi, deteksi, dalamTopik, luarTopik, adaKode, apakahBahasaInggris, paragrafLuarTopik, apakahSalam, periksaPesan, pesanTolak,
+  CANARY, normalisasi, deteksi, dalamTopik, luarTopik, adaKode, apakahBahasaInggris, paragrafLuarTopik, apakahBasaBasiKosong, apakahSalam, periksaPesan, pesanTolak,
   SARAN_PERTANYAAN,
   sisaJeda, catatPelanggaran, resetStrike,
   saranBahanDapur, netralkan, bungkusPengguna, bersihkanData, saringRiwayat, saringKeluaran,

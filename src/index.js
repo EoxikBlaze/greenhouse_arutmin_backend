@@ -63,10 +63,10 @@ app.use(helmet({
     directives: {
       'default-src': ["'self'"],
       'script-src': ["'self'"],
-      'style-src': ["'self'", 'https://fonts.googleapis.com'],
-      'img-src': ["'self'", 'data:', 'blob:'],
+      'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      'img-src': ["'self'", 'data:', 'blob:', 'http:', 'https:'],
       'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
-      'connect-src': ["'self'"],
+      'connect-src': ["'self'", 'https://garap.net'],
       'object-src': ["'none'"],
       'base-uri': ["'self'"],
       'form-action': ["'self'"],
@@ -91,6 +91,25 @@ app.use((req, res, next) => {
 });
 app.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
+// ── CORS UNTUK APK ANDROID (WebView appassets) & SIMULATOR LOKAL ───────
+const ORIGIN_APK_BOLEH = /^(https:\/\/appassets\.androidplatform\.net|capacitor:\/\/localhost|https:\/\/garap\.net|https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/i;
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  if (origin && ORIGIN_APK_BOLEH.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Cache-Control, Accept, Origin');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
+  }
   next();
 });
 
@@ -345,6 +364,8 @@ loadColumnLengths()
     startServers(); require('./presetDosing').mulai();
     // penjadwal konfirmasi siklus budidaya: default MATI (SIKLUS_PENJADWAL=1), tanpa aktuator
     require('./siklusBudidaya').mulaiPenjadwal().catch((e) => console.error('[SIKLUS] gagal mulai:', e.message));
+    // analisis AI harian 07.00 WIB (hanya baca + simpan laporan/notifikasi); AI_ANALISIS_HARIAN=0 mematikan
+    require('./penjadwalAnalisisHarian').mulai().catch((e) => console.error('[ANALISIS HARIAN] gagal mulai:', e.message));
     // Hangatkan model AI lokal di RAM saat boot awal agar selalu standby & respon instan (AI_WARMUP=1 di .env)
     if (process.env.AI_WARMUP === '1') {
       require('./routes/ai').hangatkanModel();

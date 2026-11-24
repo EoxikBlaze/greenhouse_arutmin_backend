@@ -4,6 +4,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { q, one } = require('../db');
 const { publicUser, json, lupakanAkun } = require('../auth');
+const { BATAS_BYTE, TIPE_DIIZINKAN, periksaUnggahan } = require('../fotoProfil');
 
 const router = express.Router();
 
@@ -43,7 +44,69 @@ function emailError(email) {
 router.get('/', async (req, res, next) => {
   try {
     const user = await one('SELECT * FROM users WHERE id = $1', [req.user.sub]);
-    res.json({ page: 'profil', user: publicUser(user) });
+    // Hanya penanda + versi (tanpa byte gambar). Tabel user_foto bisa belum ada
+    // sebelum migrasi 2026-11-20_01 dijalankan: dianggap belum punya foto.
+    const foto = await one('SELECT diperbarui_pada FROM user_foto WHERE user_id = $1', [req.user.sub])
+      .catch((e) => (e && e.code === '42P01' ? null : Promise.reject(e)));
+    res.json({
+      page: 'profil',
+      user: { ...publicUser(user), foto: Boolean(foto), foto_versi: foto ? new Date(foto.diperbarui_pada).getTime() : null },
+    });
+  } catch (e) { next(e); }
+});
+
+/* ── Foto profil per akun (global: web + app membaca dari sini) ─────────────
+ * GET    /profil/foto   gambar akun yang login (404 bila belum ada). ETag + 304.
+ * POST   /profil/foto   isi permintaan = berkas PNG/JPEG/WebP mentah, maks 512 KB.
+ * DELETE /profil/foto   hapus foto.
+ * Akun demo hanya-baca. Tipe divalidasi dari byte awal (src/fotoProfil.js). */
+const unggahMentah = express.raw({ type: TIPE_DIIZINKAN, limit: BATAS_BYTE + 1024 });
+
+router.get('/foto', async (req, res, next) => {
+  try {
+    const row = await one('SELECT tipe, data, diperbarui_pada FROM user_foto WHERE user_id = $1', [req.user.sub])
+      .catch((e) => (e && e.code === '42P01' ? null : Promise.reject(e)));
+    if (!row) return json(res, 404, { message: 'Belum ada foto profil.' });
+    const etag = `W/"${new Date(row.diperbarui_pada).getTime()}"`;
+    res.set('ETag', etag);
+    // Menimpa Cache-Control no-store global: boleh disimpan pribadi, tapi wajib divalidasi ulang.
+    res.set('Cache-Control', 'private, max-age=0, must-revalidate');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    res.set('Content-Type', row.tipe);
+    res.set('Content-Disposition', 'inline');
+    return res.end(row.data);
+  } catch (e) { return next(e); }
+});
+
+router.post('/foto', unggahMentah, async (req, res, next) => {
+  try {
+    if (req.user.demo) return json(res, 403, { message: 'Mode demo tidak boleh mengubah foto profil.' });
+    const cek = periksaUnggahan(req.body);
+    if (!cek.ok) return json(res, cek.status, { message: cek.message });
+    const row = await one(
+      `INSERT INTO user_foto (user_id, tipe, data, diperbarui_pada) VALUES ($1, $2, $3, now())
+       ON CONFLICT (user_id) DO UPDATE SET tipe = EXCLUDED.tipe, data = EXCLUDED.data, diperbarui_pada = now()
+       RETURNING diperbarui_pada`,
+      [req.user.sub, cek.tipe, req.body],
+    );
+    // Audit: catat peristiwanya saja, TIDAK PERNAH byte gambar.
+    req.audit = {
+      aksi: 'update', tabel: 'user_foto', row_id: String(req.user.sub), before: null, after: null,
+      meta: { perubahan: 'Foto profil', tipe: cek.tipe, ukuran_byte: req.body.length },
+    };
+    res.status(201).json({ status: true, message: 'Foto profil tersimpan.', foto_versi: new Date(row.diperbarui_pada).getTime() });
+  } catch (e) { next(e); }
+});
+
+router.delete('/foto', async (req, res, next) => {
+  try {
+    if (req.user.demo) return json(res, 403, { message: 'Mode demo tidak boleh mengubah foto profil.' });
+    await q('DELETE FROM user_foto WHERE user_id = $1', [req.user.sub]);
+    req.audit = {
+      aksi: 'delete', tabel: 'user_foto', row_id: String(req.user.sub), before: null, after: null,
+      meta: { perubahan: 'Foto profil dihapus' },
+    };
+    res.json({ status: true, message: 'Foto profil dihapus.' });
   } catch (e) { next(e); }
 });
 

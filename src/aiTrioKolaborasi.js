@@ -15,16 +15,43 @@ const guard = require('./aiGuard');
 const TIMEOUT_AGENT_MS = 25_000;
 const TENGGAT_TOTAL_MS = 50_000; // di bawah AI_TIMEOUT_MS rute (55 dtk) dan batas tunggu klien (60 dtk)
 
+function apakahEndpointOpenAi(url) {
+  const u = String(url || '').toLowerCase();
+  return u.endsWith('/openai') || u.endsWith('/v1') || u.endsWith('/chat/completions') || u.includes('pollinations.ai');
+}
+
+function urlChatOpenAi(url) {
+  const u = String(url || '').replace(/\/+$/, '');
+  if (u.endsWith('/openai') || u.endsWith('/chat/completions')) return u;
+  return `${u}/chat/completions`;
+}
+
 /**
- * Panggilan HTTP generik ke Ollama dengan optimasi termal:
- * - num_thread: 2 (Mencegah CPU 100% pada semua core, Raspberry Pi tetap sejuk <60°C)
- * - num_ctx: 512 (Hemat RAM & bus memori)
- * - temperature: 0.25 (Faktual & hemat komputasi sampling)
+ * Panggilan HTTP generik ke AI (Cloud OpenAI-compatible atau Ollama lokal):
  */
 async function panggilModel(modelName, messages, opsi = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opsi.timeoutMs || TIMEOUT_AGENT_MS);
   try {
+    if (apakahEndpointOpenAi(config.aiOllamaUrl)) {
+      const headers = { 'Content-Type': 'application/json' };
+      if (config.aiApiKey) headers.Authorization = `Bearer ${config.aiApiKey}`;
+      const res = await fetch(urlChatOpenAi(config.aiOllamaUrl), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: config.aiModel || 'openai',
+          messages,
+          temperature: opsi.temperature || 0.25,
+        }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error(`ollama_err_${res.status}`);
+      const j = await res.json();
+      const teks = j?.choices?.[0]?.message?.content ?? j?.message?.content;
+      if (typeof teks !== 'string' || !teks.trim()) throw new Error('respons_kosong');
+      return teks.trim();
+    }
     const res = await fetch(`${config.aiOllamaUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -133,9 +160,17 @@ async function agenAgronomi(pesanPengguna, tahapTanam, ringkasanSensor, opsi = {
     const jawaban = await panggilModel('garap-ai', pesan, { num_predict: 180, timeoutMs: sisa() });
     return { jawaban, model: 'garap-ai', status: 'OK' };
   } catch (err) {
-    // Fallback ke qwen2.5:0.5b jika garap-ai belum selesai
-    const jawaban = await panggilModel('qwen2.5:0.5b', pesan, { num_predict: 140, timeoutMs: sisa() });
-    return { jawaban, model: 'qwen2.5:0.5b', status: 'FALLBACK' };
+    if (err?.name === 'AbortError') throw err;
+    try {
+      const jawaban = await panggilModel('qwen2.5:0.5b', pesan, { num_predict: 140, timeoutMs: sisa() });
+      return { jawaban, model: 'qwen2.5:0.5b', status: 'FALLBACK' };
+    } catch (err2) {
+      if (err2?.name === 'AbortError') throw err2;
+      const { cariKonteksQwen } = require('./aiMelonModul');
+      const konteks = cariKonteksQwen(pesanPengguna)
+        || 'Pastikan pH larutan tandon terjaga di 5,8–6,5, TDS sesuai umur fase tanaman melon (Semai 400–600 PPM, Vegetatif 800–1000 PPM, Pembungaan 1000–1200 PPM, Pembesaran 1400–1800 PPM), suhu air <28°C dengan aerasi aktif, serta periksa kebersihan daun dan tandon setiap pagi.';
+      return { jawaban: `${kalimatTahap(tahapTanam)} ${konteks}`, model: 'rule-agronomi', status: 'FALLBACK' };
+    }
   }
 }
 

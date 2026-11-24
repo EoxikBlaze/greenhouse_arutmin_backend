@@ -12,8 +12,7 @@
 const express = require('express');
 const { pool, q, one } = require('../db');
 const cache = require('../cache');
-const { requireApiKey, requireAuth, verifyToken, json } = require('../auth');
-const sesiCookie = require('../sesiCookie');
+const { requireApiKey, requireAuth, json } = require('../auth');
 const { queryParam } = require('./_id');
 const { tanggalErrors } = require('./_validate');
 const { FISIK } = require('../sanitySensor');
@@ -306,7 +305,6 @@ router.get('/', requireAuth, async (_req, res, next) => {
 
 router.get('/chart-data', requireAuth, async (req, res, next) => {
   try {
-    if (req.user?.demo) return res.json([]);
     const rows = await q('SELECT * FROM monitorings ORDER BY created_at DESC LIMIT 288');
     res.json(rows.reverse());
   } catch (e) { next(e); }
@@ -314,7 +312,6 @@ router.get('/chart-data', requireAuth, async (req, res, next) => {
 
 router.get('/tarik', requireAuth, async (req, res, next) => {
   try {
-    if (req.user?.demo) return res.json({ dari: req.query.dari, sampai: req.query.sampai, data: [] });
     // queryParam: normalisasi case filter (?DARI/ ?SAMPAI/ ?PER_PAGE — _id.js).
     const dari = queryParam(req.query, 'dari');
     const sampai = queryParam(req.query, 'sampai');
@@ -338,7 +335,6 @@ router.get('/tarik', requireAuth, async (req, res, next) => {
 
 router.get('/tarik/csv', requireAuth, async (req, res, next) => {
   try {
-    if (req.user?.demo) return res.status(403).json({ message: 'Mode demo tidak dapat mengunduh data sensor.' });
     const dari = queryParam(req.query, 'dari');
     const sampai = queryParam(req.query, 'sampai');
     // G10 — sama dgn /tarik (validasi tanggal sebelum SQL, 422 per-field).
@@ -363,17 +359,8 @@ router.get('/tarik/csv', requireAuth, async (req, res, next) => {
 });
 
 /* ── API ESP32 ─────────────────────────────────────────────────────── */
-api.get('/latest-sensor', async (req, res, next) => {
+api.get('/latest-sensor', async (_req, res, next) => {
   try {
-    const header = req.headers.authorization || '';
-    const bearer = header.startsWith('Bearer ') ? header.slice(7) : null;
-    const token = bearer || sesiCookie.bacaCookie(req, sesiCookie.NAMA_SESI);
-    if (token) {
-      const u = verifyToken(token);
-      if (u?.demo) {
-        return res.json({ is_online: false, seconds_ago: null, anomalies: [], sensor: null, water_control: null });
-      }
-    }
     res.json(await latestSensorPayload());
   } catch (e) { next(e); }
 });

@@ -247,11 +247,12 @@ async function diagnosaMenyeluruh(data) {
 /* ── pemetaan niat → jawaban deterministik ───────────────────────────── */
 function deteksiNiat(pesanTernormalisasi) {
   const s = pesanTernormalisasi;
-  if (/\b(?:diagnos\w*|debug\w*|troubleshoot\w*|health ?check|pemeriksaan (?:menyeluruh|lengkap)|(?:periksa|cek|audit|scan)\s+(?:semua|seluruh|menyeluruh|sistem|kesehatan)|status sistem|kondisi sistem|ada (?:masalah|error))/.test(s)) return 'diagnosa';
-  if (/\b(?:tabel|daftar|list|rekap)\b.{0,25}\b(?:alert|peringatan)|\balert\b.{0,20}\b(?:terbuka|apa saja|aktif)/.test(s)) return 'alert';
-  if (/\b(?:tabel|daftar|rekap|status)\b.{0,25}\b(?:penampung|dosing|dosis|lock)|\b(?:penampung|dosing|dosis)\b.{0,20}\b(?:status|tabel|kondisi)/.test(s)) return 'penampung';
-  if (/\b(?:tabel|daftar|rekap|status)\b.{0,25}\b(?:tahap|tanam\w*|siklus)/.test(s)) return 'tahap';
-  if (/\b(?:tabel|rekap|riwayat|history)\b.{0,25}\b(?:sensor|bacaan|ph|tds|monitoring)|\bsensor\b.{0,15}\b(?:tabel|riwayat)/.test(s)) return 'sensor';
+  if (/\b(?:diagnos\w*|debug\w*|troubleshoot\w*|health ?check|pemeriksaan (?:menyeluruh|lengkap)|(?:periksa|cek|audit|scan)\s+(?:semua|seluruh|menyeluruh|sistem|kesehatan)|status sistem|kondisi sistem|ada (?:masalah|error))|\bapakah\b.{0,20}\b(?:tanaman|melon|kebun|greenhouse|kondisi)\b.{0,15}\b(?:aman|sehat|normal|baik)\b|\bcek\s+(?:kondisi\s+)?(?:kebun|tanaman)\b/.test(s)) return 'diagnosa';
+  if (/\b(?:tabel|daftar|list|rekap)\b.{0,25}\b(?:alert|peringatan)|\balert\b.{0,20}\b(?:terbuka|apa saja|aktif)|\b(?:ada|apakah ada|cek)\b.{0,15}\b(?:alert|peringatan)\b/.test(s)) return 'alert';
+  if (/\b(?:tabel|daftar|rekap|status)\b.{0,25}\b(?:penampung|dosing|dosis|lock)|\b(?:penampung|dosing|dosis)\b.{0,20}\b(?:status|tabel|kondisi)|\b(?:kenapa|apakah)\b.{0,20}\b(?:penampung|tandon|dosing)\b.{0,20}\b(?:terkunci|lock|pemeliharaan)\b/.test(s)) return 'penampung';
+  if (/\b(?:tabel|daftar|rekap|status)\b.{0,25}\b(?:tahap|tanam\w*|siklus)|\b(?:berapa\b.{0,20}\b(?:benih|bibit)|jumlah\s+(?:benih|bibit)|tanaman\s+apa\s+(?:yang\s+)?(?:ditanam|aktif)|batch\b.{0,20}\b(?:apa|berapa|mana|sekarang|aktif)|(?:semai|melon)\b.{0,20}\bhari\s+ke\s+berapa)\b/.test(s)) return 'tahap';
+  if (/\b(?:tabel|rekap|riwayat|history)\b.{0,25}\b(?:sensor|bacaan|ph|tds|monitoring)|\bsensor\b.{0,15}\b(?:tabel|riwayat)|\bberapa\b.{0,15}\b(?:suhu air|suhu udara|kelembapan|kelembaban|tds|ppm|ec)\b.{0,15}\b(?:sekarang|saat ini|hari ini|terakhir)\b|\b(?:kondisi|status|keadaan|bacaan|nilai)\s+(?:semua\s+)?sensor\b|\bsensor\b.{0,20}\b(?:sekarang|saat ini|terkini|hari ini)\b/.test(s)) return 'sensor';
+  // uji 15 Nov 2026: "kondisi sensor sekarang?" jatuh ke LLM (12–22 dtk) padahal datanya ada di DB
   if (/\btabel\b/.test(s)) return 'sensor';
   // cara menaikkan/menurunkan pH/TDS — jawaban SOP tetap. Uji 25 Okt 2026: model 1,5B menyarankan
   // "penyedap rasa" & "agar-agar" untuk menurunkan pH.
@@ -332,13 +333,37 @@ async function jawabNiat(niat, data, pesan = '') {
     };
   }
   if (niat === 'tahap') {
-    return { jawaban: (data.tahap || []).length ? 'Tahap tanam terbaru per tahap.' : 'Belum ada data tanam.', tabel: (data.tahap || []).length ? [tabelTahap(data.tahap)] : [], status: OK };
+    const daftar = data.tahap || [];
+    const aktif = daftar.filter((x) => x.status === 'berjalan');
+    let ringkas = 'Belum ada data tanam.';
+    if (aktif.length) {
+      ringkas = aktif.map((x) => {
+        const jml = x.jumlah != null ? ` (${x.jumlah} ${x.tahap === 'semai' ? 'benih' : 'tanaman'})` : '';
+        const hari = x.hari_berjalan != null ? ` hari ke-${x.hari_berjalan}` : '';
+        const sisa = x.sisa_hari != null ? `, sisa ±${x.sisa_hari} hari` : '';
+        return `Batch aktif: ${x.nama_tanaman || 'Tanaman'} pada tahap ${x.tahap}${hari}${jml}${sisa}.`;
+      }).join(' ');
+    } else if (daftar.length) {
+      ringkas = 'Tahap tanam terbaru per tahap (tidak ada batch berjalan saat ini).';
+    }
+    return { jawaban: ringkas, tabel: daftar.length ? [tabelTahap(daftar)] : [], status: OK };
   }
   const [t, sp] = await Promise.all([tabelRiwayatSensor(10), aman(() => sensorPerMeja((data && data.ambang) || {}))]);
   const tabelSemua = [];
   if (sp && !sp.galat) tabelSemua.push(sp.tabel);
   tabelSemua.push(t);
-  return { jawaban: sp && !sp.galat && sp.temuan.length ? `Perhatian: ${sp.temuan.join('; ')}.` : 'Berikut data sensor terbaru.', tabel: tabelSemua, status: sp && !sp.galat ? sp.status : OK };
+  let jawabSensor = 'Berikut data sensor terbaru.';
+  if (sp && !sp.galat && sp.umurGlobal == null) {
+    jawabSensor = 'Belum ada bacaan sensor tersimpan dari alat ESP32. Pastikan alat menyala, Wi-Fi tersambung, dan mengirim data ke server.';
+  } else if (sp && !sp.galat && sp.temuan.length) {
+    jawabSensor = `Perhatian: ${sp.temuan.join('; ')}.`;
+  } else if (sp && !sp.galat && !sp.online) {
+    jawabSensor = `Data sensor terakhir tercatat ${umur(sp.umurGlobal)} lalu (alat sedang terputus — bacaan belum terkini).`;
+  } else if (data?.sensor) {
+    const s = data.sensor;
+    jawabSensor = `Bacaan sensor terkini: pH ${fmt(s.ph, 2)}, TDS ${fmt(s.tds, 0)} ppm, suhu air ${fmt(s.waterTemp)}°C, suhu udara ${fmt(s.airTemp)}°C, kelembapan ${fmt(s.humidity, 0)}%.`;
+  }
+  return { jawaban: jawabSensor, tabel: tabelSemua, status: sp && !sp.galat ? sp.status : OK };
 }
 
 /* ── ekstrak tabel markdown dari jawaban LLM → tabel terstruktur ─────── */

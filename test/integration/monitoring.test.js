@@ -132,3 +132,22 @@ test('GET /monitoring/tarik (token petani) → 200 (kode: hanya requireAuth, tan
   assert.equal(res.status, 200, `perilaku tak terduga: ${res.status} ${res.text}`);
   assert.ok(Array.isArray(res.body.data), 'petani tetap menerima {dari, sampai, data:[]}');
 });
+
+test('akun demo menerima data sensor & dashboard yang sama dengan admin', async () => {
+  const demo = bearer(craftToken(
+    { sub: 1, username: 'demo', level: 'user', demo: true }, { expiresIn: '1h' }));
+  const pasang = [
+    ['/monitoring/chart-data', (b) => b],
+    ['/monitoring/tarik', (b) => b.data],
+    ['/api/latest-sensor', (b) => b.sensor],
+    ['/dashboard', (b) => b.latest_sensor],
+  ];
+  for (const [url, ambil] of pasang) {
+    const a = await request(base).get(url).set(auth);
+    const d = await request(base).get(url).set(demo);
+    assert.equal(d.status, 200, `${url} demo: ${d.text}`);
+    assert.deepEqual(ambil(d.body), ambil(a.body), `${url}: data sensor demo ≠ admin`);
+  }
+  const csv = await request(base).get('/monitoring/tarik/csv').set(demo);
+  assert.equal(csv.status, 200, `csv demo: ${csv.text}`);
+});
